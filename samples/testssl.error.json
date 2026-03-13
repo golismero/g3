@@ -1,0 +1,16 @@
+[
+         {
+              "id"           : "scanProblem",
+              "ip"           : "2606:2800:220:1:248:1893:25c8:1946/[2606:2800:220:1:248:1893:25c8:1946]",
+              "port"         : "443",
+              "severity"     : "FATAL",
+              "finding"      : "Can't connect to '[2606:2800:220:1:248:1893:25c8:1946]:443' Make sure a firewall is not between you and your scanning target!"
+          }
+,         {
+              "id"           : "scanTime",
+              "ip"           : "2606:2800:220:1:248:1893:25c8:1946/[2606:2800:220:1:248:1893:25c8:1946]",
+              "port"         : "443",
+              "severity"     : "WARN",
+              "finding"      : "Scan interrupted"
+          }
+]

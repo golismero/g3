@@ -1,0 +1,415 @@
+# Example docker-compose file for quickly trying out Golismero locally.
+# Supports 2 concurrent scans and 4 concurrent tools, all sharing the same message queue.
+# Uncomment the relevant sections to enable some webapps that can aid in debugging.
+
+##############################################
+## Please do not use this in production !!! ##
+##############################################
+
+# We're going to put everything into the same network since this is a
+# trivial example where all containers run in the same host anyway.
+networks:
+  g3net:
+    name: g3net
+
+# Almost all of these services don't need to expose open ports to 127.0.0.1.
+# This is done here for debugging, avoid in production.
+# Only the API service needs to be exposed in a real life setting,
+# and even that one can be put behind a reverse proxy for extra safety.
+services:
+
+  # MongoDB is used to store the scan data.
+  # There is no specific version required for Golismero, but in
+  # this example we used 4.4.6 since it's the most compatible one.
+  # https://github.com/docker-library/mongo/issues/485
+  mongo:
+    image: mongo:4.4.6
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    networks:
+      - g3net
+    volumes:
+      - ./volumes/mongo:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_USERNAME}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_PASSWORD}"
+
+  # Mongo Express is useful for debugging.
+  # mongo-express:
+  #   image: mongo-express
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - mongo
+  #   networks:
+  #     - g3net
+  #   ports:
+  #     - "127.0.0.1:8081:8081"
+  #   environment:
+  #     ME_CONFIG_MONGODB_ADMINUSERNAME: "${MONGO_USERNAME}"
+  #     ME_CONFIG_MONGODB_ADMINPASSWORD: "${MONGO_PASSWORD}"
+  #     ME_CONFIG_MONGODB_URL: "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/"
+
+  # The MQTT broker is used to coordinate tasks between the scanner and the workers.
+  mosquitto:
+    image: eclipse-mosquitto
+    restart: unless-stopped
+    networks:
+      - g3net
+    volumes:
+      - ./volumes/mosquitto/config:/mosquitto/config/
+      - ./volumes/mosquitto/log:/mosquitto/log/
+      - ./volumes/mosquitto/data:/mosquitto/data/
+    ports:
+      - "127.0.0.1:1883:1883"
+      - "127.0.0.1:9001:9001"
+
+  # MQTT Admin is useful for debugging.
+  # mqtt-admin:
+  #   image: dersimn/mqtt-admin
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - mosquitto
+  #   networks:
+  #     - g3net
+  #   ports:
+  #     - "127.0.0.1:8082:80"
+
+  # MQTT Explorer is useful for debugging.
+  # mqtt-explorer:
+  #   image: smeagolworms4/mqtt-explorer
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - mosquitto
+  #   networks:
+  #     - g3net
+  #   volumes:
+  #     - ./volumes/mqtt-explorer:/mqtt-explorer/config
+  #   ports:
+  #     - "127.0.0.1:4000:4000"
+
+  # In this example we use MariaDB as a SQL database.
+  # The SQL database is used to store execution logs from tools.
+  mariadb:
+    image: mariadb
+    restart: unless-stopped
+    networks:
+      - g3net
+    volumes:
+      - ./volumes/mariadb/data:/var/lib/mysql
+      - ./volumes/mariadb/initdb.d:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: "${SQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "${SQL_DATABASE}"
+      MYSQL_USER: "${SQL_USERNAME}"
+      MYSQL_PASSWORD: "${SQL_PASSWORD}"
+
+  # PHP My Admin is useful for debugging.
+  # phpmyadmin:
+  #   image: phpmyadmin/phpmyadmin
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - mariadb
+  #   networks:
+  #     - g3net
+  #   ports:
+  #     - "127.0.0.1:8083:80"
+  #   environment:
+  #     - PMA_HOST=mariadb
+  #     - PMA_PORT=3306
+  #     - PMA_ARBITRARY=1
+
+  # Redis is used as a key/value store only.
+  # We are currently storing only the data needed to produce reports,
+  # but it is likely to be used for more things in the future.
+  redis:
+    image: redis:latest
+    command: redis-server --port ${REDIS_PORT} --requirepass ${REDIS_PASSWORD}
+    restart: unless-stopped
+    networks:
+      - g3net
+    volumes:
+      - ./volumes/redis:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT}:${REDIS_PORT}"
+
+  # Vulners-Proxy saves on Vulners credits by caching API responses.
+  vulners-proxy:
+    image: vulners/proxy:latest
+    restart: unless-stopped
+    networks:
+      - g3net
+    volumes:
+      - ./volumes/vulners-proxy/vulners-proxy.cache:/tmp/vulners-proxy.cache
+      - ./volumes/vulners-proxy/vulners-proxy.statistic.cache:/tmp/vulners-proxy.statistic.cache
+    ports:
+      - "127.0.0.1:${VULNERS_PROXY_PORT}:8000"
+    environment:
+      - apiKey=${VULNERS_API_KEY}
+
+  # This is the web server that will serve the app.
+  nginx:
+    image: nginx:latest
+    restart: unless-stopped
+    networks:
+      - g3net
+    volumes:
+      - ./www:/var/www
+      - ./volumes/nginx:/etc/nginx/conf.d
+    ports:
+      - "127.0.0.1:80:80"
+
+  ############################################################################
+
+  # There is only one instance of the web application, so there's only one API.
+  g3api:
+    image: golismero3/g3bin
+    entrypoint: /bin/g3api
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mongo
+      - mosquitto
+      - redis
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - ./volumes/tmp:/tmp
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - REDIS_HOST=redis
+      - REDIS_PORT
+      - REDIS_PASSWORD
+      - G3_API_ID=g3api
+      - G3_JWT_SECRET
+      - G3_JWT_LIFETIME
+      - G3_WS_ADDR=0.0.0.0
+      - G3_WS_PORT=80
+      - G3_WS_PATH=
+      - G3_WS_BUFFER
+      - G3_FILE_UPLOAD_MAX
+      - G3_LOG_LEVEL
+
+  # In this example we only run two scans at a time, so there are only two scanners.
+  # In production you'll need more!
+  g3scanner1:
+    image: golismero3/g3bin
+    entrypoint: /bin/g3scanner
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mongo
+      - mosquitto
+      - redis
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - REDIS_HOST=redis
+      - REDIS_PORT
+      - REDIS_PASSWORD
+      - G3_SCANNER_ID=g3scanner1
+      - G3_SCANNER_PARALLEL_MODE
+      - G3_SCANNER_MAX_PIPELINES
+      - G3_SCANNER_MAX_DEPTH
+      - G3_LOG_LEVEL
+
+  g3scanner2:
+    image: golismero3/g3bin
+    entrypoint: /bin/g3scanner
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mongo
+      - mosquitto
+      - redis
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - REDIS_HOST=redis
+      - REDIS_PORT
+      - REDIS_PASSWORD
+      - G3_SCANNER_ID=g3scanner2
+      - G3_SCANNER_PARALLEL_MODE
+      - G3_SCANNER_MAX_PIPELINES
+      - G3_SCANNER_MAX_DEPTH
+      - G3_LOG_LEVEL
+
+  ############################################################################
+
+  # The following is an example setup for workers, where we assign some to
+  # specific tools, and also create a pool of generic workers for the rest
+  # of the supported plugins. In production you may want to change this.
+
+  # The first worker in this example will only run the nmap plugin.
+  # This is an easy way to ensure we don't have too many concurrent
+  # nmap scans coming from the same machine.
+  g3worker-nmap:
+    image: golismero3/g3bin
+    entrypoint: /bin/g3worker
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mongo
+      - mosquitto
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - ./resources:/app/resources
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - G3_WORKER_ID=g3worker-nmap
+      - G3_WORKER_PLUGINS=nmap
+      - G3_HOLD_CANCEL
+      - G3_LOG_LEVEL
+
+  # The following workers are all identical and run all plugins *except* the ones above.
+  g3worker1:
+    image: golismero3/g3bin
+    entrypoint: /bin/g3worker
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mongo
+      - mosquitto
+      - vulners-proxy
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - ./resources:/app/resources
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - G3_WORKER_ID=g3worker1
+      - G3_WORKER_PLUGINS=!nmap
+      - G3_HOLD_CANCE
+      - G3_LOG_LEVEL
+      - VIRUSTOTAL_API_KEY
+      - VULNERS_API_KEY
+      - VULNERS_PROXY_HOST=vulners-proxy
+      - VULNERS_PROXY_PORT
+
+  g3worker2:
+    image: golismero3/g3bin
+    entrypoint: /bin/g3worker
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mongo
+      - mosquitto
+      - vulners-proxy
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - ./resources:/app/resources
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - G3_WORKER_ID=g3worker2
+      - G3_WORKER_PLUGINS=!nmap
+      - G3_HOLD_CANCE
+      - G3_LOG_LEVEL
+      - VIRUSTOTAL_API_KEY
+      - VULNERS_API_KEY
+      - VULNERS_PROXY_HOST=vulners-proxy
+      - VULNERS_PROXY_PORT
+
+  g3worker3:
+    image: golismero3/g3bin
+    entrypoint: /bin/g3worker
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mongo
+      - mosquitto
+      - vulners-proxy
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - ./resources:/app/resources
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - G3_WORKER_ID=g3worker3
+      - G3_WORKER_PLUGINS=!nmap
+      - G3_HOLD_CANCEL
+      - G3_LOG_LEVEL
+      - VIRUSTOTAL_API_KEY
+      - VULNERS_API_KEY
+      - VULNERS_PROXY_HOST=vulners-proxy
+      - VULNERS_PROXY_PORT
+
+  g3worker4:
+    image: golismero3/g3bin
+    entrypoint: /bin/g3worker
+    restart: unless-stopped
+    depends_on:
+      - mariadb
+      - mongo
+      - mosquitto
+      - vulners-proxy
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - ./resources:/app/resources
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - G3_WORKER_ID=g3worker4
+      - G3_WORKER_PLUGINS=!nmap
+      - G3_HOLD_CANCEL
+      - G3_LOG_LEVEL
+      - VIRUSTOTAL_API_KEY
+      - VULNERS_API_KEY
+      - VULNERS_PROXY_HOST=vulners-proxy
+      - VULNERS_PROXY_PORT
+  ############################################################################

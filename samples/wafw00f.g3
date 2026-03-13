@@ -1,0 +1,1 @@
+[{"_cmd":"wafw00f https://example.com","_end":1688240413,"_fp":["wafw00f https://example.com"],"_start":1688240412,"_tool":"wafw00f","_type":"url","host":"example.com","path":"","scheme":"https","url":"https://example.com","waf":[{"firewall":"Edgecast","manufacturer":"Verizon Digital Media"}]}]

@@ -1,0 +1,26 @@
+
+# Sample script with no targets. Either load them manually with "g3 target" or import them with "g3 import".
+# Examples:
+#  $ SCANID=$(uuid -v4) && $ g3 target 192.168.1.1 | g3 save $SCANID && g3 scan $SCANID -i samples/no-targets.script
+#  $ SCANID=$(uuid -v4) && $ g3 import nmap -i samples/nmap.xml | g3 save $SCANID && g3 scan $SCANID -i samples/no-targets.script
+
+#mode sequential
+mode parallel
+
+dnsrecon
+dnsrecon | nmap
+dnsrecon | testssl
+dnsrecon | nmap | testssl
+dnsrecon | testssl | nmap
+
+nmap
+nmap | dnsrecon
+nmap | testssl
+nmap | dnsrecon | testssl
+nmap | testssl | dnsrecon
+
+testssl
+testssl | dnsrecon
+testssl | nmap
+testssl | dnsrecon | nmap
+testssl | nmap | dnsrecon

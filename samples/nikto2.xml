@@ -1,0 +1,47 @@
+<?xml version="1.0" ?>
+<!DOCTYPE niktoscan SYSTEM "/usr/share/doc/nikto/nikto.dtd">
+<niktoscan hoststest="0" options="-host example.com -port 443 -ssl -Format xml -output nikto2.xml" version="2.1.5" scanstart="Fri Apr 28 12:14:32 2023" scanend="Thu Jan  1 01:00:00 1970" scanelapsed=" seconds" nxmlversion="1.2">
+
+<scandetails targetip="93.184.216.34" targethostname="example.com" targetport="443" targetbanner="ECS (bsa/EB18)" starttime="2023-04-28 12:14:33" sitename="https://example.com:443" siteip="https://93.184.216.34:443" hostheader="example.com" errors="0" checks="6544">
+<ssl ciphers="TLS_AES_256_GCM_SHA384" issuers="/C=US/O=DigiCert Inc/CN=DigiCert TLS RSA SHA256 2020 CA1" info="/C=US/ST=California/L=Los Angeles/O=Internet\xC2\xA0Corporation\xC2\xA0for\xC2\xA0Assigned\xC2\xA0Names\xC2\xA0and\xC2\xA0Numbers/CN=www.example.org" />
+
+<item id="999984" osvdbid="0" osvdblink="http://osvdb.org/0" method="GET">
+<description><![CDATA[Server leaks inodes via ETags, header found with file /, fields: 0x3147526947+gzip+ident ]]></description>
+<uri><![CDATA[/]]></uri>
+<namelink><![CDATA[https://example.com:443/]]></namelink>
+<iplink><![CDATA[https://93.184.216.34:443/]]></iplink>
+</item>
+
+<item id="999976" osvdbid="0" osvdblink="http://osvdb.org/0" method="GET">
+<description><![CDATA[The anti-clickjacking X-Frame-Options header is not present.]]></description>
+<uri><![CDATA[/]]></uri>
+<namelink><![CDATA[https://example.com:443/]]></namelink>
+<iplink><![CDATA[https://93.184.216.34:443/]]></iplink>
+</item>
+
+<item id="999100" osvdbid="0" osvdblink="http://osvdb.org/0" method="GET">
+<description><![CDATA[Uncommon header 'x-cache' found, with contents: HIT]]></description>
+<uri><![CDATA[/]]></uri>
+<namelink><![CDATA[https://example.com:443/]]></namelink>
+<iplink><![CDATA[https://93.184.216.34:443/]]></iplink>
+</item>
+
+<item id="999993" osvdbid="0" osvdblink="http://osvdb.org/0" method="GET">
+<description><![CDATA[Hostname 'example.com' does not match certificate's CN 'www.example.org']]></description>
+<uri><![CDATA[/]]></uri>
+<namelink><![CDATA[https://example.com:443/]]></namelink>
+<iplink><![CDATA[https://93.184.216.34:443/]]></iplink>
+</item>
+
+<item id="999990" osvdbid="0" osvdblink="http://osvdb.org/0" method="OPTIONS">
+<description><![CDATA[Allowed HTTP Methods: OPTIONS, GET, HEAD, POST ]]></description>
+<uri><![CDATA[/]]></uri>
+<namelink><![CDATA[https://example.com:443/]]></namelink>
+<iplink><![CDATA[https://93.184.216.34:443/]]></iplink>
+</item>
+
+<statistics elapsed="3659" itemsfound="5" itemstested="6544" endtime="2023-04-28 13:15:32" />
+</scandetails>
+
+
+</niktoscan>

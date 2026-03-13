@@ -1,0 +1,22 @@
+{
+    url: "https://github.com/projectdiscovery/subfinder",
+    description: {
+        en: "Subfinder is a subdomain discovery tool that returns valid subdomains for websites, using passive online sources. It has a simple, modular architecture and is optimized for speed. Subfinder is built for doing one thing only - passive subdomain enumeration, and it does that very well.",
+    },
+
+    image: "golismero3/subfinder",
+
+    commands: [
+        {
+            condition: "{{if .domain}} true {{else}} false {{end}}",
+            fingerprint: ["subfinder {{.domain}}"],
+            command: ["{{.domain}}"],
+            dockeropt: ["-i", "--rm", "-v", "{{.G3HOME}}/config/subfinder:/root/.config/subfinder"],
+            returns: "domain",
+        },
+    ],
+
+    importer: {
+        returns: "domain",
+    },
+}

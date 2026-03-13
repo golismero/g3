@@ -1,0 +1,28 @@
+// This version of the plugin does the fastest possible scan.
+// It will not be very thorough.
+{
+    description: {
+        en: "Nmap is a free and open source utility for network discovery and security auditing."
+    },
+    url: "https://nmap.org/",
+    image: "golismero3/nmap",
+    commands: [
+        {
+            condition: "{{if .services}} false {{else}} {{if .ipv4}} true {{else}} false {{end}} {{end}}",
+            fingerprint: ["nmap {{.ipv4}}"],
+            command: ["-sT", "-O", "-vvv", "--", "{{.ipv4}}"],
+            dockeropt: ["-i", "--rm", "--cap-add", "NET_ADMIN"],
+            returns: "host",
+        },
+
+        // You'll need to enable IPv6 on Docker and on your host for this to work:
+        // https://docs.docker.com/config/daemon/ipv6/
+        {
+            condition: "{{if .services}} false {{else}} {{if .ipv6}} true {{else}} false {{end}} {{end}}",
+            fingerprint: ["nmap {{.ipv6}}"],
+            command: ["-6", "-sT", "-O", "-vvv", "--", "{{.ipv6}}"],
+            dockeropt: ["-i", "--rm", "--cap-add", "NET_ADMIN"],
+            returns: "host",
+        },
+    ],
+}

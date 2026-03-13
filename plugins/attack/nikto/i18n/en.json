@@ -1,0 +1,8 @@
+{
+    "title": "Multiple Issues Discovered by Nikto",
+    "summary": "Multiple issues were detected by `nikto.pl` on one or more assets in scope.",
+    "description": "{{template \"summary\" .}}",
+    "recommendations": "TO DO",
+    "details": "The following are the results of the `nikto.pl` analysis:\n\n{{range $key, $value := .issues}}***Host: {{$key}}***\n{{template \"issue_details\" $value}}\n{{end}}",
+    "issue_details": "| Path | CVE | Problem |\n| --- | --- | --- |\n{{range .}}| {{.path}} | {{join .cve \", \"}} | {{.msg}} |\n{{end}}\n"
+}

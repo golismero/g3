@@ -1,0 +1,111 @@
+// Golismero3 plugins are defined using JSON5 for simplicity and maintainability.
+// The g3config tool will convert all JSON5 files into a single JSON object for internal use.
+// Each plugin represents an external tool to be integrated with Golismero.
+{
+    // (Optional) Tool name (for example: nmap, nikto, testssl).
+    // If ommitted the filename without extension is used instead.
+    // Alphanumeric, dash and underscore only.
+    //name: "nmap",
+
+    // Tool description for humans. Each key is a language and the value is the text in that language.
+    description: {
+        en: "Nmap is a free and open source utility for network discovery and security auditing."
+    },
+
+    // URL to the tool, again for humans.
+    url: "https://nmap.org/",
+
+    // Docker image required for this tool.
+    // These are images prepared especially for use with Golismero3.
+    image: "golismero3/nmap",
+
+    // Command definitions for this tool.
+    //
+    // This is an array of objects that define a condition for a command to run,
+    // a command template which can expand properties from the input data object,
+    // and optional Docker options when running the command.
+    //
+    // All conditions will be applied sequentially, each one that matches is executed.
+    // This means the execution of a plugin against a specific input may result in
+    // multiple commands being run, whose output will be later merged by Golismero.
+    //
+    commands: [
+
+        // Since we have to run nmap with different switches for IPv6 and IPv6,
+        // we'll have to define two separate commands for each.
+        {
+            // Logic expression to evaluate before running the tool.
+            // This prevents the tool from being launched against incompatible
+            // targets - for example if you're about to run nmap you want to
+            // check if the target is an IP address or not.
+            condition: "{{if .services}} false {{else}} {{if .ipv4}} true {{else}} false {{end}} {{end}}",
+
+            // Fingerprint of the tool execution.
+            // This helps Golismero avoid running the same test twice.
+            // The format should always be: tool {{.property...}}
+            // Make sure the arguments are always used in the same order.
+            fingerprint: ["nmap {{.ipv4}}"],
+
+            // Template of the command to execute inside the container.
+            // Whenever possible put all switches first, then "--", then arguments.
+            // The arguments are parsed from the input JSON data.
+            // Any argument that evaluates to "<no value>" is ignored.
+            // Bear in mind all relevant arguments *must* be passed here,
+            // since Golismero3 uses this command line string to determine
+            // if a specific test has already been run before and skips it.
+            command: ["-A", "-O", "-Pn", "-vvv", "--", "{{.ipv4}}"],
+
+            // (Optional) Docker options when running the command.
+            // This can be useful for certain images that require specific
+            // switches, such as --cap-add NET_ADMIN for network privileges.
+            // Defaults to ["-i", "--rm"]
+            dockeropt: ["-i", "--rm", "--cap-add", "NET_ADMIN"],
+
+            // (Optional) Default data type returned by the command.
+            // If not given, the command MUST produce objects with the correct _type property.
+            returns: "host",
+        },
+
+        // You'll need to enable IPv6 on Docker and on your host for this to work:
+        // https://docs.docker.com/config/daemon/ipv6/
+        {
+            condition: "{{if .services}} false {{else}} {{if .ipv6}} true {{else}} false {{end}} {{end}}",
+            fingerprint: ["nmap {{.ipv6}}"],
+            command: ["-6", "-A", "-O", "-Pn", "-vvv", "--", "{{.ipv6}}"],
+            dockeropt: ["-i", "--rm", "--cap-add", "NET_ADMIN"],
+            returns: "host",
+        },
+
+    ],
+
+    // (Optional) Importer for this tool.
+    // This is what allows Golismero to read output files produced by the tool.
+    // It is highly recommended to implement this!
+    importer: {
+
+        // The default options change the entry point to "/usr/bin/g3i".
+        dockeropt: ["-i", "--rm", "--entrypoint", "/usr/bin/g3i"],
+
+        // The command here is optional and does not support templates.
+        command: [],
+
+        // The fingerprint for the command, so Golismero doesn't try to re-scan this target.
+        // Entries with values that cannot be expanded are ignored automatically.
+        fingerprint: ["nmap {{.ipv4}}", "nmap {{.ipv6}}"],
+
+        // The returned type is again optional, as long as the importer provides it instead.
+        returns: "host",
+    },
+
+    // (Optional) Issue merger for this tool.
+    // This takes care of ensuring there are no duplicates of the type of issue this plugin produces.
+    // It is highly recommended to implement this if the tool can report issues!
+    merger: {
+
+        // The default options change the entry point to "/usr/bin/g3m".
+        dockeropt: ["-i", "--rm", "--entrypoint", "/usr/bin/g3m"],
+
+        // The command here is optional and does not support templates.
+        command: [],
+    },
+}

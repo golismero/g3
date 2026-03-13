@@ -1,0 +1,49 @@
+# subfinder config file
+
+# specific sources to use for discovery (-s crtsh,github)
+#sources: []
+
+# use all sources for enumeration (slow)
+#all: false
+
+# sources to exclude from enumeration (-es alienvault,zoomeye)
+#exclude-sources: []
+
+# maximum number of http requests to send per second
+#rate-limit: 0
+
+# number of concurrent goroutines for resolving (-active only)
+#t: 10
+
+# disable automatic subfinder update check
+disable-update-check: true
+
+# include all sources in the output
+collect-sources: false
+
+# comma separated list of resolvers to use
+#r: []
+
+# display active subdomains only
+active: false
+
+# http proxy to use with subfinder
+#proxy: 
+
+# exclude ips from the list of domains
+#exclude-ip: false
+
+# show verbose output
+v: true
+
+# disable color in output
+#no-color: false
+
+# report source statistics
+#stats: false
+
+# seconds to wait before timing out
+#timeout: 30
+
+# minutes to wait for enumeration results
+#max-time: 10

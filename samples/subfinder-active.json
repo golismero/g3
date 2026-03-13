@@ -1,0 +1,12 @@
+{"host":"mta-sts.hackerone.com","input":"hackerone.com","source":"leakix"}
+{"host":"docs.hackerone.com","input":"hackerone.com","source":"leakix"}
+{"host":"support.hackerone.com","input":"hackerone.com","source":"leakix"}
+{"host":"api.hackerone.com","input":"hackerone.com","source":"leakix"}
+{"host":"mta-sts.managed.hackerone.com","input":"hackerone.com","source":"leakix"}
+{"host":"www.hackerone.com","input":"hackerone.com","source":"leakix"}
+{"host":"b.ns.hackerone.com","input":"hackerone.com","source":"anubis"}
+{"host":"mta-sts.forwarding.hackerone.com","input":"hackerone.com","source":"leakix"}
+{"host":"resources.hackerone.com","input":"hackerone.com","source":"alienvault"}
+{"host":"a.ns.hackerone.com","input":"hackerone.com","source":"anubis"}
+{"host":"gslink.hackerone.com","input":"hackerone.com","source":"anubis"}
+{"host":"hackerone.com","input":"hackerone.com","source":"crtsh"}

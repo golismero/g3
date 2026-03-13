@@ -1,0 +1,13 @@
+mode parallel
+target alligatorcon.eu www.alligatorcon.eu
+target alligatorcon.pl www.alligatorcon.pl
+target https://www.alligatorcon.eu/
+target https://www.alligatorcon.pl/
+
+dig | nmap | testssl
+dig | nmap | vulners
+
+nikto
+subfinder
+sublist3r
+testssl

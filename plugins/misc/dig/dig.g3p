@@ -1,0 +1,30 @@
+{
+    url: "https://www.cyberciti.biz/faq/linux-unix-dig-command-examples-usage-syntax/",
+    description: {
+        en: "The dig command in Linux is used to gather DNS information. It stands for Domain Information Groper, and it collects data about Domain Name Servers.",
+    },
+
+    image: "golismero3/dig",
+
+    // Only run against domain objects that do not have any discovered DNS records.
+    // Run multiple commands, each for every DNS record type.
+    commands: [
+        {
+            condition: "{{if .dnsrecords}} false {{else}} {{if .domain}} true {{else}} false {{end}} {{end}}",
+            fingerprint: ["dig -t A {{.domain}}"],
+            command: ["dig", "-t", "A", "{{.domain}}", "@8.8.8.8"],
+        },
+        {
+            condition: "{{if .dnsrecords}} false {{else}} {{if .domain}} true {{else}} false {{end}} {{end}}",
+            fingerprint: ["dig -t AAAA {{.domain}}"],
+            command: ["dig", "-t", "AAAA", "{{.domain}}", "@8.8.8.8"],
+        },
+        {
+            condition: "{{if .dnsrecords}} false {{else}} {{if .domain}} true {{else}} false {{end}} {{end}}",
+            fingerprint: ["dig -t any {{.domain}}"],
+            command: ["dig", "-t", "any", "{{.domain}}", "@8.8.8.8"],
+        },
+    ],
+
+    importer: {},
+}

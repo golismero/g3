@@ -1,0 +1,42 @@
+[{
+    "_cmd": "",
+    "_end": 1682591646,
+    "_fp": ["vulners 192.168.1.1"],
+    "_start": 1682591645,
+    "_tool": "vulners",
+    "_type": "issue",
+    "affects": ["192.168.1.1:49152 (tcp)", "192.168.1.1:53 (tcp)"],
+    "exploits": {
+        "cpe:/a:miniupnp_project:miniupnpd:1.8": [{
+            "exploit": "Mass Bleed 20140423",
+            "href": "https://packetstormsecurity.com/files/download/126288/massbleed.sh.txt"
+        }],
+        "cpe:/a:thekelleys:dnsmasq:2.78": [{
+            "exploit": "Mass Bleed 20140423",
+            "href": "https://packetstormsecurity.com/files/download/126288/massbleed.sh.txt"
+        }]
+    },
+    "references": ["http://www.thekelleys.org.uk/dnsmasq/CHANGELOG", "https://github.com/miniupnp/miniupnp"],
+    "severity": 2,
+    "software": {
+        "cpe:/a:miniupnp_project:miniupnpd:1.8": "MiniUPnP Project MiniUPnPd 1.8",
+        "cpe:/a:thekelleys:dnsmasq:2.78": "thekelleys dnsmasq 2.78"
+    },
+    "taxonomy": ["CVE-2016-1213", "CVE-2016-1214", "CVE-2016-1215", "CVE-2016-1216", "CVE-2016-1217", "CVE-2016-1218", "CVE-2016-1219", "CVE-2016-1220", "CVE-2016-4906", "CVE-2016-4907", "CVE-2016-4908", "CVE-2016-4909", "CVE-2016-4910", "CVE-2016-7801", "CVE-2016-7802", "CVE-2016-7803", "CVE-2017-2091", "CVE-2017-2092", "CVE-2017-2093", "CVE-2017-2094", "CVE-2017-2095", "CVE-2017-2144", "CVE-2017-2145", "CVE-2017-2146", "CVE-2017-2254", "CVE-2017-2255", "CVE-2017-2256", "CVE-2017-2257", "CVE-2018-0530", "CVE-2018-0531", "CVE-2018-0532", "CVE-2018-0533", "CVE-2018-0548", "CVE-2018-0549", "CVE-2018-0550", "CVE-2018-0551", "CVE-2018-0607", "CVE-2018-0673", "CVE-2018-16178", "CVE-2019-5928", "CVE-2019-5929", "CVE-2019-5930", "CVE-2019-5931", "CVE-2019-5933", "CVE-2019-5934", "CVE-2019-5935", "CVE-2019-5936", "CVE-2019-5937", "CVE-2019-5938", "CVE-2019-5939", "CVE-2019-5940", "CVE-2019-5941", "CVE-2019-5942", "CVE-2019-5943", "CVE-2019-5944", "CVE-2019-5976", "CVE-2019-5977", "CVE-2019-5978", "CVE-2019-5991", "CVE-2020-5563", "CVE-2020-5564", "CVE-2020-5565", "CVE-2020-5566", "CVE-2020-5567", "CWE-20", "CWE-200", "CWE-22", "CWE-269", "CWE-284", "CWE-287", "CWE-352", "CWE-384", "CWE-601", "CWE-74", "CWE-79", "CWE-89"],
+    "vulnerabilities": {
+        "cpe:/a:miniupnp_project:miniupnpd:1.8": [{
+            "cve": "CVE-2016-1213",
+            "cvss": "AV:N/AC:M/Au:N/C:P/I:P/A:N",
+            "description": "The \"Scheduler\" function in Cybozu Garoon before 4.2.2 allows remote attackers to redirect users to arbitrary websites.",
+            "href": "https://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2016-1213",
+            "severity": 1
+        }],
+        "cpe:/a:thekelleys:dnsmasq:2.78": [{
+            "cve": "CVE-2016-1213",
+            "cvss": "AV:N/AC:M/Au:N/C:P/I:P/A:N",
+            "description": "The \"Scheduler\" function in Cybozu Garoon before 4.2.2 allows remote attackers to redirect users to arbitrary websites.",
+            "href": "https://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2016-1213",
+            "severity": 1
+        }]
+    }
+}]

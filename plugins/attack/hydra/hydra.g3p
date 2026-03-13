@@ -1,0 +1,29 @@
+{
+    url: "https://github.com/vanhauser-thc/thc-hydra",
+    description: {
+        en: "Hydra is a parallelized login cracker which supports numerous protocols to attack. It is very fast and flexible, and new modules are easy to add."
+    },
+
+    commands: [
+
+        // Run against host objects that have discovered services.
+        {
+            condition: "{{if and .ipv4 .services}} true {{else}} false {{end}}",
+            fingerprint: ["testssl {{.ipv4}}"],
+            returns: "issue",
+            dockeropt: ["-i", "--rm", "-e", "HYDRA_LOGIN_FILE", "-e", "HYDRA_PASSWORD_FILE", "-e", "HYDRA_MAX_TASKS"],
+        },
+        {
+            condition: "{{if and .ipv6 .services}} true {{else}} false {{end}}",
+            fingerprint: ["testssl {{.ipv6}}"],
+            returns: "issue",
+            dockeropt: ["-i", "--rm", "-e", "HYDRA_LOGIN_FILE", "-e", "HYDRA_PASSWORD_FILE", "-e", "HYDRA_MAX_TASKS"],
+        },
+    ],
+
+    importer: {
+        returns: "issue",
+    },
+
+    merger: {},
+}

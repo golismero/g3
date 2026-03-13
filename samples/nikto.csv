@@ -1,0 +1,6 @@
+"Nikto - v2.1.5/2.1.5"
+"example.com","93.184.216.34","80","","","","ECS (bsa/EB18)"
+"example.com","93.184.216.34SCALAR(0x557ad8349880)"80","OSVDB-0","GET","/","Server leaks inodes via ETags, header found with file /, fields: 0x3147526947+ident "
+"example.com","93.184.216.34SCALAR(0x557ad8349880)"80","OSVDB-0","GET","/","The anti-clickjacking X-Frame-Options header is not present."
+"example.com","93.184.216.34SCALAR(0x557ad8349880)"80","OSVDB-0","GET","/","Uncommon header 'x-cache' found, with contents: HIT"
+"example.com","93.184.216.34SCALAR(0x557ad8349880)"80","OSVDB-0","OPTIONS","/","Allowed HTTP Methods: OPTIONS, GET, HEAD, POST "

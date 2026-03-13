@@ -1,0 +1,14 @@
+{
+          "Invocation"  : "testssl -6 -oJ test2.json [2606:2800:220:1:248:1893:25c8:1946]:443",
+          "at"          : "mario-ThinkPad-T14-Gen-1:/opt/testssl.sh/bin/openssl.Linux.x86_64",
+          "version"     : "3.1dev b337f50",
+          "openssl"     : "OpenSSL 1.0.2-chacha from Jan 18 17:12:17 2019",
+          "startTime"   : "1680698603",
+          "scanResult"  : [
+                            {
+                                "id"           : "scanProblem",
+                                "severity"     : "FATAL",
+                                "finding"      : "Can't connect to '[2606:2800:220:1:248:1893:25c8:1946]:443' Make sure a firewall is not between you and your scanning target!"
+                           }          ],
+                    "scanTime"  : "Scan interrupted"
+}

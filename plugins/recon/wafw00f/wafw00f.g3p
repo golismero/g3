@@ -1,0 +1,27 @@
+{
+    url: "https://github.com/EnableSecurity/wafw00f",
+    description: {
+        en: "WAFW00F allows one to identify and fingerprint Web Application Firewall (WAF) products protecting a website.",
+    },
+
+    image: "golismero3/wafw00f",
+
+    commands: [
+        {
+            condition: "{{if .domain}} true {{else}} false {{end}}",
+            fingerprint: ["wafw00f https://{{.domain}}"],
+            command: ["{{.domain}}"],
+            returns: "url",
+        },
+        {
+            condition: "{{if .host}} true {{else}} false {{end}}",
+            fingerprint: ["wafw00f {{.host}}"],
+            command: ["{{.host}}"],
+            returns: "url",
+        },
+    ],
+
+    importer: {
+        returns: "url",
+    },
+}

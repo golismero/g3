@@ -1,0 +1,34 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "src/g3"
+		},
+		{
+			"path": "src/g3api"
+		},
+		{
+			"path": "src/g3cli"
+		},
+		{
+			"path": "src/g3config"
+		},
+		{
+			"path": "src/g3lib"
+		},
+		{
+			"path": "src/g3log"
+		},
+		{
+			"path": "src/g3scanner"
+		},
+		{
+			"path": "src/g3worker"
+		}
+	],
+	"settings": {
+		"makefile.configureOnOpen": false
+	}
+}

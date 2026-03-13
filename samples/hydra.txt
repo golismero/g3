@@ -1,0 +1,14 @@
+# Hydra v9.2 run at 2023-06-26 19:27:30 on 192.168.1.1 ssh (hydra -L resources/wordlists/top-usernames-shortlist.txt -P resources/wordlists/twitter-banned.txt -o test.hydra 192.168.1.1 ssh)
+# Hydra v9.2 run at 2023-06-28 10:56:35 on 192.168.1.1 ssh (hydra -L resources/wordlists/top-usernames-shortlist.txt -P resources/wordlists/twitter-banned.txt -o test.hydra ssh://192.168.1.1:22)
+# Hydra v9.2 run at 2023-06-30 10:31:39 on 127.0.0.1 ftp (hydra -l username -p password -o private/test.hydra ftp://127.0.0.1)
+# Hydra v9.2 run at 2023-06-30 10:32:08 on localhost ftp (hydra -l username -p password -o private/test.hydra ftp://localhost)
+# Hydra v9.2 run at 2023-06-30 10:33:37 on localhost ftp (hydra -l username -p password -o private/test.hydra ftp://localhost)
+[21][ftp] host: localhost   login: username   password: password
+# Hydra v9.2 run at 2023-06-30 10:34:21 on localhost ftp (hydra -l username -p password -o private/test.hydra ftp://localhost)
+[21][ftp] host: localhost   login: username   password: password
+# Hydra v9.2 run at 2023-06-30 10:35:05 on localhost ftp (hydra -l username -p password -o private/test.hydra ftp://localhost)
+# Hydra v9.2 run at 2023-06-30 10:35:16 on localhost ftp (hydra -l username -p password: password -o private/test.hydra ftp://localhost)
+[21][ftp] host: localhost   login: username   password: password: password
+# Hydra v9.2 run at 2023-06-30 10:36:41 on localhost ftp (hydra -l username -p password: password -o private/test.hydra ftp://localhost)
+# Hydra v9.2 run at 2023-06-30 10:37:00 on localhost ftp (hydra -l login: fake password: fake -p password -o private/test.hydra ftp://localhost)
+# Hydra v9.2 run at 2023-06-30 10:37:35 on localhost ftp (hydra -l login: fake password: fake -p password -o private/test.hydra ftp://localhost)

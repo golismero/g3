@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Upload file</title>
+    <script>
+
+        var trashcan = "data:image/png;base64,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LmNvbS90aWZmLzEuMC8iCiAgICB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iCiAgIHhtcE1NOkRvY3VtZW50SUQ9ImdpbXA6ZG9jaWQ6Z2ltcDozNTlmYTY1YS03MmUzLTQxYmQtOTVjNS01ZDI4MWQ4N2YxOTIiCiAgIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6ZjQzYTExNzMtYjliMi00Nzk3LWI5NjItMjAyZjhhYmEzNDY0IgogICB4bXBNTTpPcmlnaW5hbERvY3VtZW50SUQ9InhtcC5kaWQ6YzBhZjNlNGItNDFjMi00NTE2LWEwZGEtN2U0ZmE1YjcwZjdiIgogICBkYzpGb3JtYXQ9ImltYWdlL3BuZyIKICAgR0lNUDpBUEk9IjIuMCIKICAgR0lNUDpQbGF0Zm9ybT0iTGludXgiCiAgIEdJTVA6VGltZVN0YW1wPSIxNjg3NjkxMTkxOTAxMTY1IgogICBHSU1QOlZlcnNpb249IjIuMTAuMzAiCiAgIHRpZmY6T3JpZW50YXRpb249IjEiCiAgIHhtcDpDcmVhdG9yVG9vbD0iR0lNUCAyLjEwIj4KICAgPHhtcE1NOkhpc3Rvcnk+CiAgICA8cmRmOlNlcT4KICAgICA8cmRmOmxpCiAgICAgIHN0RXZ0OmFjdGlvbj0ic2F2ZWQiCiAgICAgIHN0RXZ0OmNoYW5nZWQ9Ii8iCiAgICAgIHN0RXZ0Omluc3RhbmNlSUQ9InhtcC5paWQ6YjBhOThiOTAtZWY4Mi00MjI2LWFkMWUtNjkzZWI0ZDQ1M2FjIgogICAgICBzdEV2dDpzb2Z0d2FyZUFnZW50PSJHaW1wIDIuMTAgKExpbnV4KSIKICAgICAgc3RFdnQ6d2hlbj0iMjAyMy0wNi0yNVQxMzowNjozMSswMjowMCIvPgogICAgPC9yZGY6U2VxPgogICA8L3htcE1NOkhpc3Rvcnk+CiAgPC9yZGY6RGVzY3JpcHRpb24+CiA8L3JkZjpSREY+CjwveDp4bXBtZXRhPgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAKICAgICAgICAgICAgICAgICAgICAgICAgICAgCjw/eHBhY2tldCBlbmQ9InciPz51zAl9AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH5wYZCwYfssMpvQAAAuRJREFUWMPtl0FPGzkUx3/22MmEAQISSkg2CAkJoR5RxXFbaSMkPgEnvgMHLhx2ey8fhjN3jssBkgtCApGAgACRItoMEczYvZQplJLOjLK0h30n229s/997/7/tEaSwy8vLnTAM3wJYaxFCAFAqlUTStRJPqNVqdnt7m6OjI4QQhGEIQKVSYWpqiuXl5URrqpcc5+fn9kfje3t7tNtt1tbWosgBNjc3abfbL87TWn+cmJhYj5WBlZUVWyqVor7neeTz+TTVIpfLUSwWabVaVKtVZmdnxU8zoLVmeno66lcqFbTWpLWZmRmKxSKdTueZT8YiikhMFYQQ0bwHnsTmwPz8PFtbW9EC+Xwex3FigxJCIKWMNh4fH8d1XVZXV+Or4MPf/9i/3v2J4ygmCgWklBhrCcMQrTWZmCWxgFKK1vUVCwsLIrYK/t3Z4fPnT0gp8Tyvr2KFADeXi6K35qkQdEbz7v37ZDIs/1Fm7s0bhBAMDw+jtUapb5/f3d1FG7qu+6xEj21oaOhFn+xXx2w2i+u6NBoNms0mmUwGpRTNZpP9/f0oO1dXV+zu7nJ6egpAt9ulXq9Tr9d/WqIXARhjGB0dpdVq4fs+BwcHWGvpdDpcX19zf3/P4eEhAMfHx/R6PWq1GgAnJyd0u13Ozs64ublJB+B7pj+0jTFR/3H7sdy+H08N4Amb7VNiSSkZhKVaRQjRl3T/KYCHQyYIgoEAUInQSvnkCn71DBhjnnHh1UvwywGkuTn7yVEOevMfbdYvawMD4DgOUsrEJZL9GB83xUqp1OpQ/Rgfl4RBEKQm58BJ+D+AV7kLkt6aqc8BY8zX9yCMjY0hpWRkZATHcbi9vWVycjLyWWspl8tR/+Ep5nkemUwm+b/h+vq6nZubo1Ao4Ps+ruuilMIYQxAEBEGA67pR1L7vR2ABer0eSim01lxcXLC0tES5XBaxATQaDbuxsUE2m40iSCM1IQSLi4tUq1XB72hfAFZxCpTzlo0WAAAAAElFTkSuQmCC";
+
+        function Login(username, password) {
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", "/api/auth/login", false);
+            xhttp.setRequestHeader("Content-type", "application/json");
+            xhttp.send("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}");
+            if (xhttp.status === 200) {
+                var obj = JSON.parse(xhttp.responseText);
+                return obj.data;
+            } else {
+                document.getElementById("uploadFile").disabled = true;
+                document.getElementById("uploadButton").disabled = true;
+                throw new Error('Request failed: ' + xhttp.statusText);
+            }
+        }
+
+        function GetTicket(token) {
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", "/api/auth/ticket", false);
+            xhttp.setRequestHeader("Content-type", "application/json");
+            xhttp.send("{\"token\":\"" + token + "\"}");
+            if (xhttp.status === 200) {
+                var obj = JSON.parse(xhttp.responseText);
+                return obj.data;
+            } else {
+                document.getElementById("uploadFile").disabled = true;
+                document.getElementById("uploadButton").disabled = true;
+                throw new Error('Request failed: ' + xhttp.statusText);
+            }
+        }
+
+        function PopulateFileList(token) {
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", "/api/file/ls", false);
+            xhttp.setRequestHeader("Content-type", "application/json");
+            xhttp.send("{\"token\":\"" + token + "\"}");
+            if (xhttp.status === 200) {
+
+                // Get the table with the file list.
+                var t = document.getElementById("fileList");
+
+                // Delete the previously existing rows, if any.
+                // Do not delete the header row.
+                let r = t.rows.length - 1;
+                while (r > 0) {
+                    console.log(r);
+                    t.deleteRow(r);
+                    r--;
+                }
+
+                // Parse the response.
+                var obj = JSON.parse(xhttp.responseText);
+                if (obj === null || obj.data === null) {
+                    return;
+                }
+
+                // Insert a new row for each file.
+                let i = 0;
+                while (i < obj.data.length) {
+                    var item = obj.data[i];
+                    var tr = document.createElement("tr");
+                    var td = document.createElement("td");
+                    var a = document.createElement('a');
+                    var linkText = document.createTextNode(item.name);
+                    a.title = item.name;
+                    a.href = "/api/file/download?fileid=" + item.fileid;
+                    a.appendChild(linkText);
+                    td.appendChild(a);
+                    tr.appendChild(td);
+                    td = document.createElement("td");
+                    td.appendChild(document.createTextNode(item.size));
+                    tr.appendChild(td);
+                    td = document.createElement("td");
+                    td.appendChild(document.createTextNode(new Date(item.ts * 1e3).toISOString()));
+                    tr.appendChild(td);
+                    td = document.createElement("td");
+                    var img = document.createElement("img");
+                    img.src = trashcan;
+                    img.role = "button";
+                    img.id = "img-" + item.fileid;
+                    img.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        var token = document.getElementById("authTicket").value;
+                        var fileid = e.currentTarget.id.slice(4);
+                        DeleteFile(token, fileid);
+                    })
+                    td.appendChild(img);
+                    tr.appendChild(td);
+                    tr.id = item.fileid;
+                    t.appendChild(tr);
+                    //console.log(item.fileid);
+                    i++;
+                }
+
+            // Throw an exception on error.
+            } else {
+                throw new Error('Request failed: ' + xhttp.statusText);
+            }
+        }
+
+        function DeleteFile(token, fileid) {
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", "/api/file/rm", false);
+            xhttp.setRequestHeader("Content-type", "application/json");
+            xhttp.send("{\"token\":\"" + token + "\", \"fileid\": \"" + fileid + "\"}");
+            if (xhttp.status === 200) {
+                document.getElementById(fileid).remove();
+            } else {
+                throw new Error('Request failed: ' + xhttp.statusText);
+            }
+        }
+
+        function HandleFileUpload(event) {
+            const form = event.currentTarget;
+            const url = new URL(form.action);
+            const formData = new FormData(form);
+            const fetchOptions = {
+                method: form.method,
+            };
+            fetchOptions.body = formData;
+            fetch(url, fetchOptions).then(function(response) {
+                var token = document.getElementById("authTicket").value;
+                PopulateFileList(token);
+            });
+            event.preventDefault();
+        }
+
+        </script>
+    </head>
+    <body>
+        <form enctype="multipart/form-data" action="/api/file/upload" method="post" id="uploadForm">
+            <input type="hidden" name="auth" id="authTicket" />
+            <input type="file" name="file" id="uploadFile" />
+            <input type="submit" value="upload" id="uploadButton" />
+        </form>
+        <table id="fileList">
+            <tr id="fileListHeader">
+                <td><b>Name</b></td>
+                <td><b>Size</b></td>
+                <td><b>Last modified</b></td>
+                <td></td>
+            </tr>
+        </table>
+        <script>
+            var token = Login("admin", "admin")
+            var ticket = GetTicket(token)
+            document.getElementById("authTicket").value = ticket
+            var date = new Date();
+            date.setTime(date.getTime() + 60000);
+            document.cookie = "auth=" + ticket + "; expires=" + date.toUTCString() + "; path=/api/file/";
+            PopulateFileList(token, ticket)
+            var form = document.getElementById("uploadForm");
+            form.addEventListener('submit', HandleFileUpload);
+        </script>
+    </body>
+</html>

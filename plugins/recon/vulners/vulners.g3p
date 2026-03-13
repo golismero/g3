@@ -1,0 +1,26 @@
+{
+    url: "https://vulners.com/",
+    description: {
+        en: "Vulners is a vulnerability database enriched with millions of CVEs, exploits and security articles that provides varied tools and services for vulnerability management.",
+    },
+    image: "golismero3/vulners",
+    merger: {},
+    commands: [
+
+        // Run against hosts, which are currently the only data type that contains CPE information.
+        // This will be expanded as more plugins are added.
+        {
+            condition: "{{if and .ipv4 (find . \"cpe\")}} true {{else}} false {{end}}",
+            fingerprint: ["vulners {{.ipv4}}"],
+            dockeropt: ["-i", "--rm", "--net", "g3net", "-e", "VULNERS_API_KEY", "-e", "VULNERS_PROXY_HOST", "-e", "VULNERS_PROXY_PORT"],
+            returns: "issue",
+        },
+        {
+            condition: "{{if and .ipv6 (find . \"cpe\")}} true {{else}} false {{end}}",
+            fingerprint: ["vulners {{.ipv6}}"],
+            dockeropt: ["-i", "--rm", "--net", "g3net", "-e", "VULNERS_API_KEY", "-e", "VULNERS_PROXY_HOST", "-e", "VULNERS_PROXY_PORT"],
+            returns: "issue",
+        },
+
+    ],
+}

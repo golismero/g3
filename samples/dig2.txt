@@ -1,0 +1,20 @@
+
+; <<>> DiG 9.16.1-Ubuntu <<>> -t any www.alligatorcon.eu
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 15734
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 65494
+;; QUESTION SECTION:
+;www.alligatorcon.eu.		IN	ANY
+
+;; ANSWER SECTION:
+www.alligatorcon.eu.	10749	IN	CNAME	alligatorcon.eu.
+
+;; Query time: 49 msec
+;; SERVER: 127.0.0.53#53(127.0.0.53)
+;; WHEN: lun may 01 17:24:51 CEST 2023
+;; MSG SIZE  rcvd: 62
+

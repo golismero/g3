@@ -1,0 +1,27 @@
+# Commments can only be used as whole lines, not at the end of a line.
+# Empty lines are ignored.
+
+# The mode command defines the execution mode.
+# Can be one of: sequential, parallel.
+# If ommitted, the default is set by an environment variable.
+mode parallel
+#mode sequential
+
+# The target command can define simple objects to be used as starting points for a scan.
+# One or more arguments can be used.
+target 192.168.1.1
+target example.com
+
+# The import command allows loading output files from manually run tools.
+# The first argument is the tool that produced the output.
+# The second argument is the filename to load.
+import testssl samples/testssl.csv
+
+# Now we define the pipelines for the commands to run.
+# It's alright if they are repeated, the engine will figure out how to avoid duplicated tests.
+nmap-fast | testssl
+nmap-fast | vulners
+dig | nmap-fast | testssl
+dig | nmap-fast | vulners
+sublist3r | dig | nmap-fast | testssl
+sublist3r | dig | nmap-fast | vulners

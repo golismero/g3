@@ -1,0 +1,41 @@
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 22484
+;; flags: qr rd ra; QUERY: 1, ANSWER: 8, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 512
+;; QUESTION SECTION:
+;alligatorcon.eu.		IN	ANY
+
+;; ANSWER SECTION:
+alligatorcon.eu.	8204	IN	A	37.187.23.61
+alligatorcon.eu.	8204	IN	NS	ns-19-a.gandi.net.
+alligatorcon.eu.	8204	IN	NS	ns-245-b.gandi.net.
+alligatorcon.eu.	8204	IN	NS	ns-186-c.gandi.net.
+alligatorcon.eu.	8204	IN	SOA	ns1.gandi.net. hostmaster.gandi.net. 1682553600 10800 3600 604800 10800
+alligatorcon.eu.	8204	IN	MX	10 spool.mail.gandi.net.
+alligatorcon.eu.	8204	IN	MX	50 fb.mail.gandi.net.
+alligatorcon.eu.	8204	IN	TXT	"v=spf1 include:spf.mailjet.com include:outbound.mailhop.org include:16805373c.spf2.netcorecloud.net include:_mailcust.gandi.net -all"
+
+;; Query time: 15 msec
+;; SERVER: 8.8.8.8#53(8.8.8.8) (TCP)
+;; WHEN: Mon May 01 14:37:24 UTC 2023
+;; MSG SIZE  rcvd: 379
+
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 33068
+;; flags: qr rd ra ad; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 512
+;; QUESTION SECTION:
+;/tmp/tmp.j8B4z91EH5.		IN	ANY
+
+;; AUTHORITY SECTION:
+.			86391	IN	SOA	a.root-servers.net. nstld.verisign-grs.com. 2023050100 1800 900 604800 86400
+
+;; Query time: 16 msec
+;; SERVER: 8.8.8.8#53(8.8.8.8) (TCP)
+;; WHEN: Mon May 01 14:37:24 UTC 2023
+;; MSG SIZE  rcvd: 123
+

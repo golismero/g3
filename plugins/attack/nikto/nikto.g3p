@@ -1,0 +1,33 @@
+{
+    url: "https://github.com/sullo/nikto",
+    description: {
+        en: "Nikto is a free software command-line vulnerability scanner that scans webservers for dangerous files/CGIs, outdated server software and other problems.",
+    },
+
+    image: "golismero3/nikto",
+
+    commands: [
+
+        // Run against http:// urls.
+        {
+            condition: "{{if and .url (eq .scheme \"http\")}} true {{else}} false {{end}}",
+            fingerprint: ["nikto {{.host}}"],
+            command: ["-Display", "V", "-host", "{{.host}}"],
+            returns: "issue",
+        },
+
+        // Run against https:// urls.
+        {
+            condition: "{{if and .url (eq .scheme \"https\")}} true {{else}} false {{end}}",
+            fingerprint: ["nikto {{.host}}"],
+            command: ["-Display", "V", "-ssl", "-host", "{{.host}}"],
+            returns: "issue",
+        },
+    ],
+
+    importer: {
+        returns: "issue",
+    },
+
+    merger: {},
+}
