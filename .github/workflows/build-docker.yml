@@ -56,7 +56,7 @@ jobs:
         if: matrix.prep == 'go-deps'
         uses: actions/setup-go@v5
         with:
-          go-version: '1.20'
+          go-version: '1.25'
 
       # Three plugins (nikto, nmap, vulners) bake downloaded reference data
       # into their image at build time. The scripts live in ./misc/ and need

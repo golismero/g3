@@ -82,7 +82,7 @@ Plugins live under `plugins/*/`. Each plugin directory contains:
 
 ### Key Technologies
 
-- **Go 1.20+**, Kong (CLI), gorilla/websocket, golang-jwt, go-playground/validator, go-chart
+- **Go 1.25**, Kong (CLI), gorilla/websocket, golang-jwt, go-playground/validator, go-chart
 - **Python 3** for plugin importer/merger scripts
 - **MongoDB** — scan data; **MariaDB** — execution logs; **Redis** — report cache; **MQTT (Mosquitto)** — task queue
 - **Docker** — plugin isolation (worker mounts Docker socket to launch containers)
