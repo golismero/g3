@@ -165,7 +165,7 @@ services:
 
   # There is only one instance of the web application, so there's only one API.
   g3api:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3-bin:latest
     entrypoint: /bin/g3api
     restart: unless-stopped
     depends_on:
@@ -201,7 +201,7 @@ services:
   # In this example we only run two scans at a time, so there are only two scanners.
   # In production you'll need more!
   g3scanner1:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3-bin:latest
     entrypoint: /bin/g3scanner
     restart: unless-stopped
     depends_on:
@@ -230,7 +230,7 @@ services:
       - G3_LOG_LEVEL
 
   g3scanner2:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3-bin:latest
     entrypoint: /bin/g3scanner
     restart: unless-stopped
     depends_on:
@@ -268,7 +268,7 @@ services:
   # This is an easy way to ensure we don't have too many concurrent
   # nmap scans coming from the same machine.
   g3worker-nmap:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3-bin:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
@@ -294,7 +294,7 @@ services:
 
   # The following workers are all identical and run all plugins *except* the ones above.
   g3worker1:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3-bin:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
@@ -324,7 +324,7 @@ services:
       - VULNERS_PROXY_PORT
 
   g3worker2:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3-bin:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
@@ -354,7 +354,7 @@ services:
       - VULNERS_PROXY_PORT
 
   g3worker3:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3-bin:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
@@ -384,7 +384,7 @@ services:
       - VULNERS_PROXY_PORT
 
   g3worker4:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3-bin:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
