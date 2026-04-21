@@ -3,7 +3,7 @@ FROM python:3-alpine
 
 # Install python/pip and git.
 ENV PYTHONUNBUFFERED=1
-RUN apk add --update --no-cache git python3 python3-pip && ln -sf python3 /usr/bin/python && \
+RUN apk add --update --no-cache git python3 py3-pip && ln -sf python3 /usr/bin/python && \
     pip3 install --no-cache-dir --upgrade --root-user-action=ignore --break-system-packages pip setuptools && \
     rm -f /tmp/* /etc/apk/cache/*
 

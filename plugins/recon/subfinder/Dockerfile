@@ -3,7 +3,7 @@ FROM projectdiscovery/subfinder:latest
 
 # Install python/pip.
 ENV PYTHONUNBUFFERED=1
-RUN apk add --update --no-cache python3 python3-pip && ln -sf python3 /usr/bin/python && \
+RUN apk add --update --no-cache python3 py3-pip && ln -sf python3 /usr/bin/python && \
     pip3 install --no-cache-dir --upgrade --root-user-action=ignore --break-system-packages pip setuptools && \
     rm -f /tmp/* /etc/apk/cache/*
 
