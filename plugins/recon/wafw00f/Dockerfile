@@ -1,16 +1,13 @@
 # Official image.
 FROM python:3-alpine
 
-# Install python/pip and git.
+# Install python/pip and wafw00f.
 ENV PYTHONUNBUFFERED=1
-RUN apk add --update --no-cache git python3 py3-pip && ln -sf python3 /usr/bin/python && \
-    pip3 install --no-cache-dir --upgrade --root-user-action=ignore --break-system-packages pip setuptools && \
+RUN apk add --update --no-cache python3 py3-pip && ln -sf python3 /usr/bin/python && \
+    pip3 install --no-cache-dir --upgrade --root-user-action=ignore --break-system-packages wafw00f && \
     rm -f /tmp/* /etc/apk/cache/*
 
-# Install wafw00f.
 WORKDIR /app
-RUN git clone https://github.com/EnableSecurity/wafw00f.git . && \
-    python3 setup.py install
 
 # Add the Golismero3 wrapper.
 COPY g3p.sh /usr/bin/g3p

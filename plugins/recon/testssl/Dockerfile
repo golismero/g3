@@ -17,10 +17,10 @@ RUN test -n "${BUILD_VERSION}" \
     && mkdir -p /home/testssl/etc /home/testssl/bin \
     && chmod 755 /home/testssl/etc /home/testssl/bin
 
-# Install python/pip.
+# Install python.
 ENV PYTHONUNBUFFERED=1
-RUN apk add --update --no-cache python3 py3-pip && ln -sf python3 /usr/bin/python && \
-    pip3 install --no-cache-dir --upgrade --root-user-action=ignore --break-system-packages pip setuptools && \
+RUN apk add --update --no-cache python3 && \
+    ln -sf python3 /usr/bin/python && \
     rm -f /tmp/* /etc/apk/cache/*
 
 # Add the Golismero3 wrapper.
