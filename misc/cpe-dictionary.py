@@ -18,7 +18,7 @@ cpe_references = {}     # cpe -> [ href ]
 
 xml_filename = "official-cpe-dictionary_v2.3.xml"
 #xml_url = "https://nvd.nist.gov/feeds/xml/cpe/dictionary/" + xml_filename + ".gz"
-xml_url = "https://web.archive.org/web/20250729100426/https://nvd.nist.gov/feeds/xml/cpe/dictionary/" + xml_filename + ".gz"
+xml_url = "https://web.archive.org/web/20250729100426if_/https://nvd.nist.gov/feeds/xml/cpe/dictionary/" + xml_filename + ".gz"
 xml_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), xml_filename)
 
 titles_file = "cpe-titles.json"
