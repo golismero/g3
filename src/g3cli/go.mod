@@ -1,6 +1,6 @@
 module golismero.com/g3
 
-go 1.25
+go 1.25.0
 
 replace golismero.com/g3lib => ../g3lib
 
