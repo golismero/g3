@@ -1,0 +1,131 @@
+name: Build & Push Docker Images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BASE: ${{ github.repository_owner }}/g3
+  IMAGE_TAG: ${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
+
+jobs:
+  build-and-push:
+    name: Build & Push (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: bin
+            context: .
+            prep: go-deps
+          - image: hydra
+            context: plugins/attack/hydra
+          - image: nikto
+            context: plugins/attack/nikto
+            prep: osvdb2cve
+          - image: dig
+            context: plugins/misc/dig
+          - image: nmap
+            context: plugins/recon/nmap
+            prep: iana-descriptions
+          - image: subfinder
+            context: plugins/recon/subfinder
+          - image: sublist3r
+            context: plugins/recon/sublist3r
+          - image: testssl
+            context: plugins/recon/testssl
+          - image: vulners
+            context: plugins/recon/vulners
+            prep: cpe-dictionary
+          - image: wafw00f
+            context: plugins/recon/wafw00f
+    steps:
+      - uses: actions/checkout@v4
+
+      # Toolchains for prep steps. The Dockerfile for g3bin expects
+      # ./misc/deps.txt to exist before the build — it's generated from
+      # src/*/go.sum after `go mod tidy`, so Go must run on the host.
+      - name: Set up Go
+        if: matrix.prep == 'go-deps'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+
+      # Three plugins (nikto, nmap, vulners) bake downloaded reference data
+      # into their image at build time. The scripts live in ./misc/ and need
+      # beautifulsoup4 + lxml (see misc/requirements.txt).
+      - name: Set up Python
+        if: matrix.prep == 'osvdb2cve' || matrix.prep == 'iana-descriptions' || matrix.prep == 'cpe-dictionary'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install asset-generator dependencies
+        if: matrix.prep == 'osvdb2cve' || matrix.prep == 'iana-descriptions' || matrix.prep == 'cpe-dictionary'
+        run: pip install -r misc/requirements.txt
+
+      - name: Prep - collect Go module dependencies
+        if: matrix.prep == 'go-deps'
+        run: |
+          set -e
+          for d in src/*/; do (cd "$d" && go mod tidy); done
+          ./misc/collect-go-deps.py ./misc/deps.txt
+
+      - name: Prep - generate OSVDB to CVE map (nikto)
+        if: matrix.prep == 'osvdb2cve'
+        working-directory: plugins/attack/nikto
+        run: python3 ../../../misc/osvdb2cve.py
+
+      - name: Prep - generate IANA port descriptions (nmap)
+        if: matrix.prep == 'iana-descriptions'
+        working-directory: plugins/recon/nmap
+        run: python3 ../../../misc/iana-descriptions.py
+
+      - name: Prep - build CPE dictionary (vulners)
+        if: matrix.prep == 'cpe-dictionary'
+        working-directory: plugins/recon/vulners
+        run: python3 ../../../misc/cpe-dictionary.py
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ env.IMAGE_TAG }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache is shared across branches (content-addressed). If divergent
+          # dependencies cause thrashing, scope per branch by appending
+          # -${{ github.ref_name }} to the buildcache tag.
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-${{ matrix.image }}:buildcache,mode=max
+
+      # Remove orphaned (untagged) versions that accumulate every time a new
+      # build replaces :latest or :buildcache. Runs per-image so one image's
+      # cleanup failure doesn't block the others (fail-fast: false above).
+      - uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          package: g3-${{ matrix.image }}
+          delete-untagged: true
+          token: ${{ secrets.GITHUB_TOKEN }}
