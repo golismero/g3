@@ -1,6 +1,6 @@
 module golismero.com/g3worker
 
-go 1.25.0
+go 1.25
 
 replace golismero.com/g3lib => ../g3lib
 
