@@ -5,7 +5,7 @@ FROM python:3-alpine
 ENV PYTHONUNBUFFERED=1
 RUN apk add --update --no-cache git python3 && ln -sf python3 /usr/bin/python && \
     python3 -m ensurepip && \
-    pip3 install --no-cache-dir --upgrade --root-user-action=ignore pip setuptools && \
+    pip3 install --no-cache-dir --upgrade --root-user-action=ignore --break-system-packages pip setuptools && \
     rm -f /tmp/* /etc/apk/cache/*
 
 # Install wafw00f.
