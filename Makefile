@@ -44,7 +44,7 @@ ifdef GO
 	cd src; for d in */; do cd "$$d"; go mod tidy; cd ..; done
 endif
 	./misc/collect-go-deps.py ./misc/deps.txt
-	docker build -t golismero3/g3bin .
+	docker build -t ghcr.io/golismero3/g3 .
 
 # Build all of the Docker images for the plugins.
 ifdef GO
@@ -54,5 +54,5 @@ plugins:
 else
 plugins: docker
 	cd plugins && $(MAKE)
-	docker run --entrypoint /bin/g3config --volume $$(pwd):/app --volume /var/run/docker.sock:/var/run/docker.sock --env G3HOME=/app golismero3/g3bin
+	docker run --entrypoint /bin/g3config --volume $$(pwd):/app --volume /var/run/docker.sock:/var/run/docker.sock --env G3HOME=/app ghcr.io/golismero3/g3
 endif

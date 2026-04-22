@@ -163,16 +163,43 @@ services:
 
   ############################################################################
 
+  # One-shot init service that regenerates the plugin/i18n cache files under
+  # ./config/ from the sources in ./plugins/ and ./i18n/. Every app service
+  # below waits for this to exit 0 before starting. Runs on every `up` cycle
+  # (container is recreated); if you use `--no-recreate`, the previous cache
+  # is reused. For Kubernetes/Nomad deployments, replicate this as an init
+  # container — do not rely on an entrypoint fallback in the app services,
+  # since parallel replicas would race on the same config/ bind mount.
+  g3config:
+    image: ghcr.io/golismero/g3:latest
+    entrypoint: /bin/g3config
+    restart: "no"
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - ./plugins:/app/plugins:ro
+      - ./i18n:/app/i18n:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+
   # There is only one instance of the web application, so there's only one API.
   g3api:
-    image: ghcr.io/golismero/g3-bin:latest
+    image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3api
     restart: unless-stopped
     depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - redis
+      g3config:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      redis:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -201,14 +228,20 @@ services:
   # In this example we only run two scans at a time, so there are only two scanners.
   # In production you'll need more!
   g3scanner1:
-    image: ghcr.io/golismero/g3-bin:latest
+    image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3scanner
     restart: unless-stopped
     depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - redis
+      g3config:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      redis:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -230,14 +263,20 @@ services:
       - G3_LOG_LEVEL
 
   g3scanner2:
-    image: ghcr.io/golismero/g3-bin:latest
+    image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3scanner
     restart: unless-stopped
     depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - redis
+      g3config:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      redis:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -268,13 +307,18 @@ services:
   # This is an easy way to ensure we don't have too many concurrent
   # nmap scans coming from the same machine.
   g3worker-nmap:
-    image: ghcr.io/golismero/g3-bin:latest
+    image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
+      g3config:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -294,14 +338,20 @@ services:
 
   # The following workers are all identical and run all plugins *except* the ones above.
   g3worker1:
-    image: ghcr.io/golismero/g3-bin:latest
+    image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - vulners-proxy
+      g3config:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      vulners-proxy:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -324,14 +374,20 @@ services:
       - VULNERS_PROXY_PORT
 
   g3worker2:
-    image: ghcr.io/golismero/g3-bin:latest
+    image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - vulners-proxy
+      g3config:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      vulners-proxy:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -354,14 +410,20 @@ services:
       - VULNERS_PROXY_PORT
 
   g3worker3:
-    image: ghcr.io/golismero/g3-bin:latest
+    image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - vulners-proxy
+      g3config:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      vulners-proxy:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -384,14 +446,20 @@ services:
       - VULNERS_PROXY_PORT
 
   g3worker4:
-    image: ghcr.io/golismero/g3-bin:latest
+    image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - vulners-proxy
+      g3config:
+        condition: service_completed_successfully
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      vulners-proxy:
+        condition: service_started
     networks:
       - g3net
     volumes:

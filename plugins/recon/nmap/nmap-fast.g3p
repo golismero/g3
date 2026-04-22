@@ -5,7 +5,7 @@
         en: "Nmap is a free and open source utility for network discovery and security auditing."
     },
     url: "https://nmap.org/",
-    image: "golismero3/nmap",
+    image: "ghcr.io/golismero/nmap",
     commands: [
         {
             condition: "{{if .services}} false {{else}} {{if .ipv4}} true {{else}} false {{end}} {{end}}",

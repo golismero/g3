@@ -4,8 +4,6 @@
         en: "Sublist3r is a python tool designed to enumerate subdomains of websites using OSINT. It helps penetration testers and bug hunters collect and gather subdomains for the domain they are targeting.",
     },
 
-    image: "golismero3/sublist3r",
-
     commands: [
         {
             condition: "{{if .domain}} true {{else}} false {{end}}",

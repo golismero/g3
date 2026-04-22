@@ -11,7 +11,7 @@ Golismero3 is an open-source pentesting framework that orchestrates security too
 ```bash
 make all        # Build Go binaries, Docker image, plugins, and Python deps
 make bin        # Build only Go binaries to /bin/
-make docker     # Build golismero3/g3bin Docker image
+make docker     # Build g3 Docker image
 make plugins    # Build all plugin Docker images
 make install    # Install symlinks to /usr/bin/ (g3, g3api, g3cli, g3config, g3scanner, g3worker)
 make clean      # Clean compiled binaries
@@ -79,6 +79,8 @@ Plugins live under `plugins/*/`. Each plugin directory contains:
 - `g3p.sh` — Container entrypoint
 
 `g3config` scans plugin directories and writes a registry to `config/`.
+
+Plugin Docker images default to `ghcr.io/golismero/<plugin-name>` when a `.g3p` omits the `image:` field (see `src/g3config/g3config.go`). A `.g3p` can override with any image reference — local tag, third-party registry, fork namespace — so private deployments and forks don't need to patch the framework. Multiple plugins can also share one image (the three `nmap.g3p` variants all point to `ghcr.io/golismero/nmap`).
 
 ### Key Technologies
 

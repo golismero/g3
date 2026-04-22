@@ -8,7 +8,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_BASE: ${{ github.repository_owner }}/g3
   IMAGE_TAG: ${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
 
 jobs:
@@ -22,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: bin
+          - image: g3
             context: .
             prep: go-deps
           - image: hydra
@@ -104,7 +103,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-${{ matrix.image }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
             type=raw,value=${{ env.IMAGE_TAG }}
 
@@ -118,14 +117,14 @@ jobs:
           # Cache is shared across branches (content-addressed). If divergent
           # dependencies cause thrashing, scope per branch by appending
           # -${{ github.ref_name }} to the buildcache tag.
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-${{ matrix.image }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}-${{ matrix.image }}:buildcache,mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}:buildcache,mode=max
 
       # Remove orphaned (untagged) versions that accumulate every time a new
       # build replaces :latest or :buildcache. Runs per-image so one image's
       # cleanup failure doesn't block the others (fail-fast: false above).
       - uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          package: g3-${{ matrix.image }}
+          package: ${{ matrix.image }}
           delete-untagged: true
           token: ${{ secrets.GITHUB_TOKEN }}

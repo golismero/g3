@@ -4,8 +4,6 @@
         en: "testssl.sh is a free command line tool which checks a server's service on any port for the support of TLS/SSL ciphers, protocols as well as recent cryptographic flaws and more."
     },
 
-    image: "golismero3/testssl",
-
     commands: [
 
         // Run against host objects that have discovered services.

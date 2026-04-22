@@ -17,7 +17,7 @@
 
     // Docker image required for this tool.
     // These are images prepared especially for use with Golismero3.
-    image: "golismero3/nmap",
+    image: "ghcr.io/golismero/nmap",
 
     // Command definitions for this tool.
     //

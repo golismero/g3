@@ -4,8 +4,6 @@
         en: "The dig command in Linux is used to gather DNS information. It stands for Domain Information Groper, and it collects data about Domain Name Servers.",
     },
 
-    image: "golismero3/dig",
-
     // Only run against domain objects that do not have any discovered DNS records.
     // Run multiple commands, each for every DNS record type.
     commands: [

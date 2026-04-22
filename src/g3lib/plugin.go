@@ -47,8 +47,8 @@ type G3Plugin struct {
 	URL         string              `json:"url"                 validate:"url"`             // URL for humans.
 	Image       string              `json:"image"`                                          // Docker image.
 	Commands    []G3ToolCommand     `json:"commands,omitempty"  validate:"omitempty,dive"`  // (Optional) Array of commands and conditions.
-	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty,dive"`  // (Optional) Command for importing files.
-	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty,dive"`  // (Optional) Command for merging issues.
+	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty"`       // (Optional) Command for importing files.
+	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty"`       // (Optional) Command for merging issues.
 }
 func (plugin G3Plugin) String() string {
 	output := ""

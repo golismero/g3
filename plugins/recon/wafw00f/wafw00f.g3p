@@ -4,8 +4,6 @@
         en: "WAFW00F allows one to identify and fingerprint Web Application Firewall (WAF) products protecting a website.",
     },
 
-    image: "golismero3/wafw00f",
-
     commands: [
         {
             condition: "{{if .domain}} true {{else}} false {{end}}",

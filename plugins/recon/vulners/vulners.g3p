@@ -3,7 +3,6 @@
     description: {
         en: "Vulners is a vulnerability database enriched with millions of CVEs, exploits and security articles that provides varied tools and services for vulnerability management.",
     },
-    image: "golismero3/vulners",
     merger: {},
     commands: [
 

@@ -285,7 +285,7 @@ services:
       - ./volumes/redis:/data
 
   g3api:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3
     entrypoint: /bin/g3api
     restart: unless-stopped
     depends_on:
@@ -315,7 +315,7 @@ services:
       - G3_LOG_LEVEL
 
   g3scanner1:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3
     entrypoint: /bin/g3scanner
     restart: unless-stopped
     depends_on:
@@ -345,7 +345,7 @@ services:
   # ...insert 3 more of these...
 
   g3worker1:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
@@ -370,7 +370,7 @@ services:
   # ...insert 3 more of these...
 
   g3worker5:
-    image: golismero3/g3bin
+    image: ghcr.io/golismero/g3
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:

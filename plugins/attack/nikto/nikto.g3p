@@ -4,8 +4,6 @@
         en: "Nikto is a free software command-line vulnerability scanner that scans webservers for dangerous files/CGIs, outdated server software and other problems.",
     },
 
-    image: "golismero3/nikto",
-
     commands: [
 
         // Run against http:// urls.

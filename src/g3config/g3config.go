@@ -320,7 +320,7 @@ func main() {
 
 		// If the image is missing, add it based on the plugin name.
 		if metadata.Image == "" {
-			metadata.Image = "golismero3/" + metadata.Name
+			metadata.Image = "ghcr.io/golismero/" + metadata.Name
 		}
 
 		// If the tool description is missing, add a default description.
@@ -328,9 +328,9 @@ func main() {
 			metadata.Description["en"] = "Golismero3 integration with " + metadata.Name + "."
 		}
 
-		// If the tool URL is missing, add it based on the Docker image name.
+		// If the tool URL is missing, just point to the GitHub repository.
 		if metadata.URL == "" {
-			metadata.URL = "https://hub.docker.com/r/" + metadata.Image
+			metadata.URL = "https://github.com/golismero/g3"
 		}
 
 		// Validate the existence of the Docker image, either local or remote.
