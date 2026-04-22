@@ -24,7 +24,6 @@ require (
 	github.com/ydb-platform/ydb-go-sdk/v3 v3.134.1
 	go.mongodb.org/mongo-driver v1.17.9
 	golang.org/x/crypto v0.50.0
-	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
 

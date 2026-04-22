@@ -4,15 +4,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"runtime/debug"
+	"slices"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
-	"golang.org/x/exp/maps"
 
 	log "golismero.com/g3log"
 )
@@ -405,7 +406,7 @@ func SubscribeAsWorker(client MessageQueueClient, tools []string, callback TaskH
 	})
 
 	// Return the list of topics being subscribed to.
-	return maps.Keys(filters)
+	return slices.Sorted(maps.Keys(filters))
 }
 
 // Subscribe to the cancellation topic for workers.

@@ -7,7 +7,6 @@ replace golismero.com/g3lib => ../g3lib
 replace golismero.com/g3log => ../g3log
 
 require (
-	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
 	golismero.com/g3lib v0.0.0-00010101000000-000000000000
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )

@@ -5,15 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 
 	"golismero.com/g3lib"
 	log "golismero.com/g3log"
@@ -334,7 +333,7 @@ func main() {
 	var selected []string
 	workerPluginsList := strings.TrimSpace(os.Getenv(G3_WORKER_PLUGINS))
 	if workerPluginsList == "" {
-		selected = maps.Keys(plugins)
+		selected = slices.Sorted(maps.Keys(plugins))
 	} else if workerPluginsList[0:1] != "!" {			// allowlist
 		selected = strings.Fields(strings.Replace(workerPluginsList, ",", " ", -1))
 		for _, name := range selected {

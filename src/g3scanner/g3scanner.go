@@ -226,7 +226,7 @@ func main() {
 
 		// Check the execution mode is supported.
 		if msg.Mode != "parallel" && msg.Mode != "sequential" {
-			log.Errorf("Unsupported execution mode: " + msg.Mode)
+			log.Error("Unsupported execution mode: " + msg.Mode)
 			g3lib.SendScanFailed(mq_client, msg.ScanID, "Unsupported execution mode")
 			return
 		}
