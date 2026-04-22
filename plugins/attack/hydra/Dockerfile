@@ -12,12 +12,9 @@ RUN apt-get update \
     rm -rf /var/lib/apt/lists/*
 
 # Add the Golismero3 wrappers.
-COPY g3p.py /usr/bin/g3p
-RUN chmod +x /usr/bin/g3p
-COPY g3i.py /usr/bin/g3i
-RUN chmod +x /usr/bin/g3i
-COPY g3m.py /usr/bin/g3m
-RUN chmod +x /usr/bin/g3m
+COPY --chmod=0755 g3p.py /usr/bin/g3p
+COPY --chmod=0755 g3i.py /usr/bin/g3i
+COPY --chmod=0755 g3m.py /usr/bin/g3m
 
 # Go back to the unprivileged user.
 USER 10001:10001

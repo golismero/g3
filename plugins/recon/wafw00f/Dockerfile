@@ -10,10 +10,8 @@ RUN apk add --update --no-cache python3 py3-pip && ln -sf python3 /usr/bin/pytho
 WORKDIR /app
 
 # Add the Golismero3 wrapper.
-COPY g3p.sh /usr/bin/g3p
-RUN chmod +x /usr/bin/g3p
-COPY g3i.py /usr/bin/g3i
-RUN chmod +x /usr/bin/g3i
+COPY --chmod=0755 g3p.sh /usr/bin/g3p
+COPY --chmod=0755 g3i.py /usr/bin/g3i
 
 # Change the entrypoint to our wrapper.
 ENTRYPOINT ["/usr/bin/g3p"]

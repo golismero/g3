@@ -10,10 +10,7 @@ RUN apk update && \
 RUN pip install --no-cache-dir -U lxml
 WORKDIR /app/
 COPY osvdb2cve.json /app/
-COPY g3p.sh /usr/bin/g3p
-RUN chmod +x /usr/bin/g3p
-COPY g3i.py /usr/bin/g3i
-RUN chmod +x /usr/bin/g3i
-COPY g3m.py /usr/bin/g3m
-RUN chmod +x /usr/bin/g3m
+COPY --chmod=0755 g3p.sh /usr/bin/g3p
+COPY --chmod=0755 g3i.py /usr/bin/g3i
+COPY --chmod=0755 g3m.py /usr/bin/g3m
 ENTRYPOINT ["/usr/bin/g3p"]

@@ -54,5 +54,5 @@ plugins:
 else
 plugins: docker
 	cd plugins && $(MAKE)
-	docker run --entrypoint /bin/g3config --volume $$(pwd):/app --volume /var/run/docker.sock:/var/run/docker.sock --env G3HOME=/app ghcr.io/ghcr.io/golismero/g3
+	docker compose run g3config
 endif

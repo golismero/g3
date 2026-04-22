@@ -7,8 +7,6 @@ WORKDIR /app
 COPY cpe.db /app
 #COPY mock.json /app
 #COPY mock2.json /app
-COPY g3p.py /usr/bin/g3p
-RUN chmod +x /usr/bin/g3p
-COPY g3m.py /usr/bin/g3m
-RUN chmod +x /usr/bin/g3m
+COPY --chmod=0755 g3p.py /usr/bin/g3p
+COPY --chmod=0755 g3m.py /usr/bin/g3m
 ENTRYPOINT ["/usr/bin/g3p"]

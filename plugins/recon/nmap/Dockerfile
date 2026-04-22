@@ -46,11 +46,8 @@ RUN apk add --update --no-cache --virtual .build-deps \
 # Add the Golismero3 wrapper
 WORKDIR /app
 RUN pip install --no-cache-dir --root-user-action=ignore python-libnmap
-COPY g3p.sh /usr/bin/g3p
-RUN chmod +x /usr/bin/g3p
-COPY g3i.py /usr/bin/g3i
-RUN chmod +x /usr/bin/g3i
-COPY g3m.py /usr/bin/g3m
-RUN chmod +x /usr/bin/g3m
+COPY --chmod=0755 g3p.sh /usr/bin/g3p
+COPY --chmod=0755 g3i.py /usr/bin/g3i
+COPY --chmod=0755 g3m.py /usr/bin/g3m
 COPY iana-descriptions.json .
 ENTRYPOINT ["/usr/bin/g3p"]
