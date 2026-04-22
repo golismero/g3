@@ -1,3 +1,3 @@
 .PHONY: all
 all:
-	docker build -t golismero3/hydra .
+	docker build -t ghcr.io/ghcr.io/golismero/hydra .

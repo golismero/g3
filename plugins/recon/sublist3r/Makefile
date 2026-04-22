@@ -1,3 +1,3 @@
 .PHONY: all
 all:
-	docker build -t golismero3/sublist3r .
+	docker build -t ghcr.io/golismero/sublist3r .

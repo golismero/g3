@@ -1,3 +1,3 @@
 .PHONY: all
 all:
-	docker build -t golismero3/dig .
+	docker build -t ghcr.io/golismero/dig .
