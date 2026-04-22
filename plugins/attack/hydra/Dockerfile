@@ -6,8 +6,7 @@ USER root:root
 
 # Need Python for the wrappers.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        python3 python3-dev python3-pip \
+    && apt-get install -y --no-install-recommends python3 \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

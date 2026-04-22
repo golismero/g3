@@ -1,11 +1,9 @@
 # Official image.
 FROM python:3-alpine
 
-# Install python/pip and wafw00f.
+# Install wafw00f (python3 and pip already in the base image).
 ENV PYTHONUNBUFFERED=1
-RUN apk add --update --no-cache python3 py3-pip && ln -sf python3 /usr/bin/python && \
-    pip3 install --no-cache-dir --upgrade --root-user-action=ignore --break-system-packages wafw00f && \
-    rm -f /tmp/* /etc/apk/cache/*
+RUN pip3 install --no-cache-dir --root-user-action=ignore --break-system-packages wafw00f
 
 WORKDIR /app
 

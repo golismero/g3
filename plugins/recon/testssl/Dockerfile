@@ -19,9 +19,7 @@ RUN test -n "${BUILD_VERSION}" \
 
 # Install python.
 ENV PYTHONUNBUFFERED=1
-RUN apk add --update --no-cache python3 && \
-    ln -sf python3 /usr/bin/python && \
-    rm -f /tmp/* /etc/apk/cache/*
+RUN apk add --no-cache python3
 
 # Add the Golismero3 wrapper.
 COPY --chmod=0755 g3p.py /usr/bin/g3p

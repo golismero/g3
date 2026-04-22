@@ -1,11 +1,9 @@
 # Official image.
 FROM projectdiscovery/subfinder:latest
 
-# Install python/pip.
+# Python 3 for the importer wrapper.
 ENV PYTHONUNBUFFERED=1
-RUN apk add --update --no-cache python3 py3-pip && ln -sf python3 /usr/bin/python && \
-    pip3 install --no-cache-dir --upgrade --root-user-action=ignore --break-system-packages pip setuptools && \
-    rm -f /tmp/* /etc/apk/cache/*
+RUN apk add --no-cache python3
 
 # Add the Golismero3 wrapper.
 WORKDIR /app
