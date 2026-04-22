@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Toolchains for prep steps. The Dockerfile for g3bin expects
+      # Toolchains for prep steps. The Dockerfile for g3 expects
       # ./misc/deps.txt to exist before the build — it's generated from
       # src/*/go.sum after `go mod tidy`, so Go must run on the host.
       - name: Set up Go
