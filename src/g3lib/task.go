@@ -22,7 +22,7 @@ const MQTT_URL = "MQTT_URL"
 
 const MQTT_QOS = 2
 const MQTT_PERSIST = false
-const MQTT_QUIESCE = 3
+const MQTT_QUIESCE = 15
 
 const G3SCANNERSUBTOPIC     = "$share/g3scanner/scan"
 const G3SCANNERPUBTOPIC     = "scan"

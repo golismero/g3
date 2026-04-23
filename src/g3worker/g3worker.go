@@ -470,7 +470,9 @@ func main() {
 
 		// If we received SIGTERM, just drop incoming messages.
 		if cancelled {
-			g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 
@@ -532,7 +534,9 @@ func main() {
 		}
 		if len(plugin.Commands) <= task.Index {
 			log.Errorf("Tool does not have command #%d", task.Index)
-			g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 

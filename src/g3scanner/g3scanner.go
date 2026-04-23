@@ -202,7 +202,9 @@ func main() {
 		currentScanID = ""
 
 		// Cancel all of the running tasks.
-		g3lib.SendTaskCancel(mq_client, msg.ScanID, runningTasks.ToArray())
+		if err := g3lib.SendTaskCancel(mq_client, msg.ScanID, runningTasks.ToArray()); err != nil {
+			log.Error(err.Error())
+		}
 
 		// Send a fake response to wake up the scanner goroutine.
 		var m g3lib.G3Response
@@ -227,14 +229,18 @@ func main() {
 		// Check the execution mode is supported.
 		if msg.Mode != "parallel" && msg.Mode != "sequential" {
 			log.Error("Unsupported execution mode: " + msg.Mode)
-			g3lib.SendScanFailed(mq_client, msg.ScanID, "Unsupported execution mode")
+			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Unsupported execution mode"); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 
 		// Check the script doesn't go over the maximum number of pipelines, if any was set.
 		if maxPipelines > 0 && len(msg.Pipelines) > maxPipelines {
 			log.Errorf("Got script with %d pipelines but we can only run up to %d, aborted.", len(msg.Pipelines), maxPipelines)
-			g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Too many pipelines in script (>%d)", maxPipelines))
+			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Too many pipelines in script (>%d)", maxPipelines)); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 
@@ -243,7 +249,9 @@ func main() {
 			for _, pipeline := range msg.Pipelines {
 				if len(pipeline) > maxPipeDepth {
 					log.Errorf("Got script with a pipeline that's %d commands deep, but we can only run up to %d, aborted.", len(pipeline), maxPipeDepth)
-					g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Pipeline too deep in script (>%d)", maxPipeDepth))
+					if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Pipeline too deep in script (>%d)", maxPipeDepth)); err != nil {
+						log.Error(err.Error())
+					}
 					return
 				}
 			}
@@ -291,7 +299,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	mdb_client, err := g3lib.ConnectToDatastore()
 	if err != nil {
 		log.Error(err.Error())
-		g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+			log.Error(err.Error())
+		}
 		return
 	}
 	defer func() {
@@ -304,7 +314,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	rdb_client, err := g3lib.ConnectToKeyValueStore()
 	if err != nil {
 		log.Error(err.Error())
-		g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+			log.Error(err.Error())
+		}
 		return
 	}
 	defer func() {
@@ -321,21 +333,27 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 
 	// Notify the scan has started.
-	g3lib.SendScanProgress(mq_client, msg.ScanID, 0, totalScanSteps)
+	if err := g3lib.SendScanProgress(mq_client, msg.ScanID, 0, totalScanSteps); err != nil {
+		log.Error(err.Error())
+	}
 
 	// Load the array of starting data.
 	// This would be the targets and any data imported previously.
 	startData, err := g3lib.GetScanDataIDs(mdb_client, msg.ScanID)
 	if err != nil {
 		log.Error(err.Error())
-		g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+			log.Error(err.Error())
+		}
 		return
 	}
 
 	// If we have no starting data, there's no way to run any pipelines.
 	if len(startData) == 0 {
 		log.Error("No targets found for scan, aborting.")
-		g3lib.SendScanFailed(mq_client, msg.ScanID, "No targets found for scan")
+		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "No targets found for scan"); err != nil {
+			log.Error(err.Error())
+		}
 		return
 	}
 
@@ -343,7 +361,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	// This can happen if the scan script consisted entirely of imports.
 	if len(msg.Pipelines) == 0 {
 		log.Debug("No pipelines to be executed, skipping to reporting phase.")
-		g3lib.SendScanProgress(mq_client, msg.ScanID, totalScanSteps, totalScanSteps)
+		if err := g3lib.SendScanProgress(mq_client, msg.ScanID, totalScanSteps, totalScanSteps); err != nil {
+			log.Error(err.Error())
+		}
 	} else {
 
 		// Use the requested mode of operation.
@@ -355,7 +375,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		} else if msg.Mode != "sequential" {
 			if msg.Mode != "" {
 				log.Errorf("Unsupported execution mode: %v", msg.Mode)
-				g3lib.SendScanFailed(mq_client, msg.ScanID, "Unsupported execution mode")
+				if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Unsupported execution mode"); err != nil {
+					log.Error(err.Error())
+				}
 			}
 			parallelMode, err = strconv.ParseBool(os.Getenv(G3_SCANNER_PARALLEL_MODE))
 			if err != nil {
@@ -389,7 +411,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 				// Check for cancelation.
 				if currentScanID == "" {
 					log.Debugf("Canceled scan, dropping all the pipelines...")
-					g3lib.SendScanStopped(mq_client, msg.ScanID)
+					if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+						log.Error(err.Error())
+					}
 					return
 				}
 
@@ -406,7 +430,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					// Check for cancelation.
 					if currentScanID == "" {
 						log.Debugf("Canceled scan, dropping all the pipelines...")
-						g3lib.SendScanStopped(mq_client, msg.ScanID)
+						if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+							log.Error(err.Error())
+						}
 						return
 					}
 
@@ -436,7 +462,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					plugin, ok := plugins[tool]
 					if !ok {
 						log.Error("Missing plugin: " + tool)
-						g3lib.SendScanFailed(mq_client, msg.ScanID, "Missing plugin: " + tool)
+						if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Missing plugin: " + tool); err != nil {
+							log.Error(err.Error())
+						}
 						return
 					}
 
@@ -448,7 +476,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 						// Check for cancelation.
 						if currentScanID == "" {
 							log.Debugf("Canceled scan, dropping all the pipelines...")
-							g3lib.SendScanStopped(mq_client, msg.ScanID)
+							if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+								log.Error(err.Error())
+							}
 							return
 						}
 
@@ -456,7 +486,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 						data, err := g3lib.LoadOne(mdb_client, msg.ScanID, dataid)
 						if err != nil {
 							log.Error(err.Error())
-							g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+							if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+								log.Error(err.Error())
+							}
 							return
 						}
 
@@ -476,7 +508,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							// Check for cancelation.
 							if currentScanID == "" {
 								log.Debugf("Canceled scan, dropping all the pipelines...")
-								g3lib.SendScanStopped(mq_client, msg.ScanID)
+								if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 
@@ -486,7 +520,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							if !ok {
 								if err != nil {
 									log.Error(err.Error())
-									g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+									if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+										log.Error(err.Error())
+									}
 									return
 								}
 								log.Debugf("Skipped subcommand %d, failed precondition.", index)
@@ -502,7 +538,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 									errorMsg = errorMsg + "\n" + err.Error()
 								}
 								log.Error(errorMsg)
-								g3lib.SendScanFailed(mq_client, msg.ScanID, errorMsg)
+								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, errorMsg); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 
@@ -521,7 +559,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							pastData, err := g3lib.GetFingerprintMatchesIDs(mdb_client, msg.ScanID, parsed.Fingerprint)
 							if err != nil {
 								log.Error(err.Error())
-								g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 							if len(pastData) > 0 {
@@ -534,7 +574,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							taskid, err := g3lib.SendTask(mq_client, msg.ScanID, plugin.Name, index, data)
 							if err != nil {
 								log.Error(err.Error())
-								g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 							log.Debugf("Subcommand %d will be run!", index)
@@ -579,7 +621,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 				for _, state := range pipelineState {
 					currentScanStep += state.StepIndex
 				}
-				g3lib.SendScanProgress(mq_client, msg.ScanID, currentScanStep, totalScanSteps)
+				if err := g3lib.SendScanProgress(mq_client, msg.ScanID, currentScanStep, totalScanSteps); err != nil {
+					log.Error(err.Error())
+				}
 
 				// If on debug mode, show the pending tasks.
 				if log.LogLevel == "DEBUG" {
@@ -589,7 +633,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 						for pipeidx := 0; pipeidx < len(msg.Pipelines); pipeidx++ {
 							log.Debugf("Pending tasks for pipeline %d: %v", pipeidx, pipelineState[pipeidx].PendingTasks)
 						}
-						g3lib.SendScanFailed(mq_client, msg.ScanID, "internal error")
+						if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "internal error"); err != nil {
+							log.Error(err.Error())
+						}
 						return
 					}
 					log.Debugf("Pending tasks for scan %s: %v", msg.ScanID, runningTasks.ToArray())
@@ -605,7 +651,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					}
 					if currentScanID == "" {
 						log.Debugf("Canceled scan, dropping all the pipelines...")
-						g3lib.SendScanStopped(mq_client, msg.ScanID)
+						if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+							log.Error(err.Error())
+						}
 						return
 					}
 				}
@@ -656,7 +704,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 				// Check for cancelation.
 				if currentScanID == "" {
 					log.Debugf("Canceled scan, dropping all the pipelines...")
-					g3lib.SendScanStopped(mq_client, msg.ScanID)
+					if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+						log.Error(err.Error())
+					}
 					return
 				}
 
@@ -672,7 +722,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					// Check for cancelation.
 					if currentScanID == "" {
 						log.Debugf("Canceled scan, dropping all the pipelines...")
-						g3lib.SendScanStopped(mq_client, msg.ScanID)
+						if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+							log.Error(err.Error())
+						}
 						return
 					}
 
@@ -685,7 +737,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					plugin, ok := plugins[tool]
 					if !ok {
 						log.Error("Missing plugin: " + tool)
-						g3lib.SendScanFailed(mq_client, msg.ScanID, "Missing plugin: " + tool)
+						if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Missing plugin: " + tool); err != nil {
+							log.Error(err.Error())
+						}
 						return
 					}
 
@@ -698,7 +752,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 						// Check for cancelation.
 						if currentScanID == "" {
 							log.Debugf("Canceled scan, dropping all the pipelines...")
-							g3lib.SendScanStopped(mq_client, msg.ScanID)
+							if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+								log.Error(err.Error())
+							}
 							return
 						}
 
@@ -706,7 +762,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 						data, err := g3lib.LoadOne(mdb_client, msg.ScanID, dataid)
 						if err != nil {
 							log.Error(err.Error())
-							g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+							if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+								log.Error(err.Error())
+							}
 							return
 						}
 
@@ -725,7 +783,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							// Check for cancelation.
 							if currentScanID == "" {
 								log.Debugf("Canceled scan, dropping all the pipelines...")
-								g3lib.SendScanStopped(mq_client, msg.ScanID)
+								if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 
@@ -735,7 +795,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							if !ok {
 								if err != nil {
 									log.Error(err.Error())
-									g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+									if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+										log.Error(err.Error())
+									}
 									return
 								}
 								continue
@@ -749,7 +811,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 									errorMsg = errorMsg + "\n" + err.Error()
 								}
 								log.Error(errorMsg)
-								g3lib.SendScanFailed(mq_client, msg.ScanID, errorMsg)
+								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, errorMsg); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 
@@ -758,7 +822,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							pastData, err := g3lib.GetFingerprintMatchesIDs(mdb_client, msg.ScanID, parsed.Fingerprint)
 							if err != nil {
 								log.Error(err.Error())
-								g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 							if len(pastData) > 0 {
@@ -771,14 +837,18 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							taskid, err := g3lib.SendTask(mq_client, msg.ScanID, plugin.Name, index, data)
 							if err != nil {
 								log.Error(err.Error())
-								g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error())
+								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 							runningTasks.Add(taskid)
 							log.Debug("New task ID: " + taskid)
 
 							// Update the scan progress before waiting for the response.
-							g3lib.SendScanProgress(mq_client, msg.ScanID, currentScanStep - 1, totalScanSteps)
+							if err := g3lib.SendScanProgress(mq_client, msg.ScanID, currentScanStep - 1, totalScanSteps); err != nil {
+								log.Error(err.Error())
+							}
 
 							// Since we're only running one plugin at a time this must be our response.
 							var response g3lib.G3Response
@@ -789,13 +859,17 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 								}
 								if currentScanID == "" {
 									log.Error("Canceled scan, dropping all the pipelines...")
-									g3lib.SendScanStopped(mq_client, msg.ScanID)
+									if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+										log.Error(err.Error())
+									}
 									return
 								}
 							}
 							if response.TaskID != taskid {
 								log.Errorf("Mismatched task ID! %s != %s", response.TaskID, taskid)
-								g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Mismatched task ID! %s != %s\n", response.TaskID, taskid))
+								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Mismatched task ID! %s != %s\n", response.TaskID, taskid)); err != nil {
+									log.Error(err.Error())
+								}
 								return
 							}
 							if runningTasks.Exists(taskid) {
@@ -822,7 +896,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 
 	// Update the scan progress now that all of the pipelines are complete.
-	g3lib.SendScanProgress(mq_client, msg.ScanID, totalScanSteps, totalScanSteps)
+	if err := g3lib.SendScanProgress(mq_client, msg.ScanID, totalScanSteps, totalScanSteps); err != nil {
+		log.Error(err.Error())
+	}
 
 	// Scanning is over, but we need to merge duplicated issues.
 	// TODO maybe make this a separate operation?
@@ -837,7 +913,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		// Check for cancelation.
 		if currentScanID == "" {
 			log.Debugf("Canceled scan, dropping all the pipelines...")
-			g3lib.SendScanStopped(mq_client, msg.ScanID)
+			if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 
@@ -851,7 +929,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 				log.Error(" - " + err.Error())
 				text = text + " - " + err.Error() + "\n"
 			}
-			g3lib.SendScanFailed(mq_client, msg.ScanID, text)
+			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, text); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 
@@ -859,7 +939,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		issues, err := g3lib.LoadIssues(mdb_client, msg.ScanID, plugin.Name)
 		if err != nil {
 			log.Errorf("Error while running merger for %s: %s", tool, err.Error())
-			g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error()))
+			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error())); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 
@@ -883,7 +965,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		outputArray, err := g3lib.RunPluginMerger(context.Background(), plugin, parsed, issues, os.Stderr)
 		if err != nil {
 			log.Errorf("Error while running merger for %s: %s", tool, err.Error())
-			g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error()))
+			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error())); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 
@@ -915,7 +999,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		newids, err := g3lib.SaveData(mdb_client, msg.ScanID, g3lib.NIL_TASKID, newobjs)
 		if err != nil {
 			log.Errorf("Error while running merger for %s: %s", tool, err.Error())
-			g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error()))
+			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error())); err != nil {
+				log.Error(err.Error())
+			}
 			return
 		}
 		reportIssues.AddMulti(oldids)
@@ -934,10 +1020,14 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	err = g3lib.SaveReportInfo(rdb_client, info)
 	if err != nil {
 		log.Error("Error saving report info: " + err.Error())
-		g3lib.SendScanFailed(mq_client, msg.ScanID, "Error saving report info: " + err.Error())
+		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Error saving report info: " + err.Error()); err != nil {
+			log.Error(err.Error())
+		}
 		return
 	}
 
 	// Send a message to indicate the scan has finished.
-	g3lib.SendScanCompleted(mq_client, msg.ScanID)
+	if err := g3lib.SendScanCompleted(mq_client, msg.ScanID); err != nil {
+		log.Error(err.Error())
+	}
 }
