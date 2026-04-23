@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"time"
 
 	"golismero.com/g3lib"
 	log "golismero.com/g3log"
@@ -173,6 +174,19 @@ func main() {
 	}()
 	log.Debug("Connected to SQL database.")
 
+	// Connect to Redis. This connection is used by the stop/cancel handler to
+	// update Redis task state without needing access to ScanRunner's own connection.
+	rdb_main, err := g3lib.ConnectToKeyValueStore()
+	if err != nil {
+		log.Critical(err)
+		os.Exit(1)
+	}
+	defer func() {
+		g3lib.DisconnectFromKeyValueStore(rdb_main) //nolint:errcheck
+		log.Debug("Disconnected from Redis.")
+	}()
+	log.Debug("Connected to Redis.")
+
 	// Handle the responses for the tools run by the new scans.
 	// We cannot easily subscribe to single scan responses, it's easier to
 	// subscribe to all and filter out the ones that do not belong to us.
@@ -201,8 +215,23 @@ func main() {
 		// Remove the scan ID to let the scanner goroutine know it must quit.
 		currentScanID = ""
 
+		// Mark each running task as CANCELING in Redis and emit a structured audit
+		// log line. CANCELING is a transition state: scanner expresses intent here,
+		// worker transitions to CANCELED once its plugin actually winds down.
+		// The [g3:cancel] line is written *before* SendTaskCancel so that the cancel
+		// signal is captured in the audit trail even if the MQTT broadcast fails.
+		runningTasksSnapshot := runningTasks.ToArray()
+		for _, taskid := range runningTasksSnapshot {
+			if err := g3lib.SetTaskCancelling(rdb_main, msg.ScanID, taskid); err != nil {
+				log.Error("Redis SetTaskCancelling failed: " + err.Error())
+			}
+			if err := g3lib.SaveLogLine(sql_db, msg.ScanID, taskid, "[g3:cancel] task="+taskid); err != nil {
+				log.Error("SaveLogLine (cancel) failed: " + err.Error())
+			}
+		}
+
 		// Cancel all of the running tasks.
-		if err := g3lib.SendTaskCancel(mq_client, msg.ScanID, runningTasks.ToArray()); err != nil {
+		if err := g3lib.SendTaskCancel(mq_client, msg.ScanID, runningTasksSnapshot); err != nil {
 			log.Error(err.Error())
 		}
 
@@ -320,10 +349,36 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		return
 	}
 	defer func() {
-		g3lib.DisconnectFromKeyValueStore(rdb_client)
+		g3lib.DisconnectFromKeyValueStore(rdb_client) //nolint:errcheck
 		log.Debug("Goroutine disconnected from Redis.")
 	}()
 	log.Debug("Goroutine connected to Redis.")
+
+	// Connect to the SQL database for structured audit log lines.
+	scan_sql_db, err := g3lib.ConnectToSQL()
+	if err != nil {
+		log.Error(err.Error())
+		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
+			log.Error(err.Error())
+		}
+		return
+	}
+	defer func() {
+		g3lib.DisconnectFromSQL(scan_sql_db)
+		log.Debug("Goroutine disconnected from SQL database.")
+	}()
+	log.Debug("Goroutine connected to SQL database.")
+
+	// Purge Redis task-state keys for this scan when the scan ends (whether
+	// terminal success, failure, or exception). The audit trail lives in the
+	// structured log lines we wrote to SQL; Redis is live-view only.
+	defer func() {
+		if err := g3lib.DeleteTaskStates(rdb_client, msg.ScanID); err != nil {
+			log.Error("Redis DeleteTaskStates failed: " + err.Error())
+		} else {
+			log.Debug("Cleared Redis task states for scan: " + msg.ScanID)
+		}
+	}()
 
 	// Calculate the total number of steps in the script.
 	// This will be used later to determine the scan progress.
@@ -581,6 +636,13 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							}
 							log.Debugf("Subcommand %d will be run!", index)
 							log.Debug("New task ID: " + taskid)
+							dispatchTS := time.Now().Unix()
+							if err := g3lib.SetTaskDispatched(rdb_client, msg.ScanID, taskid, plugin.Name, dispatchTS); err != nil {
+								log.Error("Redis SetTaskDispatched failed: " + err.Error())
+							}
+							if err := g3lib.SaveLogLine(scan_sql_db, msg.ScanID, taskid, "[g3:dispatch] task="+taskid+" tool="+plugin.Name); err != nil {
+								log.Error("SaveLogLine (dispatch) failed: " + err.Error())
+							}
 							runningTasks.Add(taskid)
 							fpToTasks.Add(taskid, parsed.Fingerprint)
 							state.PendingTasks.Add(taskid)
@@ -666,6 +728,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 				if !runningTasks.Exists(taskid) {
 					log.Warning("Got a task end notification for a task that is not ours! ID: " + taskid)
 				} else {
+					// Terminal state (DONE/ERROR/CANCELED) + [g3:done] audit line are
+					// written by the worker before it sent this response — no Redis
+					// or log-line work for the scanner on this path.
 					runningTasks.Delete(taskid)
 					log.Debug("Cleaning up task: " + response.TaskID)
 					fpToTasks.Remove(taskid)
@@ -844,6 +909,13 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							}
 							runningTasks.Add(taskid)
 							log.Debug("New task ID: " + taskid)
+							dispatchTS := time.Now().Unix()
+							if err := g3lib.SetTaskDispatched(rdb_client, msg.ScanID, taskid, plugin.Name, dispatchTS); err != nil {
+								log.Error("Redis SetTaskDispatched failed: " + err.Error())
+							}
+							if err := g3lib.SaveLogLine(scan_sql_db, msg.ScanID, taskid, "[g3:dispatch] task="+taskid+" tool="+plugin.Name); err != nil {
+								log.Error("SaveLogLine (dispatch) failed: " + err.Error())
+							}
 
 							// Update the scan progress before waiting for the response.
 							if err := g3lib.SendScanProgress(mq_client, msg.ScanID, currentScanStep - 1, totalScanSteps); err != nil {
@@ -876,6 +948,10 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 								runningTasks.Delete(taskid)
 							}
 							log.Debug("Finished task: " + response.TaskID)
+
+							// Terminal state + [g3:done] audit line are written by the
+							// worker before it sent this response — scanner only needs
+							// to clean up its in-memory tracking here.
 
 							// Update the scan progress now that the task is complete.
 							//g3lib.SendScanProgress(mq_client, msg.ScanID, currentScanStep, totalScanSteps)

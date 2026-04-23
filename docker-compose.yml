@@ -126,7 +126,7 @@ services:
   # but it is likely to be used for more things in the future.
   redis:
     image: redis:latest
-    command: redis-server --port ${REDIS_PORT} --requirepass ${REDIS_PASSWORD}
+    command: redis-server --port ${REDIS_PORT} --requirepass ${REDIS_PASSWORD} --save 60 100 --appendonly no
     restart: unless-stopped
     networks:
       - g3net
@@ -319,6 +319,8 @@ services:
         condition: service_started
       mosquitto:
         condition: service_started
+      redis:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -331,6 +333,9 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - REDIS_HOST=redis
+      - REDIS_PORT
+      - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker-nmap
       - G3_WORKER_PLUGINS=nmap
       - G3_HOLD_CANCEL
@@ -352,6 +357,8 @@ services:
         condition: service_started
       vulners-proxy:
         condition: service_started
+      redis:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -364,6 +371,9 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - REDIS_HOST=redis
+      - REDIS_PORT
+      - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker1
       - G3_WORKER_PLUGINS=!nmap
       - G3_HOLD_CANCE
@@ -388,6 +398,8 @@ services:
         condition: service_started
       vulners-proxy:
         condition: service_started
+      redis:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -400,6 +412,9 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - REDIS_HOST=redis
+      - REDIS_PORT
+      - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker2
       - G3_WORKER_PLUGINS=!nmap
       - G3_HOLD_CANCE
@@ -424,6 +439,8 @@ services:
         condition: service_started
       vulners-proxy:
         condition: service_started
+      redis:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -436,6 +453,9 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - REDIS_HOST=redis
+      - REDIS_PORT
+      - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker3
       - G3_WORKER_PLUGINS=!nmap
       - G3_HOLD_CANCEL
@@ -460,6 +480,8 @@ services:
         condition: service_started
       vulners-proxy:
         condition: service_started
+      redis:
+        condition: service_started
     networks:
       - g3net
     volumes:
@@ -472,6 +494,9 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - REDIS_HOST=redis
+      - REDIS_PORT
+      - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker4
       - G3_WORKER_PLUGINS=!nmap
       - G3_HOLD_CANCEL

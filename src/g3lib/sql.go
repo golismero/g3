@@ -68,11 +68,26 @@ type ScanStatusEntry struct {
 }
 
 type TaskStatusEntry struct {
-	TaskID     string       `json:"taskid"         validate:"required,uuid4"`
-	FirstLogTS int64        `json:"first_log_ts"   validate:"gte=0"`
-	LastLogTS  int64        `json:"last_log_ts"    validate:"gte=0"`
-	LineCount  int          `json:"line_count"     validate:"gte=0"`
-	AgeSeconds int64        `json:"age_seconds"    validate:"gte=0"`
+	TaskID     string       `json:"taskid"                   validate:"required,uuid4"`
+	Tool       string       `json:"tool,omitempty"`
+	Worker     string       `json:"worker,omitempty"`
+	State      string       `json:"state,omitempty"`          // RUNNING / DONE / ERROR / CANCELED (from Redis)
+	DispatchTS int64        `json:"dispatch_ts,omitempty"`
+	StartTS    int64        `json:"start_ts,omitempty"`
+	CompleteTS int64        `json:"complete_ts,omitempty"`
+	ErrorMsg   string       `json:"error_msg,omitempty"`
+	FirstLogTS int64        `json:"first_log_ts"             validate:"gte=0"`
+	LastLogTS  int64        `json:"last_log_ts"              validate:"gte=0"`
+	LineCount  int          `json:"line_count"               validate:"gte=0"`
+	AgeSeconds int64        `json:"age_seconds"              validate:"gte=0"`
+}
+
+// Response container for /scan/tasks/status. Bundles the scan-level status
+// alongside per-task entries so the client can render a coherent view
+// (e.g. suppress the age column for terminal scans).
+type ScanTaskStatusResponse struct {
+	ScanStatus G3SCANSTATUS      `json:"scan_status"`
+	Tasks      []TaskStatusEntry `json:"tasks"`
 }
 
 type QueryLogCallback func(LogEntry)(error)
@@ -205,8 +220,10 @@ func QueryTaskIDsFromLog(db SQLDBClient, scanid string) ([]string, error) {
 func QueryTaskStatus(db SQLDBClient, scanid string) ([]TaskStatusEntry, error) {
 	var entries []TaskStatusEntry
 
+	// Sort so the task with the oldest last-log timestamp (= highest age,
+	// most likely stuck) appears first. This is the whole point of the view.
 	query := "SELECT `taskid`, MIN(`timestamp`), MAX(`timestamp`), COUNT(*) " +
-		"FROM `logs` WHERE `scanid` = ? GROUP BY `taskid` ORDER BY MAX(`timestamp`) DESC"
+		"FROM `logs` WHERE `scanid` = ? GROUP BY `taskid` ORDER BY MAX(`timestamp`) ASC"
 	rows, err := db.db.Query(query, scanid)
 	if err != nil {
 		return entries, err
@@ -346,6 +363,16 @@ func GetProgressList(db SQLDBClient) ([]ScanStatusEntry, error) {
 		scanstatus = append(scanstatus, entry)
 	}
 	return scanstatus, err
+}
+
+// Get the progress entry for a single scan. Returns sql.ErrNoRows wrapped if the
+// scan is not in the progress table; callers that tolerate a missing row (e.g.
+// the tasks-status endpoint for a just-queued scan) should check for that.
+func GetScanStatus(db SQLDBClient, scanid string) (ScanStatusEntry, error) {
+	var entry ScanStatusEntry
+	query := "SELECT `scanid`, `status`, `progress`, `message` FROM `progress` WHERE `scanid` = ?"
+	err := db.db.QueryRow(query, scanid).Scan(&entry.ScanID, &entry.Status, &entry.Progress, &entry.Message)
+	return entry, err
 }
 
 // Remove the progress of a scan.

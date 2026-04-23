@@ -394,6 +394,19 @@ func main() {
 	}()
 	log.Debug("Connected to SQL database.")
 
+	// Connect to Redis. Worker writes its ID + start timestamp into the per-task
+	// hash when it accepts a task; this feeds the live-visibility view in g3cli.
+	rdb_client, err := g3lib.ConnectToKeyValueStore()
+	if err != nil {
+		log.Critical(err)
+		os.Exit(1)
+	}
+	defer func() {
+		g3lib.DisconnectFromKeyValueStore(rdb_client) //nolint:errcheck
+		log.Debug("Disconnected from Redis.")
+	}()
+	log.Debug("Connected to Redis.")
+
 	// Connect to the Mosquitto broker.
 	mq_client, err := g3lib.ConnectToBroker(workerid)
 	if err != nil {
@@ -465,11 +478,27 @@ func main() {
 		time.Sleep(time.Second)
 	}()
 
+	// markTerminal writes the per-task terminal state to Redis and emits the
+	// [g3:done] audit log line. Called from every task-termination site below
+	// so the UI's live state and the SQL audit trail always agree.
+	markTerminal := func(scanid, taskid, state string) {
+		completeTS := time.Now().Unix()
+		if err := g3lib.SetTaskTerminal(rdb_client, scanid, taskid, state, completeTS, ""); err != nil {
+			log.Error("Redis SetTaskTerminal failed: " + err.Error())
+		}
+		if err := g3lib.SaveLogLine(sql_db, scanid, taskid, "[g3:done] task="+taskid+" state="+state); err != nil {
+			log.Error("SaveLogLine (done) failed: " + err.Error())
+		}
+	}
+
 	// Subscribe to the topics for the plugins we support.
 	topics := g3lib.SubscribeAsWorker(mq_client, selected, func (client g3lib.MessageQueueClient, task g3lib.G3Task) {
 
-		// If we received SIGTERM, just drop incoming messages.
+		// If we received SIGTERM, just drop incoming messages. Mark as CANCELED —
+		// the task didn't execute because this worker is going away, not because
+		// it failed on its own merits.
 		if cancelled {
+			markTerminal(task.ScanID, task.TaskID, "CANCELED")
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
@@ -489,8 +518,11 @@ func main() {
 			return
 
 		// The task has been rejected. Notify the other workers.
+		// This branch fires when the task was cancelled before this worker picked
+		// it up (CancelTracker.rejectTasks held it). State transitions to CANCELED.
 		case 1:
 			log.Debug("Rejected task ID: " + task.TaskID)
+			markTerminal(task.ScanID, task.TaskID, "CANCELED")
 			err := g3lib.SendTaskCancelHandled(mq_client, task.ScanID, []string{task.TaskID})
 			if err != nil {
 				log.Error(err.Error())
@@ -500,10 +532,18 @@ func main() {
 		// The task has been accepted. We can continue.
 		case 2:
 			log.Debug("Received new task:\n" + g3lib.PrettyPrintJSON(task))
+			startTS := time.Now().Unix()
+			if err := g3lib.SetTaskRunning(rdb_client, task.ScanID, task.TaskID, workerid, startTS); err != nil {
+				log.Error("Redis SetTaskRunning failed: " + err.Error())
+			}
+			if err := g3lib.SaveLogLine(sql_db, task.ScanID, task.TaskID, "[g3:start] task="+task.TaskID+" worker="+workerid); err != nil {
+				log.Error("SaveLogLine (start) failed: " + err.Error())
+			}
 
 		// This should not happen.
 		default:
 			log.Error("internal error")
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
@@ -515,6 +555,7 @@ func main() {
 		// This should not fail.
 		if !slices.Contains(selected, task.Tool) {
 			log.Error("Tool is not supported by this worker: " + task.Tool)
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
@@ -526,6 +567,7 @@ func main() {
 		plugin, ok := plugins[task.Tool]
 		if !ok {
 			log.Error("Tool is not supported by this worker: " + task.Tool)
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
@@ -534,6 +576,7 @@ func main() {
 		}
 		if len(plugin.Commands) <= task.Index {
 			log.Errorf("Tool does not have command #%d", task.Index)
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
@@ -544,6 +587,7 @@ func main() {
 		data, err := g3lib.LoadOne(mdb_client, task.ScanID, task.DataID)
 		if err != nil {
 			log.Error("Error fetching data object: " + err.Error())
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
@@ -558,6 +602,7 @@ func main() {
 			for i, err := range errors {
 				log.Errorf("%d) %s", i, err.Error())
 			}
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
@@ -612,6 +657,7 @@ func main() {
 		// Detect errors when executing the plugin.
 		if err != nil {
 			log.Error("Error executing plugin " + plugin.Name + ": " + err.Error())
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
@@ -619,8 +665,12 @@ func main() {
 			return
 		}
 
-		// If we received SIGTERM, drop the output.
+		// If we received SIGTERM, drop the output. This is also the normal exit
+		// path for tasks cancelled mid-execution via the scanner's cancel — the
+		// plugin context was cancelled and RunPluginCommand returned. Either way
+		// the task did not complete normally, so state transitions to CANCELED.
 		if cancelled {
+			markTerminal(task.ScanID, task.TaskID, "CANCELED")
 			err = g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
@@ -657,6 +707,8 @@ func main() {
 				persistentOutput = append(persistentOutput, data)
 			}
 		}
+		// Plugin ran to completion successfully. Mark DONE and send the response.
+		markTerminal(task.ScanID, task.TaskID, "DONE")
 		_, err = g3lib.SendResponse(client, task, persistentOutput)
 		if err != nil {
 			log.Error("Error sending response to the broker: " + err.Error())

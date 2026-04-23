@@ -422,6 +422,73 @@ Four files, each small. No schema changes (logs table already has all needed col
 
 ---
 
+## Tier 5 — Live task state in Redis + structured audit log lines
+
+**Status:** **shipped.** Added after Tier 4 to fix the "no per-task state anywhere" architectural gap surfaced during review.
+
+### Context
+
+Tier 4 shipped with a scan-level status proxy for per-task state because per-task state literally wasn't stored anywhere — completion signals flowed through MQTT from workers to the scanner's in-memory maps and were discarded at the end of the response handler. Once the scanner process ended (or the scan reached terminal), the "did task T succeed or fail?" question was unanswerable without heuristic log parsing.
+
+### Design principles (settled in discussion)
+
+- **Redis for live state, SQL for durable audit.** Short-lived tasks don't churn the DB; audit trail lives in structured log lines in the existing `logs` table. No schema changes.
+- **Authority split by concept: intent vs outcome.**
+  - Scanner writes *intent* states: `DISPATCHED` (task handed to MQTT), `CANCELING` (I'm asking you to stop).
+  - Worker writes *outcome* states: `RUNNING` (I accepted it), `DONE` / `ERROR` / `CANCELED` (it finished).
+  - The `DISPATCHED` → `RUNNING` gap surfaces worker-pool backpressure in `g3cli ps`; the `CANCELING` → `CANCELED` span makes tail latency of cancellation visible.
+- **Structured log lines are the audit primitive.** Four event types: `[g3:dispatch]`, `[g3:start]`, `[g3:cancel]`, `[g3:done]`. Human-readable, regex-parseable, stable prefix.
+- **Single writer per state class.** Scanner's `SetTaskCancelling` is guarded (only transitions from DISPATCHED or RUNNING — won't stomp a task that raced to completion). Worker's terminal writes are unguarded because worker is the sole writer there. No two-writer race for terminal states.
+- **Redis keys are scan-scoped and cleaned up on terminal scan or explicit delete.** No TTL — scanner owns the lifecycle via `defer DeleteTaskStates`.
+
+### Redis schema
+
+- `g3:scan:<scanid>:tasks` — set, task IDs.
+- `g3:scan:<scanid>:task:<taskid>` — hash with fields `tool`, `dispatch_ts`, `worker`, `start_ts`, `state`, `complete_ts`, `error_msg`.
+
+### Write sites
+
+- **Scanner dispatch** (`g3scanner.go` parallel + sequential, right after successful `SendTask`): `SetTaskDispatched` (state=DISPATCHED) + `[g3:dispatch] task=<id> tool=<name>` log line.
+- **Worker accept** (`g3worker.go` at case-2 of `AddTaskIfNew`): `SetTaskRunning` (state transitions DISPATCHED → RUNNING, stamps worker ID + start_ts) + `[g3:start] task=<id> worker=<id>` log line.
+- **Scanner cancel handler** (`SubscribeToStop` in main): loop over running tasks, `SetTaskCancelling` (guarded transition to CANCELING) + `[g3:cancel] task=<id>` log line. Fires before the MQTT cancel broadcast so the audit captures intent even if the broadcast fails.
+- **Worker termination sites** (every path that reaches `SendEmptyResponse` or `SendResponse`): `SetTaskTerminal` + `[g3:done] task=<id> state=<X>` log line. Classifications:
+  - **CANCELED:** SIGTERM drop (worker shutting down), case-1 reject (task was in `CancelTracker.rejectTasks` from a prior cancel), plugin cancellation post-execution (`cancelled` flag set after `RunPluginCommand`).
+  - **ERROR:** default switch branch, tool-not-supported checks, plugin-not-found, command-index-out-of-range, MongoDB load failures, `BuildToolCommand` errors, plugin execution errors.
+  - **DONE:** successful plugin completion path (`SendResponse` with valid output).
+  - A small closure `markTerminal(scanid, taskid, state)` in the worker's main() wraps these two calls to keep the termination sites compact.
+- **Scanner response handler**: just cleans up in-memory tracking (`runningTasks.Delete`, etc.). **Does not touch Redis or emit audit lines** — worker already did that before sending the response.
+- **Scanner terminal** (ScanRunner exit): `defer DeleteTaskStates(rdb, scanid)` — Redis is cleared, audit trail remains in SQL logs.
+
+### Files touched (Tier 5)
+
+| File | Change |
+|---|---|
+| `src/g3lib/kvstore.go` | Add `TaskState` struct; `SetTaskDispatched`, `SetTaskStarted`, `SetTaskTerminal`, `GetTaskStates`, `DeleteTaskStates` helpers. |
+| `src/g3lib/sql.go` | Extend `TaskStatusEntry` with Redis-derived fields (Tool, Worker, State, DispatchTS, StartTS, CompleteTS, ErrorMsg). |
+| `src/g3api/g3api.go` | `/scan/tasks/status` now merges Redis state with SQL log summary; `/scan/delete` fanout calls `DeleteTaskStates`. |
+| `src/g3scanner/g3scanner.go` | Main-level Redis connection for cancel handler; ScanRunner opens its own SQL connection; write sites at dispatch (×2), response (×2), cancel, terminal. |
+| `src/g3worker/g3worker.go` | Redis connection at startup; write site at task-accept. |
+| `src/g3cli/g3cli.go` | `runTaskView` decodes richer response; STATE column now shows real per-task state; AGE hidden for terminal tasks; adds TOOL and WORKER columns. |
+| `docker-compose.yml` | Redis `--save 60 100` for disk persistence; 5 worker services gain `REDIS_HOST/PORT/PASSWORD` env + `redis: condition: service_started` dependency. |
+
+### Known v1 limitations
+
+- **`SetTaskCancelling` guard is HGET-then-HSET, not atomic.** Two-step means a theoretical micro-window where a task completes in the HGET→HSET gap. Worker's terminal write wins the race (it happens after HGET but before HSET), so CANCELING could briefly overwrite a DONE/ERROR/CANCELED. Narrow enough to ignore for a single-scanner stack; promote to a Lua script if contention ever matters.
+- **No scanner-restart recovery.** Redis state persists across scanner restarts, so a restarted scanner *could* query `g3:scan:<scanid>:tasks` to reconcile in-flight work. v1 doesn't implement this — noted as a future capability that Redis state enables.
+- **Tasks with no logs still show in Redis.** `passthrough` and `force-exec` produce no stderr so they used to be invisible in Tier 4's log-only view. Tier 5 fixes this: they're in Redis the moment they're dispatched.
+- **Ungraceful crashes leave tasks stuck.** Worker OOM/SIGKILL means no terminal write — the task stays visibly in RUNNING (or DISPATCHED if it never got picked up). This is honest state, not a bug; the `AGE` column climbing makes the condition visible. Real fix belongs in the deferred "per-plugin timeouts" milestone.
+
+### Verification (Tier 5) — user-owned
+
+1. `make bin` + `golangci-lint run` — clean.
+2. `docker compose up` with a fresh stack — workers connect to Redis successfully.
+3. Run a scan with mixed outcomes (some passing, some `error`-plugin). `g3cli ps <scanid>` shows real per-task state (DONE for successes, ERROR for failures).
+4. Start a long scan; `g3cli cancel` mid-flight; confirm tasks show CANCELED state in `ps` and `[g3:cancel]` lines in `g3cli logs`.
+5. Delete a scan: confirm Redis keys under `g3:scan:<scanid>:*` are gone (`redis-cli KEYS 'g3:scan:<scanid>:*'`).
+6. Restart Redis container: confirm state survives (RDB snapshot via `--save 60 100`).
+
+---
+
 ## Explicitly out of scope
 
 - Replacing MQTT with another broker (issue #5 option 5). The diagnosis doesn't justify it — the problems are application-layer. Revisit only if Tiers 1-3 fail to stabilize.

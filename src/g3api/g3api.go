@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -605,13 +607,62 @@ func Main() int {
 				return
 			}
 
-			entries, err := g3lib.QueryTaskStatus(sql_db, request.ScanID)
+			// Redis is authoritative for which tasks exist and what state they're in.
+			// The SQL logs table supplies timestamps and line counts as augmentation.
+			// A terminal scan that has been cleaned up will have no Redis keys; we
+			// deliberately do NOT reconstruct task state from logs in that case.
+			taskStates, err := g3lib.GetTaskStates(rdb_client, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-			} else {
-				g3lib.SendApiResponse(w, entries)
+				return
 			}
+			logEntries, err := g3lib.QueryTaskStatus(sql_db, request.ScanID)
+			if err != nil {
+				log.Error(err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				return
+			}
+			logByTask := make(map[string]g3lib.TaskStatusEntry, len(logEntries))
+			for _, e := range logEntries {
+				logByTask[e.TaskID] = e
+			}
+
+			entries := make([]g3lib.TaskStatusEntry, 0, len(taskStates))
+			for _, ts := range taskStates {
+				entry := g3lib.TaskStatusEntry{
+					TaskID:     ts.TaskID,
+					Tool:       ts.Tool,
+					Worker:     ts.Worker,
+					State:      ts.State,
+					DispatchTS: ts.DispatchTS,
+					StartTS:    ts.StartTS,
+					CompleteTS: ts.CompleteTS,
+					ErrorMsg:   ts.ErrorMsg,
+				}
+				if le, ok := logByTask[ts.TaskID]; ok {
+					entry.FirstLogTS = le.FirstLogTS
+					entry.LastLogTS = le.LastLogTS
+					entry.LineCount = le.LineCount
+					entry.AgeSeconds = le.AgeSeconds
+				}
+				entries = append(entries, entry)
+			}
+			// Sort: oldest dispatch first (stuckest-candidate tasks rise to the top).
+			sort.Slice(entries, func(i, j int) bool {
+				return entries[i].DispatchTS < entries[j].DispatchTS
+			})
+
+			scanStatus, err := g3lib.GetScanStatus(sql_db, request.ScanID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				log.Error(err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				return
+			}
+			g3lib.SendApiResponse(w, g3lib.ScanTaskStatusResponse{
+				ScanStatus: scanStatus.Status,
+				Tasks:      entries,
+			})
 		})
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -726,6 +777,13 @@ func Main() int {
 				reterr = reterr + "Error deleting report info: " + err.Error() + "\n"
 			} else {
 				log.Debug("Deleted report info.")
+			}
+			err = g3lib.DeleteTaskStates(rdb_client, scanid)
+			if err != nil {
+				log.Critical("Error deleting task states: " + err.Error())
+				reterr = reterr + "Error deleting task states: " + err.Error() + "\n"
+			} else {
+				log.Debug("Deleted task states.")
 			}
 			err = g3lib.ClearLogs(sql_db, scanid)
 			if err != nil {

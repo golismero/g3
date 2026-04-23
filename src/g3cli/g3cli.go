@@ -873,69 +873,79 @@ func (cmd *PsCmd) runTaskView(vars CmdContext) error {
 		return errors.New("malformed response from server")
 	}
 
-	var entries []g3lib.TaskStatusEntry
-	if resp.Data != nil {
-		tmp, ok := resp.Data.([]interface{})
-		if !ok {
-			log.Criticalf("%v", resp.Data)
-			log.Critical("Malformed response from server.")
-			return errors.New("malformed response from server")
-		}
-		for _, tmp2 := range tmp {
-			tmp3, ok := tmp2.(map[string]interface{})
-			if !ok {
-				return errors.New("malformed response from server")
-			}
-			var entry g3lib.TaskStatusEntry
-			if v, ok := tmp3["taskid"].(string); ok {
-				entry.TaskID = v
-			}
-			if v, ok := tmp3["first_log_ts"].(float64); ok {
-				entry.FirstLogTS = int64(v)
-			}
-			if v, ok := tmp3["last_log_ts"].(float64); ok {
-				entry.LastLogTS = int64(v)
-			}
-			if v, ok := tmp3["line_count"].(float64); ok {
-				entry.LineCount = int(v)
-			}
-			if v, ok := tmp3["age_seconds"].(float64); ok {
-				entry.AgeSeconds = int64(v)
-			}
-			entries = append(entries, entry)
-		}
+	// Decode via marshal/unmarshal rather than manual map[string]interface{}
+	// assertions — cleaner and type-checked against the struct tags.
+	var payload g3lib.ScanTaskStatusResponse
+	rawData, err := json.Marshal(resp.Data)
+	if err != nil {
+		log.Criticalf("%v", resp.Data)
+		log.Critical("Malformed response from server.")
+		return errors.New("malformed response from server")
+	}
+	if err := json.Unmarshal(rawData, &payload); err != nil {
+		log.Criticalf("%v", resp.Data)
+		log.Critical("Malformed response from server.")
+		return errors.New("malformed response from server")
 	}
 
 	var outputText string
 	if quiet {
-		for _, entry := range entries {
+		for _, entry := range payload.Tasks {
 			outputText = outputText + entry.TaskID + "\n"
 		}
+	} else if len(payload.Tasks) == 0 {
+		// Either the scan has never had tasks or its Redis state has been
+		// cleared (terminal scan). We don't reconstruct state from logs —
+		// that's a deliberate design decision for Tier 5.
+		scanLabel := string(payload.ScanStatus)
+		if scanLabel == "" {
+			scanLabel = "unknown"
+		}
+		outputText = fmt.Sprintf("\nScan [%s] — no live task data (either no tasks dispatched yet or state already cleared).\n\n", scanLabel)
 	} else {
 		table := simpletable.New()
 		table.Header = &simpletable.Header{
 			Cells: []*simpletable.Cell{
 				{Align: simpletable.AlignCenter, Text: "TASK ID"},
-				{Align: simpletable.AlignCenter, Text: "FIRST SEEN"},
+				{Align: simpletable.AlignCenter, Text: "STATE"},
+				{Align: simpletable.AlignCenter, Text: "TOOL"},
+				{Align: simpletable.AlignCenter, Text: "WORKER"},
 				{Align: simpletable.AlignCenter, Text: "LAST SEEN"},
 				{Align: simpletable.AlignCenter, Text: "AGE"},
 				{Align: simpletable.AlignCenter, Text: "LINES"},
 			},
 		}
-		for _, entry := range entries {
-			firstSeen := "-"
+		for _, entry := range payload.Tasks {
 			lastSeen := "-"
-			if entry.FirstLogTS > 0 {
-				firstSeen = time.Unix(entry.FirstLogTS, 0).Format("15:04:05")
-			}
 			if entry.LastLogTS > 0 {
 				lastSeen = time.Unix(entry.LastLogTS, 0).Format("15:04:05")
 			}
+			// AGE is only meaningful for currently-running tasks; for terminal
+			// states it's just "time since completion" which isn't what the
+			// column is trying to communicate.
+			age := "-"
+			if entry.State == "RUNNING" {
+				age = formatAge(entry.AgeSeconds)
+			}
+			state := entry.State
+			if state == "" {
+				state = "?"
+			}
+			tool := entry.Tool
+			if tool == "" {
+				tool = "-"
+			}
+			worker := entry.Worker
+			if worker == "" {
+				worker = "-"
+			}
 			r := []*simpletable.Cell{
 				{Align: simpletable.AlignLeft,   Text: entry.TaskID},
-				{Align: simpletable.AlignCenter, Text: firstSeen},
+				{Align: simpletable.AlignCenter, Text: state},
+				{Align: simpletable.AlignLeft,   Text: tool},
+				{Align: simpletable.AlignLeft,   Text: worker},
 				{Align: simpletable.AlignCenter, Text: lastSeen},
-				{Align: simpletable.AlignRight,  Text: formatAge(entry.AgeSeconds)},
+				{Align: simpletable.AlignRight,  Text: age},
 				{Align: simpletable.AlignRight,  Text: fmt.Sprintf("%d", entry.LineCount)},
 			}
 			table.Body.Cells = append(table.Body.Cells, r)
