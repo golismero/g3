@@ -263,7 +263,7 @@ func Minus(a int) int {
 
 // Format Unix timestamps into a human readable string.
 func FormatUnixTime(timestamp interface{}) string {
-	var unixTime int64 = int64(ConvertToInt(timestamp))
+	var unixTime = int64(ConvertToInt(timestamp))
 	t := time.Unix(unixTime, 0)
 	strDate := t.Format(time.UnixDate)
 	return strDate

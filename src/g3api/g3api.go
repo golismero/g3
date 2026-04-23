@@ -210,13 +210,14 @@ func Main() int {
 		log.Debug("Received scan status: " + g3lib.PrettyPrintJSON(msg))
 
 		// Update the scan progress in the database.
-		if msg.Status == g3lib.STATUS_RUNNING {
-			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, &msg.Progress, msg.Message)
-		} else if msg.Status == g3lib.STATUS_FINISHED {
+		switch msg.Status {
+		case g3lib.STATUS_RUNNING:
+			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, &msg.Progress, msg.Message) //nolint:errcheck
+		case g3lib.STATUS_FINISHED:
 			hundred := 100
-			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, &hundred, msg.Message)
-		} else {
-			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, nil, msg.Message)
+			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, &hundred, msg.Message) //nolint:errcheck
+		default:
+			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, nil, msg.Message) //nolint:errcheck
 		}
 
 		// Notify the event if anyone wants it.
@@ -1063,14 +1064,14 @@ func Main() int {
 			defer fd.Close()
 			_, err = io.Copy(fd, p)
 			if err != nil {
-				os.Remove(userdir + filename + ".bin")
+				os.Remove(userdir + filename + ".bin") //nolint:errcheck
 				log.Error("Error writing to upload file: " + err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
 			err = os.WriteFile(userdir + filename + ".txt", []byte(p.FileName()), 0600)
 			if err != nil {
-				os.Remove(userdir + filename + ".bin")
+				os.Remove(userdir + filename + ".bin") //nolint:errcheck
 				log.Error("Error saving upload file metadata: " + err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return

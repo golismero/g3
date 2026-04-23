@@ -22,7 +22,6 @@ def import_hydra_textfile(fd, is_internal):
     did_warn_1 = False
     did_warn_2 = False
     did_warn_3 = False
-    did_warn_4 = False
     output = []
     current = None
     now = int(datetime.datetime.now().timestamp())

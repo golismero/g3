@@ -5,7 +5,7 @@
 FROM python:3-alpine
 
 # Latest version of Nmap at the time of writing
-ARG nmap_ver=7.93
+ARG nmap_ver=7.99
 
 # Install dependencies
 RUN apk add --update --no-cache \

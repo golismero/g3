@@ -250,7 +250,7 @@ func main() {
 		}
 
 		// Add the scan to the progress table.
-		g3lib.InsertScanProgress(sql_db, msg.ScanID)
+		g3lib.InsertScanProgress(sql_db, msg.ScanID) //nolint:errcheck
 
 		// Send the new task to the task runner.
 		scanChannel <- msg
@@ -442,7 +442,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 					// We are in a fresh step of the pipeline.
 					// Go through the currently held data and generate all the new tasks.
-					for dataid, _ := range state.CurrentData {
+					for dataid := range state.CurrentData {
 						log.Debugf("Pipeline %d: evaluating data %s for tool %s.", pipeidx, dataid, tool)
 
 						// Check for cancelation.

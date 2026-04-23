@@ -4,7 +4,6 @@
 
 from os import unlink
 from os.path import dirname, join, realpath
-from sys import stdout
 from json import dump
 from bs4 import BeautifulSoup           # pip install beautifulsoup4
 from urllib.request import urlopen

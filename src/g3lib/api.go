@@ -169,10 +169,10 @@ func (resp *APIResponse) Write(w http.ResponseWriter) {
 	respBytes, err := json.Marshal(*resp)
 	if err != nil {
 		log.Error("Error encoding API response: " + err.Error())
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError) //nolint:errcheck
 		return
 	}
-	w.Write(respBytes)
+	w.Write(respBytes) //nolint:errcheck
 }
 
 type ReqLogin struct {
@@ -371,7 +371,7 @@ func (sws *SyncWebSocket) ReadRequest() (*WSRequest, error) {
 		}
 		if messageType == websocket.PingMessage {
 			sws.mwrite.Lock()
-			sws.conn.WriteMessage(websocket.PongMessage, data)
+			sws.conn.WriteMessage(websocket.PongMessage, data) //nolint:errcheck
 			sws.mwrite.Unlock()
 			continue
 		}

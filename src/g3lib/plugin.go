@@ -339,8 +339,8 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 	if err != nil {
 		return outputArray, err
 	}
-	os.Remove(tempfile.Name())
-	defer os.Remove(tempfile.Name())
+	os.Remove(tempfile.Name()) //nolint:errcheck
+	defer os.Remove(tempfile.Name()) //nolint:errcheck
 
 	// Prepare the full command line to execute.
 	commandLine := []string{"docker", "run", "-q", "--cidfile", tempfile.Name(), "-v", "./resources:/resources:ro"}

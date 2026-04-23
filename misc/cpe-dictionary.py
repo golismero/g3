@@ -2,7 +2,6 @@
 
 # Script to download the official CPE dictionary from MITRE and serialize it in a SQLite database.
 
-import io
 import os
 import json
 import gzip

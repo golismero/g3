@@ -6,7 +6,6 @@ import json
 import sqlite3
 import traceback
 
-import redis
 import vulners
 
 # Check these prefixes for taxonomies we can understand.

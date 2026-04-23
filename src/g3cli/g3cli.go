@@ -404,7 +404,7 @@ func (cmd *ProgressCmd) Run(vars CmdContext) error {
 		return err
 	}
 	defer c.Close()
-	defer c.WriteMessage(websocket.CloseMessage, []byte(""))
+	defer c.WriteMessage(websocket.CloseMessage, []byte("")) //nolint:errcheck
 
 	// Send a request for scan progress updates.
 	msg := fmt.Sprintf(`{"msgtype":"scanprogress","token":"%s"}`, token)
@@ -802,7 +802,7 @@ func (cmd *PsCmd) Run(vars CmdContext) error {
 			},
 		}
 		for _, entry := range scanprogress {
-			msg := strings.Replace(entry.Message, "\n", " ", -1)
+			msg := strings.ReplaceAll(entry.Message, "\n", " ", )
 			if len(msg) > 80 {
 				msg = msg[:77] + "..."
 			}

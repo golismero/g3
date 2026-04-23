@@ -5,9 +5,7 @@ import sys
 import json
 import socket
 import tempfile
-import traceback
 import subprocess
-import urllib.parse
 
 # Base arguments for testssl.
 # TODO some of this could come from environment variables

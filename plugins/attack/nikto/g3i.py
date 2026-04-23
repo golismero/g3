@@ -6,9 +6,8 @@ import csv
 import sys
 import json
 import shlex
-import socket
-import urllib
-import traceback
+
+from datetime import datetime
 
 from lxml import etree
 from lxml.objectify import deannotate

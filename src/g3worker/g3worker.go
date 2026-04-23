@@ -142,7 +142,7 @@ func (tracker *CancelTracker) LoadState() {
 	// Parse the Duration objects and populate the rejected tasks map.
 	now := time.Now()
 	for taskid, durationStr := range rejectTasks {
-		duration, err :=time.ParseDuration(durationStr)
+		duration, err := time.ParseDuration(durationStr)
 		if err != nil {
 			log.Errorf("Error parsing file %s: %s", tracker.stateFile, err.Error())
 			duration, err = time.ParseDuration(G3_HOLD_CANCEL_DEFAULT)
@@ -247,7 +247,7 @@ func (tracker *CancelTracker) CancelAllTasks() []string {
 
 	// Call all of the cancel functions and keep the task IDs.
 	canceledTasks := []string{}
-	for taskid, cancel := range tracker.cancelFunc{
+	for taskid, cancel := range tracker.cancelFunc {
 		cancel()
 		canceledTasks = append(canceledTasks, taskid)
 	}
@@ -335,7 +335,7 @@ func main() {
 	if workerPluginsList == "" {
 		selected = slices.Sorted(maps.Keys(plugins))
 	} else if workerPluginsList[0:1] != "!" {			// allowlist
-		selected = strings.Fields(strings.Replace(workerPluginsList, ",", " ", -1))
+		selected = strings.Fields(strings.ReplaceAll(workerPluginsList, ",", " ", ))
 		for _, name := range selected {
 			if _, ok := plugins[name]; !ok {
 				log.Critical("Missing plugin: " + name)
@@ -344,7 +344,7 @@ func main() {
 		}
 	} else {											// denylist
 		workerPluginsList = workerPluginsList[1:]
-		denylist := strings.Fields(strings.Replace(workerPluginsList, ",", " ", -1))
+		denylist := strings.Fields(strings.ReplaceAll(workerPluginsList, ",", " ", ))
 		for _, name := range denylist {
 			if _, ok := plugins[name]; !ok {
 				log.Critical("Unknown plugin: " + name)

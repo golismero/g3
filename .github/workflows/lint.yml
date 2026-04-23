@@ -1,0 +1,49 @@
+name: Lint
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  ruff:
+    name: Ruff (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v4
+        with:
+          args: check
+
+  hadolint:
+    name: Hadolint (Dockerfile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install hadolint
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/hadolint \
+            https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+          sudo chmod +x /usr/local/bin/hadolint
+
+      # Restrict to tracked Dockerfiles so volumes/ and other untracked
+      # paths can't sneak in. Picks up .hadolint.yml from the repo root.
+      - name: Lint Dockerfiles
+        run: git ls-files '*Dockerfile*' | xargs -r hadolint
+
+  golangci:
+    name: golangci-lint (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [g3, g3api, g3cli, g3config, g3lib, g3log, g3scanner, g3worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/${{ matrix.module }}/go.mod
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          working-directory: src/${{ matrix.module }}
+          version: latest

@@ -285,7 +285,7 @@ func UpdateScanProgress(db SQLDBClient, scanid string, status G3SCANSTATUS, prog
 func GetProgressList(db SQLDBClient) ([]ScanStatusEntry, error) {
 	var scanstatus []ScanStatusEntry
 	var err error
-	var validate *validator.Validate = validator.New()
+	var validate = validator.New()
 
 	query := "SELECT `scanid`, `status`, `progress`, `message` FROM `progress`"
 	rows, err := db.db.Query(query)

@@ -67,7 +67,7 @@ func GetHomeDirectory() string {
 
 	// Save the calculated path into the environment.
 	// This will make future calls quicker.
-	os.Setenv(G3HOME, dir)
+	os.Setenv(G3HOME, dir) //nolint:errcheck
 
 	// Return the calculated path.
 	return dir
@@ -77,7 +77,7 @@ func GetHomeDirectory() string {
 func LoadDotEnvFile() error {
 	g3home := GetHomeDirectory()
 	if g3home != "" {
-		godotenv.Load(filepath.Join(g3home, ".env"))
+		godotenv.Load(filepath.Join(g3home, ".env")) //nolint:errcheck
 	}
 	return godotenv.Load()
 }
@@ -162,7 +162,7 @@ func (data G3Data) String() string {
 func IsValidData(data G3Data) (bool, error) {
 
 	// This ensures if a panic happens here we can recover and return false.
-	defer func() { recover() }()
+	defer func() { recover() }() //nolint:errcheck
 
 	// Verify the mandatory fields are all present.
 	mandatory := []string{								// add more here
@@ -517,9 +517,10 @@ func AskForConfirmation(s string) bool {
 			return false
 		}
 		response = strings.ToLower(strings.TrimSpace(response))
-		if response == "y" || response == "yes" {
+		switch response {
+		case "y", "yes":
 			return true
-		} else if response == "" || response == "n" || response == "no" {
+		case "", "n", "no":
 			return false
 		}
 	}

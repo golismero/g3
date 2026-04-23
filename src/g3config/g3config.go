@@ -180,7 +180,7 @@ func main() {
 	i18nStringsFile := filepath.Join(g3home, g3lib.G3CONFIG, g3lib.G3STRINGS)
 
 	// Initialize the validator.
-	var validate *validator.Validate = validator.New()
+	var validate = validator.New()
 
 	// Initialize the JSONnet parser.
 	vm := jsonnet.MakeVM()
@@ -212,7 +212,7 @@ func main() {
 		os.Exit(1)
 	}
 	if !quiet {
-		for lang, _ := range mainStrings {
+		for lang := range mainStrings {
 			langTag, err := language.Parse(lang)
 			if err != nil {
 				log.Error(err.Error())
@@ -354,7 +354,7 @@ func main() {
 			return err
 		}
 		if !quiet {
-			for lang, _ := range loadedStrings {
+			for lang := range loadedStrings {
 				langTag, err := language.Parse(lang)
 				if err != nil {
 					return err

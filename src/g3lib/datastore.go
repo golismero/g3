@@ -226,18 +226,18 @@ func LoadDataWithCallback(dbclient DatastoreClient, scanid string, query bson.M,
 		var document bson.M
 		e := cursor.Decode(&document)
 		if e != nil {
-			e = err
+			err = e
 			continue
 		}
 		bsonBytes, e := json.Marshal(document)
 		if e != nil {
-			e = err
+			err = e
 			continue
 		}
 		var data G3Data
 		e = json.Unmarshal(bsonBytes, &data)
 		if e != nil {
-			e = err
+			err = e
 			continue
 		}
 		e = callback(data)

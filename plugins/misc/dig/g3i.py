@@ -11,7 +11,7 @@ output = []
 # Parse the input data.
 input = jc.parse("dig", sys.stdin.read())
 assert input
-assert type(input) == list
+assert isinstance(input, list)
 for response in input:
     if "question" not in response or "answer" not in response:
         continue
