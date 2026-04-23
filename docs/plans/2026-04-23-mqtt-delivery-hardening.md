@@ -131,7 +131,7 @@ Verification is owned by the user — they run the end-to-end tests locally. Imp
 
 ## Tier 2a — Idempotent retry in the wrapper
 
-**Status:** details filled in, ready to execute after approval. Scope-split from the original "Tier 2" based on user decision to ship retry first and observe before committing to LWT.
+**Status:** **shipped.** Scope-split from the original "Tier 2" based on user decision to ship retry first and observe before committing to LWT.
 
 ### Context feeding this tier
 
@@ -225,38 +225,69 @@ One file, one function body. No caller edits.
 
 ### What Tier 2a does **not** do
 
-- Does not detect crashed workers (Tier 2b).
+- Does not detect crashed workers. (See "Deferred — ungraceful worker crash handling" below.)
 - Does not promote publish failures into DB state (Tier 3).
 - Does not add any form of durable queue or persistent outbox — retries are in-memory only. If the g3api or scanner process dies mid-retry, the publish is lost.
 
 ---
 
-## Tier 2b — LWT + worker liveness
+## Tier 2b — Bounded-retry on broker connect
 
-**Status:** outlined only. Not started. Revisit and re-plan with the user after Tier 2a ships and has been observed in production; retry may absorb enough transient cases that Tier 2b's urgency changes.
+**Status:** **shipped.** Rescoped from the original LWT design after discussion: LWT was discarded entirely (see "Why LWT was retired" below), and the only remaining Tier 2 work was a sibling of the Tier 2a wrapper — the broker-connect path had the identical silent-hang loop bug.
 
-### Objectives
+### Context
 
-- **LWT on every worker.** Worker connects with a Last Will message on a well-known topic (e.g. `worker/lwt/<workerid>`). Scanner subscribes. When a worker dies without graceful disconnect, scanner sees the LWT within keepalive + grace and can re-dispatch any tasks it had assigned to that worker.
+`ConnectToBroker` at `src/g3lib/task.go` had a `for !token.WaitTimeout(...) {}` at what was line 147 — the same pattern Tier 1 fixed in `SendMQPayload`. If mosquitto wasn't accepting connections at worker boot (very possible in a compose bring-up because `depends_on: { condition: service_started }` doesn't wait for readiness), the worker would hang indefinitely at startup with no log line, no retry, no timeout.
 
-### Open questions to resolve at Tier 2b start
+### Design principle
 
-- LWT topic shape and who owns re-dispatch — scanner or g3api?
-- MQTT keepalive interval (determines LWT latency) — currently default paho 30 s?
-- How does the re-dispatcher know which tasks a dead worker had claimed? No existing worker→task index exists; adding one has its own design weight.
-- Does LWT + re-dispatch overlap with what Tier 3 (DB-state promotion) would already cover? If a scan can self-heal via SQL reconciliation, LWT might be redundant.
+Connect and publish are the same *shape* of problem (bounded retry with backoff) but different *tolerance profiles*:
+- **Publish** is steady-state. Should fail fast so the user sees problems in time. 3 attempts, 1 s / 3 s backoff.
+- **Connect** is a startup concern. Must tolerate the broker being seconds-to-tens-of-seconds late to ready. 5 attempts, 2 s / 4 s / 8 s / 16 s backoff.
 
-### Likely file targets
+Separate constants, independent tuning.
 
-- `src/g3lib/task.go` — LWT setup in `ConnectToBroker`.
-- `src/g3worker/g3worker.go` — register LWT on connect, publish "I'm leaving" on graceful shutdown.
-- `src/g3scanner/g3scanner.go` (or `src/g3api/g3api.go`, TBD) — subscribe to LWT topic, track worker → active tasks, re-dispatch on LWT.
+### Implementation
+
+New constants alongside the existing `MQTT_*` group:
+
+```go
+const MQTT_CONNECT_TIMEOUT      = 15
+const MQTT_CONNECT_MAX_ATTEMPTS = 5
+var   MQTT_CONNECT_BACKOFFS     = []time.Duration{
+    2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second,
+}
+```
+
+`ConnectToBroker` rewritten around a retry loop with the same shape as `SendMQPayload`'s: per-attempt `WaitTimeout`, outcome-based classification (timeout and error both eligible for retry), debug-logged retries, wrapped final error.
+
+### Files touched (Tier 2b)
+
+| File | Change |
+|---|---|
+| `src/g3lib/task.go` | Add `MQTT_CONNECT_*` constants. Rewrite `ConnectToBroker` around a bounded retry loop. |
+
+### Why LWT was retired
+
+The original plan had LWT as the core of Tier 2, with re-dispatch. Discussion surfaced three blockers:
+
+1. **LWT cannot distinguish crash from transient disconnect.** MQTT keepalive + paho's silent auto-reconnect means a network hiccup lasting longer than the broker's client-timeout produces an LWT publish indistinguishable from a real crash. Without reconciliation machinery (grace periods, heartbeats, "I'm back" signals), acting on LWT is unreliable.
+2. **Graceful shutdown is already handled.** The worker's SIGTERM path calls `cancelTracker.CancelAllTasks()` at `g3worker.go:311,316`, which cancels each running task's context; the plugin runner exits, the worker sends responses back on the normal path. No LWT need.
+3. **Ungraceful crash is a real problem, but LWT doesn't solve it cleanly** — and the problem is entangled with a separate "plugin stuck in an infinite loop inside a live worker" failure mode that LWT cannot see at all. Both are better served by observability + user-driven intervention for now.
+
+### Deferred — ungraceful worker crash handling
+
+Parked, explicitly not in scope:
+
+- **The problem.** A worker process dies (SIGKILL, OOM, panic). Plugin containers orphan (they live in dockerd's namespace, not the worker's). Scanner waits forever for task responses that will never arrive.
+- **Why deferred.** Likely solution is smart per-plugin timeouts in the scanner. But plugin-runtime varies wildly (nmap of a /16 can be hours; dig is seconds), so picking defaults requires data. Current mitigation — user sees no progress, cancels the scan manually — is adequate because task execution today is purely user-driven.
+- **When to revisit.** When task execution becomes non-interactive (LLM/agentic integration, scheduled scans, etc.) user-driven cancellation stops working. That milestone is the natural trigger for revisiting this tier.
 
 ---
 
 ## Tier 3 — Promote terminal publish failures to DB state
 
-**Status:** outlined only. Not started. Revisit with the user after Tier 2 ships and is observed in practice — Tier 2 may change the scope or urgency of Tier 3.
+**Status:** outlined only. Not started. Tier 2a (retry) plus Tier 1's check-and-log has absorbed the common cases; Tier 3 is now specifically about *reconciliation* when retry is exhausted. Worth revisiting after Tier 4 (visibility) ships, since visibility may reveal which terminal failures actually occur in practice.
 
 ### Objectives
 

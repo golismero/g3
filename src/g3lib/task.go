@@ -26,6 +26,12 @@ const MQTT_QUIESCE = 15
 const MQTT_MAX_ATTEMPTS = 3
 var   MQTT_BACKOFFS     = []time.Duration{1 * time.Second, 3 * time.Second}
 
+const MQTT_CONNECT_TIMEOUT      = 15
+const MQTT_CONNECT_MAX_ATTEMPTS = 5
+var   MQTT_CONNECT_BACKOFFS     = []time.Duration{
+	2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second,
+}
+
 const G3SCANNERSUBTOPIC     = "$share/g3scanner/scan"
 const G3SCANNERPUBTOPIC     = "scan"
 const G3SCANNERSTOPTOPIC    = "stop"
@@ -141,11 +147,33 @@ func ConnectToBroker(clientid string) (MessageQueueClient, error) {
 	opts.SetOrderMatters(false)		// needed to send replies to our messages without deadlocking
 	opts.SetCleanSession(false)		// we want past messages when reconnecting
 
-	// Connect to the broker.
+	// Connect to the broker, with bounded retry for startup-ordering races
+	// (e.g. mosquitto not yet accepting connections when the worker boots).
 	client := mqtt.NewClient(opts)
-	token := client.Connect()
-	for !token.WaitTimeout(MQTT_QUIESCE * time.Second) {}
-	return client, token.Error()
+	var lastErr error
+	for attempt := 0; attempt < MQTT_CONNECT_MAX_ATTEMPTS; attempt++ {
+		if attempt > 0 {
+			backoff := MQTT_CONNECT_BACKOFFS[attempt-1]
+			log.Debugf("Retrying connect to broker (attempt %d/%d) after %s",
+				attempt+1, MQTT_CONNECT_MAX_ATTEMPTS, backoff)
+			time.Sleep(backoff)
+		}
+		token := client.Connect()
+		if !token.WaitTimeout(MQTT_CONNECT_TIMEOUT * time.Second) {
+			lastErr = fmt.Errorf("connect to broker timed out after %ds", MQTT_CONNECT_TIMEOUT)
+			continue
+		}
+		if err := token.Error(); err != nil {
+			lastErr = err
+			continue
+		}
+		if attempt > 0 {
+			log.Debugf("Connect to broker succeeded on attempt %d", attempt+1)
+		}
+		return client, nil
+	}
+	return nil, fmt.Errorf("connect to broker failed after %d attempts: %w",
+		MQTT_CONNECT_MAX_ATTEMPTS, lastErr)
 }
 
 // Defer this call right after calling ConnectToBroker().
