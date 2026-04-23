@@ -8,6 +8,8 @@ on:
 jobs:
   ruff:
     name: Ruff (Python)
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +19,8 @@ jobs:
 
   hadolint:
     name: Hadolint (Dockerfile)
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +38,8 @@ jobs:
 
   golangci:
     name: golangci-lint (${{ matrix.module }})
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
