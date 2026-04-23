@@ -61,6 +61,7 @@ type LsCmd struct {
 
 type PsCmd struct {
 	Output string `short:"o" type:"path"         default:"-"     help:"Output file."`
+	ScanID string `arg:""    optional:""                         help:"Optional scan ID; when given, drills into per-task status."`
 }
 
 type CancelCmd struct {
@@ -719,6 +720,9 @@ func (cmd *LsCmd) Run(vars CmdContext) error {
 }
 
 func (cmd *PsCmd) Run(vars CmdContext) error {
+	if cmd.ScanID != "" {
+		return cmd.runTaskView(vars)
+	}
 	output := cmd.Output
 	token := vars.Token
 	ctx := vars.Ctx
@@ -824,6 +828,126 @@ func (cmd *PsCmd) Run(vars CmdContext) error {
 	} else {
 		err = os.WriteFile(output, []byte(outputText), 0644)
 		if err != nil {
+			log.Critical("Error writing to file " + output + ": " + err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+// Render a human-readable relative age from a seconds count.
+// Tuned for a status table: compact, widest case fits in ~8 chars.
+func formatAge(seconds int64) string {
+	switch {
+	case seconds < 60:
+		return fmt.Sprintf("%ds", seconds)
+	case seconds < 3600:
+		return fmt.Sprintf("%dm%ds", seconds/60, seconds%60)
+	case seconds < 86400:
+		return fmt.Sprintf("%dh%dm", seconds/3600, (seconds%3600)/60)
+	default:
+		return fmt.Sprintf("%dd%dh", seconds/86400, (seconds%86400)/3600)
+	}
+}
+
+// Per-task status drill-in for `g3cli ps <scanid>`. Pulls the last-log
+// timestamp per task from the scan's execution log and renders a table
+// sorted by staleness (most stale first).
+func (cmd *PsCmd) runTaskView(vars CmdContext) error {
+	output := cmd.Output
+	token := vars.Token
+	ctx := vars.Ctx
+	baseUrl := vars.BaseURL
+	quiet := CLI.Quiet
+
+	var req g3lib.ReqQueryScanTaskStatus
+	req.Token = token
+	req.ScanID = cmd.ScanID
+	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/tasks/status", req)
+	if err != nil {
+		log.Critical("Error sending API request: " + err.Error())
+		return err
+	}
+	if resp.Status != "success" {
+		log.Critical(resp.Data)
+		return errors.New("malformed response from server")
+	}
+
+	var entries []g3lib.TaskStatusEntry
+	if resp.Data != nil {
+		tmp, ok := resp.Data.([]interface{})
+		if !ok {
+			log.Criticalf("%v", resp.Data)
+			log.Critical("Malformed response from server.")
+			return errors.New("malformed response from server")
+		}
+		for _, tmp2 := range tmp {
+			tmp3, ok := tmp2.(map[string]interface{})
+			if !ok {
+				return errors.New("malformed response from server")
+			}
+			var entry g3lib.TaskStatusEntry
+			if v, ok := tmp3["taskid"].(string); ok {
+				entry.TaskID = v
+			}
+			if v, ok := tmp3["first_log_ts"].(float64); ok {
+				entry.FirstLogTS = int64(v)
+			}
+			if v, ok := tmp3["last_log_ts"].(float64); ok {
+				entry.LastLogTS = int64(v)
+			}
+			if v, ok := tmp3["line_count"].(float64); ok {
+				entry.LineCount = int(v)
+			}
+			if v, ok := tmp3["age_seconds"].(float64); ok {
+				entry.AgeSeconds = int64(v)
+			}
+			entries = append(entries, entry)
+		}
+	}
+
+	var outputText string
+	if quiet {
+		for _, entry := range entries {
+			outputText = outputText + entry.TaskID + "\n"
+		}
+	} else {
+		table := simpletable.New()
+		table.Header = &simpletable.Header{
+			Cells: []*simpletable.Cell{
+				{Align: simpletable.AlignCenter, Text: "TASK ID"},
+				{Align: simpletable.AlignCenter, Text: "FIRST SEEN"},
+				{Align: simpletable.AlignCenter, Text: "LAST SEEN"},
+				{Align: simpletable.AlignCenter, Text: "AGE"},
+				{Align: simpletable.AlignCenter, Text: "LINES"},
+			},
+		}
+		for _, entry := range entries {
+			firstSeen := "-"
+			lastSeen := "-"
+			if entry.FirstLogTS > 0 {
+				firstSeen = time.Unix(entry.FirstLogTS, 0).Format("15:04:05")
+			}
+			if entry.LastLogTS > 0 {
+				lastSeen = time.Unix(entry.LastLogTS, 0).Format("15:04:05")
+			}
+			r := []*simpletable.Cell{
+				{Align: simpletable.AlignLeft,   Text: entry.TaskID},
+				{Align: simpletable.AlignCenter, Text: firstSeen},
+				{Align: simpletable.AlignCenter, Text: lastSeen},
+				{Align: simpletable.AlignRight,  Text: formatAge(entry.AgeSeconds)},
+				{Align: simpletable.AlignRight,  Text: fmt.Sprintf("%d", entry.LineCount)},
+			}
+			table.Body.Cells = append(table.Body.Cells, r)
+		}
+		table.SetStyle(simpletable.StyleCompactLite)
+		outputText = "\n" + table.String() + "\n\n"
+	}
+
+	if output == "-" {
+		fmt.Print(outputText)
+	} else {
+		if err := os.WriteFile(output, []byte(outputText), 0644); err != nil {
 			log.Critical("Error writing to file " + output + ": " + err.Error())
 			return err
 		}

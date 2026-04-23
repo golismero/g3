@@ -313,26 +313,112 @@ The biggest user-visible failure mode today: a scan finishes, `SendScanCompleted
 
 ---
 
-## Tier 4 — Observability: g3cli alive-check
+## Tier 4 — Observability: g3cli per-task visibility
 
-**Status:** outlined only. Not started. Lowest priority; revisit once Tiers 1-3 are in place.
+**Status:** **shipped.** Promoted ahead of Tier 3 because ungraceful-crash handling (which this indirectly addresses via user-driven cancellation) was deferred and visibility is the interim mitigation.
 
-### Objectives
+### Context
 
-Match issue #5 option 2: `g3cli` sub-command that shows per-task last-activity timestamp, answering "is this task still alive or just stuck?" Leans on the existing MariaDB execution log (workers already write there).
+The MariaDB `logs` table at `src/g3lib/sql.go:111-115` already records `(timestamp, scanid, taskid, text)` for every line a plugin emits (workers save via `SaveLogLine` in the plugin runner's stderr pipe at `g3worker.go:585`). `QueryLogForTask` at `sql.go:195` already computes `Start`, `End`, and `Lines` per task — `End` is the last-seen timestamp.
 
-### Approach sketch
+The data to answer "is this task still alive?" already exists. We just need a compact query and a compact presentation. Today, `g3cli logs` dumps every line; that's too noisy for a liveness check.
 
-- New `g3cli` command: `g3cli task list <scanid>` or `g3cli task show <taskid>` — fetches from `g3api`, which in turn reads the last log row timestamp from MariaDB per task.
-- Add an `age` column (`now() - last_log_ts`). Red/yellow/green thresholds configurable.
-- Optional: emit a per-minute heartbeat row from workers so tasks that don't produce output still advance the timestamp.
+### Design principles
 
-### Likely file targets
+- **No new data collection.** The `logs` table already has what we need. Workers reliably write at least one log line per task at dispatch (see `QueryTaskIDsFromLog` comment at `sql.go:167-174`), so tasks-that-have-logged covers tasks-that-exist in practice. No worker heartbeat code needed for v1.
+- **Server-side aggregation, not client-side.** A `MAX(timestamp) GROUP BY taskid` returns one row per task. Sending all log lines over the wire just to extract per-task max timestamps would be orders of magnitude wasteful for large scans.
+- **Extend existing idioms, don't invent new ones.** `g3cli ps` already means "what's active right now." Drilling into a scan via `g3cli ps <scanid>` to see per-task status mirrors Unix `ps` behaviour exactly — no need for a new subcommand.
 
-- `src/g3cli/*`
-- `src/g3api/g3api.go` — new endpoint
-- `src/g3lib/sql.go` — query helper for per-task last-log timestamp
-- `src/g3worker/g3worker.go` — optional heartbeat writer
+### Concrete shape
+
+#### Server-side: new endpoint `/scan/tasks/status`
+
+New request struct in `src/g3lib/api.go` next to `ReqQueryScanTaskList`:
+
+```go
+type ReqQueryScanTaskStatus struct {
+    AuthenticatedRequest
+    ScanID string `json:"scanid" validate:"uuid"`
+}
+func (req *ReqQueryScanTaskStatus) Decode(r *http.Request) error {
+    if err := ValidateHttpRequest(r); err != nil { return err }
+    if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+    return validator.New().Struct(req)
+}
+```
+
+New response struct in `src/g3lib/sql.go` next to existing log types:
+
+```go
+type TaskStatusEntry struct {
+    TaskID     string `json:"taskid"`
+    FirstLogTS int64  `json:"first_log_ts"`  // Unix timestamp of first log line
+    LastLogTS  int64  `json:"last_log_ts"`   // Unix timestamp of most recent log line
+    LineCount  int    `json:"line_count"`
+    AgeSeconds int64  `json:"age_seconds"`   // server-computed: now - LastLogTS
+}
+```
+
+New query helper in `src/g3lib/sql.go`:
+
+```go
+func QueryTaskStatus(db SQLDBClient, scanid string) ([]TaskStatusEntry, error) {
+    query := `SELECT taskid,
+                     MIN(timestamp) AS first_ts,
+                     MAX(timestamp) AS last_ts,
+                     COUNT(*)       AS line_count
+              FROM logs
+              WHERE scanid = ?
+              GROUP BY taskid
+              ORDER BY last_ts DESC`
+    // ... scan rows, compute AgeSeconds as now - last_ts, return slice
+}
+```
+
+New handler in `src/g3api/g3api.go` registered as `apiPath + "/scan/tasks/status"` right after the existing `/scan/logs` handler (around line 563). Follows the same authenticate → decode → query → respond pattern as `/scan/tasks`.
+
+#### Client-side: `g3cli ps` accepts an optional scan ID
+
+Update `PsCmd` at `src/g3cli/g3cli.go:62`:
+
+```go
+type PsCmd struct {
+    Output string `short:"o" type:"path"         default:"-"     help:"Output file."`
+    ScanID string `arg:""    optional:""                         help:"Optional scan ID; when given, drills into per-task status."`
+}
+```
+
+`PsCmd.Run` at `g3cli.go:721` gains an if-branch: if `ScanID == ""`, keep existing scan-table behaviour; otherwise call `/scan/tasks/status` and render a per-task table with columns `TASK ID | FIRST SEEN | LAST SEEN | AGE | LINES`, sorted by age descending (most stale first → most visible at the top).
+
+Age formatting: human-readable — "5s", "2m 14s", "1h 23m" — computed from `AgeSeconds`. Timestamps formatted as HH:MM:SS (or full date if not today; follow whatever format the logs command already uses for consistency).
+
+No colour codes for v1; the age numbers themselves are sufficient signal. Thresholds (red/yellow/green) can be a follow-up once real use reveals what "stuck" looks like in the field.
+
+### Files touched (Tier 4)
+
+| File | Change |
+|---|---|
+| `src/g3lib/sql.go` | Add `TaskStatusEntry` struct and `QueryTaskStatus` helper function. |
+| `src/g3lib/api.go` | Add `ReqQueryScanTaskStatus` + `Decode`. |
+| `src/g3api/g3api.go` | Register `/scan/tasks/status` handler. |
+| `src/g3cli/g3cli.go` | Add optional `ScanID` arg to `PsCmd`; add per-task rendering branch to `PsCmd.Run`. |
+
+Four files, each small. No schema changes (logs table already has all needed columns).
+
+### Verification (Tier 4) — user-owned
+
+1. `make bin` — builds clean.
+2. `go vet ./...` on each touched module — no new findings.
+3. Behavioural: run a normal scan; `g3cli ps` (no arg) still shows the scan table. `g3cli ps <scanid>` shows per-task rows with plausible timestamps and ages.
+4. Stuck-task simulation: run the stress test with `force-exec` to produce many tasks; while running, pause mosquitto or simulate slow plugins; confirm the per-task view clearly shows which tasks aren't advancing (ages climbing).
+5. Empty-scan check: `g3cli ps <scanid>` against a scan that has no logged tasks yet shows an empty table, not an error.
+
+### What Tier 4 does **not** do
+
+- Does not *act* on stuck tasks — only surfaces them. Cancellation is still via `g3cli cancel`.
+- Does not handle tasks that never logged (empirically rare, see `sql.go:167-174` comment).
+- Does not add colour-coded thresholds; reserved as a follow-up.
+- Does not define "stuck" — the user reads the age and decides.
 
 ---
 

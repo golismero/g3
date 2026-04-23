@@ -67,6 +67,14 @@ type ScanStatusEntry struct {
 	Message string          `json:"message"`
 }
 
+type TaskStatusEntry struct {
+	TaskID     string       `json:"taskid"         validate:"required,uuid4"`
+	FirstLogTS int64        `json:"first_log_ts"   validate:"gte=0"`
+	LastLogTS  int64        `json:"last_log_ts"    validate:"gte=0"`
+	LineCount  int          `json:"line_count"     validate:"gte=0"`
+	AgeSeconds int64        `json:"age_seconds"    validate:"gte=0"`
+}
+
 type QueryLogCallback func(LogEntry)(error)
 
 // Connect to the SQL database.
@@ -189,6 +197,35 @@ func QueryTaskIDsFromLog(db SQLDBClient, scanid string) ([]string, error) {
 		tasklist = append(tasklist, taskid)
 	}
 	return tasklist, err
+}
+
+// Query the per-task status summary for a scan (one row per task with first/last
+// log timestamps and line count). Used by Tier 4 visibility to answer "which
+// tasks haven't produced output in a while?" without pulling every log line.
+func QueryTaskStatus(db SQLDBClient, scanid string) ([]TaskStatusEntry, error) {
+	var entries []TaskStatusEntry
+
+	query := "SELECT `taskid`, MIN(`timestamp`), MAX(`timestamp`), COUNT(*) " +
+		"FROM `logs` WHERE `scanid` = ? GROUP BY `taskid` ORDER BY MAX(`timestamp`) DESC"
+	rows, err := db.db.Query(query, scanid)
+	if err != nil {
+		return entries, err
+	}
+	defer rows.Close()
+
+	now := time.Now().Unix()
+	for rows.Next() {
+		var entry TaskStatusEntry
+		if e := rows.Scan(&entry.TaskID, &entry.FirstLogTS, &entry.LastLogTS, &entry.LineCount); e != nil {
+			return entries, e
+		}
+		entry.AgeSeconds = now - entry.LastLogTS
+		if entry.AgeSeconds < 0 {
+			entry.AgeSeconds = 0
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
 }
 
 // Query the log lines for a specific task execution.

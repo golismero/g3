@@ -308,6 +308,16 @@ func (req *ReqQueryScanTaskList) Decode(r *http.Request) error {
 	return validator.New().Struct(req)
 }
 
+type ReqQueryScanTaskStatus struct {
+	AuthenticatedRequest
+	ScanID string               `json:"scanid"              validate:"uuid"`
+}
+func (req *ReqQueryScanTaskStatus) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
 type ReqListPlugins struct {
 	AuthenticatedRequest
 }

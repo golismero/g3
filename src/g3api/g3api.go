@@ -587,6 +587,34 @@ func Main() int {
 		})
 
 		///////////////////////////////////////////////////////////////////////////////////////////
+		// Show per-task status summary for a scan (first/last log timestamps, age, line count).
+		//
+		http.HandleFunc(apiPath + "/scan/tasks/status", func (w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: scan/tasks/status")
+			var request g3lib.ReqQueryScanTaskStatus
+			err := request.Decode(r)
+			if err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+			_, err = g3lib.ValidateJwt(request.Token) // no authorization needed
+			if err != nil {
+				log.Error(err.Error())
+				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
+				return
+			}
+
+			entries, err := g3lib.QueryTaskStatus(sql_db, request.ScanID)
+			if err != nil {
+				log.Error(err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+			} else {
+				g3lib.SendApiResponse(w, entries)
+			}
+		})
+
+		///////////////////////////////////////////////////////////////////////////////////////////
 		// Stop a scan.
 		//
 		http.HandleFunc(apiPath + "/scan/stop", func (w http.ResponseWriter, r *http.Request) {
