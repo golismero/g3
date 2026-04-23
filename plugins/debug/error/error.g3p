@@ -1,0 +1,15 @@
+// Debug-only plugin: always fails.
+// Exists to exercise the orchestrator's error paths (e.g. samples/stresstest.script), not for real scans.
+{
+    url: "https://github.com/golismero/g3",
+    description: {
+        en: "Debug/stress-test plugin. Always exits with a non-zero status so the engine's error-handling paths can be exercised.",
+    },
+    commands: [
+        {
+            condition: "true",
+            fingerprint: ["error"],
+            command: ["error"],
+        },
+    ],
+}

@@ -1,0 +1,15 @@
+// Debug-only plugin: echoes its input back as a single-item list.
+// Exists to exercise the orchestrator (e.g. samples/stresstest.script), not for real scans.
+{
+    url: "https://github.com/golismero/g3",
+    description: {
+        en: "Debug/stress-test plugin. Echoes the input data object back to the engine as a single-item list.",
+    },
+    commands: [
+        {
+            condition: "true",
+            fingerprint: ["passthrough"],
+            command: ["passthrough"],
+        },
+    ],
+}

@@ -1,0 +1,18 @@
+// Debug-only plugin: always dispatched, never deduped.
+// Identical to passthrough in behaviour (echoes input as a single-item list),
+// but its fingerprint embeds a fresh UUID so the scanner's in-flight and
+// database-history filters always miss.
+// Useful in stress tests and experiments that need to force actual concurrency.
+{
+    url: "https://github.com/golismero/g3",
+    description: {
+        en: "Debug/stress-test plugin. Behaves like passthrough but injects a fresh UUID into its fingerprint so each invocation bypasses the scanner's dedup filters.",
+    },
+    commands: [
+        {
+            condition: "true",
+            fingerprint: ["force-exec {{uuid}}"],
+            command: ["force-exec"],
+        },
+    ],
+}

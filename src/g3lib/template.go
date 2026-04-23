@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -33,6 +35,7 @@ func BuildTemplate(token string) (*template.Template, error) {
 		"minus":        Minus,
 		"timestamp":    FormatUnixTime,     // Convert Unix timestamp to human readable string.
 		"codeblock":    MarkdownCodeBlock,  // Generate a Markdown code block.
+		"uuid":         uuid.NewString,     // Fresh random UUID4. Bypasses scanner dedup when used in a fingerprint.
 
 		// TODO add more here
 	}

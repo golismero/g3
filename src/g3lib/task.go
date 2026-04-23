@@ -362,7 +362,9 @@ func SendMQPayload(client MessageQueueClient, topic string, msg any) error {
 		return err
 	}
 	token := client.Publish(topic, MQTT_QOS, MQTT_PERSIST, msgtext)
-	for !token.WaitTimeout(MQTT_QUIESCE * time.Second) {}
+	if !token.WaitTimeout(MQTT_QUIESCE * time.Second) {
+		return fmt.Errorf("publish to %q timed out after %ds", topic, MQTT_QUIESCE)
+	}
 	if err := token.Error(); err != nil {
 		if log.LogLevel == "DEBUG" {
 			debug.PrintStack()
