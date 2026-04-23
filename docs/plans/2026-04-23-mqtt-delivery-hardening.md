@@ -287,7 +287,11 @@ Parked, explicitly not in scope:
 
 ## Tier 3 — Promote terminal publish failures to DB state
 
-**Status:** outlined only. Not started. Tier 2a (retry) plus Tier 1's check-and-log has absorbed the common cases; Tier 3 is now specifically about *reconciliation* when retry is exhausted. Worth revisiting after Tier 4 (visibility) ships, since visibility may reveal which terminal failures actually occur in practice.
+**Status:** **deferred until observed.** Outlined below for reference; not scheduled.
+
+**Why deferred:** The combination of shipped tiers has shrunk this from a correctness gap to belt-and-suspenders. Tier 1 surfaces every terminal publish failure as a loud error log. Tier 2a retries transient failures automatically. Tier 5 gives real per-task state in `g3cli ps` so the task view stays truthful even if the scan header goes stale. The remaining failure mode (retries exhausted + logs not read + `ps` not consulted) is narrow and mostly a concern for unattended/automated deployments.
+
+**Trigger to revisit:** a concrete case where stale scan status misleads a user or breaks an integration. Until then this tier is a hypothetical — its blast radius (touches every `SendScan*` call site in the scanner, changes write ordering with SQL, needs careful consumer-side reconciliation logic) doesn't justify the work.
 
 ### Objectives
 

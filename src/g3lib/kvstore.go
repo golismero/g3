@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -207,13 +208,19 @@ func GetTaskStates(rdb KeyValueStoreClient, scanid string) ([]TaskState, error) 
 		state.State = fields["state"]
 		state.ErrorMsg = fields["error_msg"]
 		if v, ok := fields["dispatch_ts"]; ok {
-			fmt.Sscanf(v, "%d", &state.DispatchTS)
+			if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+				state.DispatchTS = parsed
+			}
 		}
 		if v, ok := fields["start_ts"]; ok {
-			fmt.Sscanf(v, "%d", &state.StartTS)
+			if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+				state.StartTS = parsed
+			}
 		}
 		if v, ok := fields["complete_ts"]; ok {
-			fmt.Sscanf(v, "%d", &state.CompleteTS)
+			if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+				state.CompleteTS = parsed
+			}
 		}
 		states = append(states, state)
 	}
