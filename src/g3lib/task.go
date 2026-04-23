@@ -23,6 +23,8 @@ const MQTT_URL = "MQTT_URL"
 const MQTT_QOS = 2
 const MQTT_PERSIST = false
 const MQTT_QUIESCE = 15
+const MQTT_MAX_ATTEMPTS = 3
+var   MQTT_BACKOFFS     = []time.Duration{1 * time.Second, 3 * time.Second}
 
 const G3SCANNERSUBTOPIC     = "$share/g3scanner/scan"
 const G3SCANNERPUBTOPIC     = "scan"
@@ -361,17 +363,33 @@ func SendMQPayload(client MessageQueueClient, topic string, msg any) error {
 	if err != nil {
 		return err
 	}
-	token := client.Publish(topic, MQTT_QOS, MQTT_PERSIST, msgtext)
-	if !token.WaitTimeout(MQTT_QUIESCE * time.Second) {
-		return fmt.Errorf("publish to %q timed out after %ds", topic, MQTT_QUIESCE)
-	}
-	if err := token.Error(); err != nil {
-		if log.LogLevel == "DEBUG" {
-			debug.PrintStack()
+	var lastErr error
+	for attempt := 0; attempt < MQTT_MAX_ATTEMPTS; attempt++ {
+		if attempt > 0 {
+			backoff := MQTT_BACKOFFS[attempt-1]
+			log.Debugf("Retrying publish to %q (attempt %d/%d) after %s",
+				topic, attempt+1, MQTT_MAX_ATTEMPTS, backoff)
+			time.Sleep(backoff)
 		}
-		return err
+		token := client.Publish(topic, MQTT_QOS, MQTT_PERSIST, msgtext)
+		if !token.WaitTimeout(MQTT_QUIESCE * time.Second) {
+			lastErr = fmt.Errorf("publish to %q timed out after %ds", topic, MQTT_QUIESCE)
+			continue
+		}
+		if err := token.Error(); err != nil {
+			if log.LogLevel == "DEBUG" {
+				debug.PrintStack()
+			}
+			lastErr = err
+			continue
+		}
+		if attempt > 0 {
+			log.Debugf("Publish to %q succeeded on attempt %d", topic, attempt+1)
+		}
+		return nil
 	}
-	return nil
+	return fmt.Errorf("publish to %q failed after %d attempts: %w",
+		topic, MQTT_MAX_ATTEMPTS, lastErr)
 }
 
 // Subscribe to a series of tool topics.

@@ -1,4 +1,4 @@
-module golismero.com/g3
+module golismero.com/g3cli
 
 go 1.25.0
 

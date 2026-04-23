@@ -124,36 +124,133 @@ Verification is owned by the user — they run the end-to-end tests locally. Imp
 ### What Tier 1 does **not** do
 
 - Does not change what happens when `SendScanCompleted` / `SendScanFailed` fails — scan will still look stuck to the API. (That's Tier 3.)
-- Does not detect crashed workers. (That's Tier 2.)
-- Does not retry transient publish failures. (That's Tier 2.)
+- Does not detect crashed workers. (That's Tier 2b.)
+- Does not retry transient publish failures. (That's Tier 2a.)
 
 ---
 
-## Tier 2 — LWT + idempotent retry
+## Tier 2a — Idempotent retry in the wrapper
 
-**Status:** outlined only. Not started. Revisit and expand this section with the user before any implementation begins; open questions below must be answered first.
+**Status:** details filled in, ready to execute after approval. Scope-split from the original "Tier 2" based on user decision to ship retry first and observe before committing to LWT.
+
+### Context feeding this tier
+
+Tier 1 left `SendMQPayload` in a state where every publish either succeeds, returns a paho error, or returns the 15 s timeout error we added when we killed the silent-hang loop. All three outcomes propagate up the call stack and are logged by the Tier 1 check-and-log shim at every caller. The piece still missing: transient broker hiccups (reconnect in progress, single-packet loss, momentary mosquitto unavailability) surface as user-visible failures even when a half-second retry would have succeeded.
+
+### Design principles (already settled)
+
+- **Retry lives in the wrapper, never at callers.** 47+ caller sites across 6 helper functions — wrong place to add retry. Callers keep their Tier 1 shape; retry is invisible to them.
+- **`json.Marshal` error stays non-retryable.** It's deterministic and pre-dates the retry loop in the function body.
+- **Classification by outcome, not by error type.** Any `token.Error()` or quiesce-timeout → retry candidate. No paho-specific error taxonomy (fragile across paho versions and unreliable in practice).
+
+### Concrete shape
+
+Inside `src/g3lib/task.go`, wrap the current publish-wait-check region of `SendMQPayload` in a bounded loop. New constants at the top of the file next to the existing `MQTT_*` group:
+
+```go
+const MQTT_MAX_ATTEMPTS = 3
+var   MQTT_BACKOFFS     = []time.Duration{1 * time.Second, 3 * time.Second}
+```
+
+New function body shape (replacing the current lines 358-373):
+
+```go
+func SendMQPayload(client MessageQueueClient, topic string, msg any) error {
+    log.Debug("Publishing to: " + topic)
+    msgtext, err := json.Marshal(msg)
+    if err != nil {
+        return err
+    }
+    var lastErr error
+    for attempt := 0; attempt < MQTT_MAX_ATTEMPTS; attempt++ {
+        if attempt > 0 {
+            backoff := MQTT_BACKOFFS[attempt-1]
+            log.Debugf("Retrying publish to %q (attempt %d/%d) after %s",
+                topic, attempt+1, MQTT_MAX_ATTEMPTS, backoff)
+            time.Sleep(backoff)
+        }
+        token := client.Publish(topic, MQTT_QOS, MQTT_PERSIST, msgtext)
+        if !token.WaitTimeout(MQTT_QUIESCE * time.Second) {
+            lastErr = fmt.Errorf("publish to %q timed out after %ds", topic, MQTT_QUIESCE)
+            continue
+        }
+        if err := token.Error(); err != nil {
+            if log.LogLevel == "DEBUG" {
+                debug.PrintStack()
+            }
+            lastErr = err
+            continue
+        }
+        if attempt > 0 {
+            log.Debugf("Publish to %q succeeded on attempt %d", topic, attempt+1)
+        }
+        return nil
+    }
+    return fmt.Errorf("publish to %q failed after %d attempts: %w",
+        topic, MQTT_MAX_ATTEMPTS, lastErr)
+}
+```
+
+### Tuning
+
+- **3 attempts total** (1 initial + 2 retries).
+- **Backoffs `[1 s, 3 s]`.** Fixed, no jitter (single publisher per process; thundering-herd risk negligible).
+- **`MQTT_QUIESCE` stays 15 s** per attempt, same as Tier 1.
+- **Worst-case latency before a genuine failure surfaces:** 3 × 15 s quiesce + 1 s + 3 s = ~49 s. Acceptable because a persistent broker outage is already a severe incident; users see the final error via the Tier 1 caller-side logs.
+- **No `context.Context` threading.** Would touch every caller, violating the wrapper-only principle. Graceful shutdown tolerates up to ~49 s latency on an in-flight publish. Revisit only if field experience says it's too long.
+
+### Idempotency rationale (carried forward from the original Tier 2 outline)
+
+Retry is safe because every consumer already tolerates duplicates:
+- Task dispatch → worker dedup via `CancelTracker.AddTaskIfNew` at `g3worker.go:482`.
+- Responses → tagged by `TaskID`; scanner tolerates duplicates.
+- Cancels → naturally idempotent.
+
+### Files touched (Tier 2a)
+
+| File | Change |
+|---|---|
+| `src/g3lib/task.go` | Add `MQTT_MAX_ATTEMPTS` + `MQTT_BACKOFFS`; rewrite the body of `SendMQPayload` around a retry loop. |
+
+One file, one function body. No caller edits.
+
+### Verification (Tier 2a) — user-owned
+
+1. `make bin` — builds clean.
+2. `go vet ./...` on `src/g3lib/` — no new findings.
+3. Happy-path regression: `docker compose up` + a small valid scan; no retry log lines in the normal path.
+4. Transient-failure test: `docker pause mosquitto` mid-scan; confirm retry Debug lines appear; `docker unpause mosquitto` within 4 s; publish succeeds on retry, no caller-side error log.
+5. Persistent-failure test: keep mosquitto paused longer than `MQTT_MAX_ATTEMPTS × MQTT_QUIESCE`; confirm eventual "failed after 3 attempts" error propagates to the caller's Tier 1 error log.
+6. Oversize test (against a real 7.3 MB script): confirm 3 retries all fail identically; final error surfaced after ~49 s. (Deterministic failures will waste the retry budget — expected trade-off.)
+
+### What Tier 2a does **not** do
+
+- Does not detect crashed workers (Tier 2b).
+- Does not promote publish failures into DB state (Tier 3).
+- Does not add any form of durable queue or persistent outbox — retries are in-memory only. If the g3api or scanner process dies mid-retry, the publish is lost.
+
+---
+
+## Tier 2b — LWT + worker liveness
+
+**Status:** outlined only. Not started. Revisit and re-plan with the user after Tier 2a ships and has been observed in production; retry may absorb enough transient cases that Tier 2b's urgency changes.
 
 ### Objectives
 
 - **LWT on every worker.** Worker connects with a Last Will message on a well-known topic (e.g. `worker/lwt/<workerid>`). Scanner subscribes. When a worker dies without graceful disconnect, scanner sees the LWT within keepalive + grace and can re-dispatch any tasks it had assigned to that worker.
-- **Idempotent retry inside the wrapper layer, not at callers.** Transient `token.Error()` → exponential backoff retry (e.g. 3 attempts, 1s/3s/9s). The Tier 1 grep counted 32 caller sites across 6 per-message helper functions and one shared primitive (`SendMQPayload`). The ratio tells the design: push retry into the primitive so every caller benefits without editing any of them a second time. Callers keep Tier 1's simple "check-and-log" shape; the log line now only fires when retry has already been exhausted.
-- **Why this is safe in our system.** Retry causes duplicates iff the consumer isn't idempotent. Ours is:
-  - Task dispatch: workers dedupe by UUID via `CancelTracker.AddTaskIfNew` at `g3worker.go:482` (returns 0 → duplicate, ignored).
-  - Responses: tagged by `TaskID`; scanner already tolerates duplicates.
-  - Cancels: naturally idempotent.
 
-### Open questions to resolve at Tier 2 start
+### Open questions to resolve at Tier 2b start
 
 - LWT topic shape and who owns re-dispatch — scanner or g3api?
-- MQTT keepalive interval (determines LWT latency) — currently default paho 30s?
-- What counts as a "transient" error worth retrying? Broker-disconnected yes; marshal error no. The split happens inside `SendMQPayload` where both kinds are already observable: `json.Marshal` error returns immediately; `token.Error()` after `WaitTimeout` is the retry candidate.
-- Does the retry loop need to be cancellable (e.g. for graceful shutdown during backoff)?
+- MQTT keepalive interval (determines LWT latency) — currently default paho 30 s?
+- How does the re-dispatcher know which tasks a dead worker had claimed? No existing worker→task index exists; adding one has its own design weight.
+- Does LWT + re-dispatch overlap with what Tier 3 (DB-state promotion) would already cover? If a scan can self-heal via SQL reconciliation, LWT might be redundant.
 
 ### Likely file targets
 
-- `src/g3lib/task.go` — LWT setup in `ConnectToBroker`; retry loop wrapped around the existing `token.Error()` check in `SendMQPayload` (no new public API, no caller churn).
-- `src/g3worker/g3worker.go` — register LWT on connect, publish "I'm leaving" on graceful shutdown. **No caller-site edits for retry.**
-- `src/g3scanner/g3scanner.go` — subscribe to LWT topic, track worker → active tasks, re-dispatch on LWT. **No caller-site edits for retry.**
+- `src/g3lib/task.go` — LWT setup in `ConnectToBroker`.
+- `src/g3worker/g3worker.go` — register LWT on connect, publish "I'm leaving" on graceful shutdown.
+- `src/g3scanner/g3scanner.go` (or `src/g3api/g3api.go`, TBD) — subscribe to LWT topic, track worker → active tasks, re-dispatch on LWT.
 
 ---
 
