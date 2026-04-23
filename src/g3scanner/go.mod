@@ -7,6 +7,7 @@ replace golismero.com/g3lib => ../g3lib
 replace golismero.com/g3log => ../g3log
 
 require (
+	github.com/google/uuid v1.6.0
 	golismero.com/g3lib v0.0.0-00010101000000-000000000000
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
@@ -36,7 +37,6 @@ require (
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect

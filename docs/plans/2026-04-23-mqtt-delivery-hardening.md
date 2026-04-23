@@ -430,16 +430,17 @@ Four files, each small. No schema changes (logs table already has all needed col
 
 Tier 4 shipped with a scan-level status proxy for per-task state because per-task state literally wasn't stored anywhere — completion signals flowed through MQTT from workers to the scanner's in-memory maps and were discarded at the end of the response handler. Once the scanner process ended (or the scan reached terminal), the "did task T succeed or fail?" question was unanswerable without heuristic log parsing.
 
-### Design principles (settled in discussion)
+### Design principles (settled across iterations)
 
 - **Redis for live state, SQL for durable audit.** Short-lived tasks don't churn the DB; audit trail lives in structured log lines in the existing `logs` table. No schema changes.
-- **Authority split by concept: intent vs outcome.**
-  - Scanner writes *intent* states: `DISPATCHED` (task handed to MQTT), `CANCELING` (I'm asking you to stop).
-  - Worker writes *outcome* states: `RUNNING` (I accepted it), `DONE` / `ERROR` / `CANCELED` (it finished).
-  - The `DISPATCHED` → `RUNNING` gap surfaces worker-pool backpressure in `g3cli ps`; the `CANCELING` → `CANCELED` span makes tail latency of cancellation visible.
-- **Structured log lines are the audit primitive.** Four event types: `[g3:dispatch]`, `[g3:start]`, `[g3:cancel]`, `[g3:done]`. Human-readable, regex-parseable, stable prefix.
-- **Single writer per state class.** Scanner's `SetTaskCancelling` is guarded (only transitions from DISPATCHED or RUNNING — won't stomp a task that raced to completion). Worker's terminal writes are unguarded because worker is the sole writer there. No two-writer race for terminal states.
+- **Single writer per state, period.**
+  - Scanner writes only `DISPATCHED`. Written *before* `SendTask` publishes the MQTT message, so no worker can ever race ahead of it.
+  - Worker writes everything post-dispatch: `RUNNING` on accept, `DONE` / `ERROR` / `CANCELED` at every termination path.
+  - No `CANCELING` task state — the "task is winding down" UI signal is derived client-side from the combination `scan.Status == CANCELED && task.state ∈ {DISPATCHED, RUNNING}`.
+- **Structured log lines are the audit primitive.** Four event types: `[g3:dispatch]`, `[g3:start]`, `[g3:cancel]`, `[g3:done]`. Human-readable, regex-parseable, stable prefix. `[g3:cancel]` is emitted by the scanner as a pure audit record (user-intent capture) — not backed by any Redis write.
+- **Worker's terminal write is EXISTS-guarded.** If the scan's Redis keys have already been cleaned up by the time a slow-winding-down worker finishes, `SetTaskTerminal` is a no-op. Prevents orphan hashes.
 - **Redis keys are scan-scoped and cleaned up on terminal scan or explicit delete.** No TTL — scanner owns the lifecycle via `defer DeleteTaskStates`.
+- **`SendTask` takes a caller-generated taskid.** API change that enables the "write Redis, then publish MQTT" ordering above. Callers use `uuid.NewString()` before the dispatch call.
 
 ### Redis schema
 
@@ -448,16 +449,20 @@ Tier 4 shipped with a scan-level status proxy for per-task state because per-tas
 
 ### Write sites
 
-- **Scanner dispatch** (`g3scanner.go` parallel + sequential, right after successful `SendTask`): `SetTaskDispatched` (state=DISPATCHED) + `[g3:dispatch] task=<id> tool=<name>` log line.
-- **Worker accept** (`g3worker.go` at case-2 of `AddTaskIfNew`): `SetTaskRunning` (state transitions DISPATCHED → RUNNING, stamps worker ID + start_ts) + `[g3:start] task=<id> worker=<id>` log line.
-- **Scanner cancel handler** (`SubscribeToStop` in main): loop over running tasks, `SetTaskCancelling` (guarded transition to CANCELING) + `[g3:cancel] task=<id>` log line. Fires before the MQTT cancel broadcast so the audit captures intent even if the broadcast fails.
-- **Worker termination sites** (every path that reaches `SendEmptyResponse` or `SendResponse`): `SetTaskTerminal` + `[g3:done] task=<id> state=<X>` log line. Classifications:
+- **Scanner dispatch** (`g3scanner.go` parallel + sequential): generates `taskid := uuid.NewString()`, then `SetTaskDispatched` + `[g3:dispatch] task=<id> tool=<name>` log, **then** `SendTask(..., taskid, ...)`. On dispatch failure: `SetTaskTerminal(ERROR)` + `[g3:done state=ERROR]` so the task doesn't linger in DISPATCHED forever.
+- **Worker accept** (`g3worker.go` at case-2 of `AddTaskIfNew`): `SetTaskRunning` (DISPATCHED → RUNNING, stamps worker ID + start_ts) + `[g3:start] task=<id> worker=<id>` log.
+- **Scanner cancel handler** (`SubscribeToStop` in main): emits `[g3:cancel] task=<id>` per running task, then `SendTaskCancel` MQTT broadcast. **No Redis writes** — the UI derives the "winding down" signal from the scan status.
+- **Worker termination sites** (every path that reaches `SendEmptyResponse` or `SendResponse`): `SetTaskTerminal` + `[g3:done] task=<id> state=<X>` log. Classifications:
   - **CANCELED:** SIGTERM drop (worker shutting down), case-1 reject (task was in `CancelTracker.rejectTasks` from a prior cancel), plugin cancellation post-execution (`cancelled` flag set after `RunPluginCommand`).
   - **ERROR:** default switch branch, tool-not-supported checks, plugin-not-found, command-index-out-of-range, MongoDB load failures, `BuildToolCommand` errors, plugin execution errors.
   - **DONE:** successful plugin completion path (`SendResponse` with valid output).
   - A small closure `markTerminal(scanid, taskid, state)` in the worker's main() wraps these two calls to keep the termination sites compact.
 - **Scanner response handler**: just cleans up in-memory tracking (`runningTasks.Delete`, etc.). **Does not touch Redis or emit audit lines** — worker already did that before sending the response.
-- **Scanner terminal** (ScanRunner exit): `defer DeleteTaskStates(rdb, scanid)` — Redis is cleared, audit trail remains in SQL logs.
+- **Scanner terminal** (ScanRunner exit): `defer DeleteTaskStates(rdb, scanid)` — Redis cleared, audit trail remains in SQL logs.
+
+### UI: deriving "winding down" without a CANCELING state
+
+`g3cli ps <scanid>` renders the STATE column directly from Redis (`DISPATCHED` / `RUNNING` / `DONE` / `ERROR` / `CANCELED`) except when the scan itself is CANCELED and the task is still in DISPATCHED or RUNNING — in that case the displayed state is replaced with `CANCELING` for the user. The underlying Redis value is unchanged; this is purely a display-layer projection. Wind-down duration for cancelled tasks is measurable as (task.complete_ts − scan.canceled_ts) once the worker eventually writes its terminal state.
 
 ### Files touched (Tier 5)
 
@@ -473,7 +478,7 @@ Tier 4 shipped with a scan-level status proxy for per-task state because per-tas
 
 ### Known v1 limitations
 
-- **`SetTaskCancelling` guard is HGET-then-HSET, not atomic.** Two-step means a theoretical micro-window where a task completes in the HGET→HSET gap. Worker's terminal write wins the race (it happens after HGET but before HSET), so CANCELING could briefly overwrite a DONE/ERROR/CANCELED. Narrow enough to ignore for a single-scanner stack; promote to a Lua script if contention ever matters.
+- **`SetTaskTerminal` EXISTS-guard is not atomic.** `EXISTS` then `HSet` has a narrow race window where the scanner's cleanup could fire between the two ops, resurrecting an orphan hash. In practice the window is milliseconds and the leak per occurrence is ~200 bytes. Promote to a Lua script if this ever matters.
 - **No scanner-restart recovery.** Redis state persists across scanner restarts, so a restarted scanner *could* query `g3:scan:<scanid>:tasks` to reconcile in-flight work. v1 doesn't implement this — noted as a future capability that Redis state enables.
 - **Tasks with no logs still show in Redis.** `passthrough` and `force-exec` produce no stderr so they used to be invisible in Tier 4's log-only view. Tier 5 fixes this: they're in Redis the moment they're dispatched.
 - **Ungraceful crashes leave tasks stuck.** Worker OOM/SIGKILL means no terminal write — the task stays visibly in RUNNING (or DISPATCHED if it never got picked up). This is honest state, not a bug; the `AGE` column climbing makes the condition visible. Real fix belongs in the deferred "per-plugin timeouts" milestone.

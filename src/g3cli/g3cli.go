@@ -915,6 +915,10 @@ func (cmd *PsCmd) runTaskView(vars CmdContext) error {
 				{Align: simpletable.AlignCenter, Text: "LINES"},
 			},
 		}
+		// If the scan itself is cancelled, tasks that haven't reached a terminal
+		// state yet are effectively "winding down" — derived signal shown to the
+		// user without storing a separate CANCELING state per task.
+		scanCancelled := payload.ScanStatus == g3lib.STATUS_CANCELED
 		for _, entry := range payload.Tasks {
 			lastSeen := "-"
 			if entry.LastLogTS > 0 {
@@ -930,6 +934,9 @@ func (cmd *PsCmd) runTaskView(vars CmdContext) error {
 			state := entry.State
 			if state == "" {
 				state = "?"
+			}
+			if scanCancelled && (state == "RUNNING" || state == "DISPATCHED") {
+				state = "CANCELING"
 			}
 			tool := entry.Tool
 			if tool == "" {

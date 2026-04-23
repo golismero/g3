@@ -129,18 +129,17 @@ func taskHashKey(scanid, taskid string) string { return "g3:scan:" + scanid + ":
 // Task state machine:
 //
 //   DISPATCHED ──(worker accepts)──▶ RUNNING ──(worker completes)──▶ DONE / ERROR / CANCELED
-//        │                             │
-//        └──(scanner cancels)──▶ CANCELING ◀──(scanner cancels)──┘
-//                                     │
-//                          (worker wraps up)──▶ CANCELED
 //
 // Authority split:
-//   - Scanner writes transition states that reflect *intent*: DISPATCHED (I asked), CANCELING (I'm asking you to stop).
-//   - Worker writes outcome states that reflect *reality*: RUNNING, DONE, ERROR, CANCELED.
-// This gives an honest live view (a stuck worker stays visibly CANCELING) and an observable
-// wind-down duration (CANCELING → CANCELED span).
+//   - Scanner writes DISPATCHED (intent to hand off). Written *before* SendTask so the
+//     worker cannot race ahead of us on the Redis side.
+//   - Worker writes everything post-dispatch: RUNNING on accept, DONE / ERROR / CANCELED
+//     at every termination path in its task handler.
+// No CANCELING state is needed at the task level. The UI derives "this task is winding
+// down" from the combination (scan.Status == CANCELED, task.state == RUNNING or DISPATCHED).
 
-// Scanner calls this right after SendTask returns successfully.
+// Scanner calls this right before SendTask so the per-task hash exists by the time a
+// worker can possibly pick the task up.
 func SetTaskDispatched(rdb KeyValueStoreClient, scanid, taskid, tool string, dispatchTS int64) error {
 	ctx := context.Background()
 	if err := rdb.c.SAdd(ctx, taskSetKey(scanid), taskid).Err(); err != nil {
@@ -163,30 +162,26 @@ func SetTaskRunning(rdb KeyValueStoreClient, scanid, taskid, workerid string, st
 	).Err()
 }
 
-// Scanner calls this on a stop request. State=CANCELING is guarded: we only transition from
-// DISPATCHED or RUNNING. If a task already reached a terminal state (worker finished in the
-// window between user hitting cancel and the cancel handler running), don't stomp it.
-func SetTaskCancelling(rdb KeyValueStoreClient, scanid, taskid string) error {
-	ctx := context.Background()
-	current, err := rdb.c.HGet(ctx, taskHashKey(scanid, taskid), "state").Result()
-	if err != nil && err != redis.Nil {
-		return err
-	}
-	if current != "DISPATCHED" && current != "RUNNING" {
-		return nil // already terminal or CANCELING — preserve
-	}
-	return rdb.c.HSet(ctx, taskHashKey(scanid, taskid), "state", "CANCELING").Err()
-}
-
 // Worker calls this when the task reaches a terminal state (DONE / ERROR / CANCELED).
-// Worker is the sole writer of terminal states, so no guard is needed against stomping.
+// Guarded: if the per-task hash has already been cleaned up (scanner's ScanRunner exited
+// and ran DeleteTaskStates), this is a no-op. Prevents late worker writes from creating
+// orphan hashes that aren't members of any g3:scan:<scanid>:tasks set.
 // errMsg is optional ("" to omit).
 func SetTaskTerminal(rdb KeyValueStoreClient, scanid, taskid, state string, completeTS int64, errMsg string) error {
+	ctx := context.Background()
+	key := taskHashKey(scanid, taskid)
+	exists, err := rdb.c.Exists(ctx, key).Result()
+	if err != nil {
+		return err
+	}
+	if exists == 0 {
+		return nil // scan state already cleaned up — don't resurrect the hash
+	}
 	fields := []any{"state", state, "complete_ts", completeTS}
 	if errMsg != "" {
 		fields = append(fields, "error_msg", errMsg)
 	}
-	return rdb.c.HSet(context.Background(), taskHashKey(scanid, taskid), fields...).Err()
+	return rdb.c.HSet(ctx, key, fields...).Err()
 }
 
 // Load every task state for a scan. Returns an empty slice if the scan has no Redis state

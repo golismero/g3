@@ -292,26 +292,29 @@ func SendScanCompleted(client MessageQueueClient, scanid string) error {
 	return SendMQPayload(client, G3SCANSTATUSTOPIC, msg)
 }
 
-// Send a task to the MQTT broker.
-func SendTask(client MessageQueueClient, scanid string, tool string, index int, data G3Data) (string, error) {
+// Send a task to the MQTT broker. The caller is responsible for generating the
+// task ID (e.g. via uuid.NewString()) so that out-of-band state (Redis, SQL logs)
+// can be set up before the message is published — otherwise a worker might pick
+// up the task and race ahead of the scanner's own bookkeeping.
+func SendTask(client MessageQueueClient, scanid, taskid, tool string, index int, data G3Data) error {
 	msg := G3Task{}
 	msg.MessageType = MSG_TASK
 	msg.SenderID = GetClientID(client)
-	msg.TaskID = uuid.NewString()
+	msg.TaskID = taskid
 	msg.ScanID = scanid
 	msg.Tool = tool
 	msg.Index = index
 	if _, ok := data["_id"]; ok {
 		msg.DataID = data["_id"].(string)
 	} else {
-		return "", errors.New("data missing _id, save to database first")
+		return errors.New("data missing _id, save to database first")
 	}
 	err := validator.New().Struct(msg)
 	if err != nil {
-		return "", err
+		return err
 	}
 	topic := G3WORKERPUBTOPIC + tool
-	return msg.TaskID, SendMQPayload(client, topic, msg)
+	return SendMQPayload(client, topic, msg)
 }
 
 // Send a task cancellation message to the broker.
