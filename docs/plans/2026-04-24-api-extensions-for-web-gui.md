@@ -2,7 +2,7 @@
 
 Scope: changes to `g3api` (and supporting types in `g3lib`) plus `g3cli` updates. A separate GUI backend (BFF) and magenta integration are out of scope; they can be built on top once this lands.
 
-**Status:** all tiers outlined. No tier started. Detail for each tier is revisited at kickoff per project convention.
+**Status:** Tier 0 detailed and ready to implement (kickoff 2026-04-24). Tiers 1-3 remain outlined; detail each at its own kickoff per project convention.
 
 ---
 
@@ -70,19 +70,118 @@ What **stays unchanged**:
 
 **Intent.** Make `g3api` internal-only. Replace user/JWT/ACL infrastructure with a single shared service credential via environment variable. Default in `.env`/docker-compose, operator overrides for real deployments. Matches existing MongoDB/MariaDB/Redis posture.
 
-**Anticipated shape.**
-- Authentication: HTTP Basic over the internal network, or bearer token — both trivially cheap, decide at kickoff.
-- Remove `/auth/*` endpoints (`login`, `refresh`, `ticket`) and `/file/download`, `/file/ls`, `/file/rm`.
-- Flatten `/tmp/{userid}/{uuid}.bin` → `/tmp/{uuid}.bin`. Update `/file/upload` and `/scan/start` accordingly.
-- Drop `users` and `scans` (permissions) tables and their seed inserts; retire the hardcoded default credentials.
-- Delete `IsUserAuthorized`, `AddUserToScan`, `GetScansForUser`, `Login`, `GetUserID`, and `g3lib/jwt.go`.
-- Replace the `ValidateJwt` + optional `IsUserAuthorized` pattern at the top of every handler with one middleware-level credential check.
-- `g3cli`: remove login/refresh flows, read shared credential from env, request shape otherwise unchanged.
-- docker-compose: new env var (name TBD) for the shared credential, with a hardcoded default flagged for operator override in `.env.example`.
+**Kickoff decisions (2026-04-24).**
+- **Auth mechanism: bearer token.** `Authorization: Bearer <token>`. Expresses "service credential, not a user" directly; Basic would smuggle a vestigial username back in. Smallest diff in `g3cli` — the JWT-bearing header path stays, only the token source changes.
+- **Env var: `G3_API_TOKEN`.** Matches the existing `G3_API_*` family; avoids the third-party-cred collision that `G3_API_KEY` would create alongside `VULNERS_API_KEY` / `VIRUSTOTAL_API_KEY`. One var, same value on both server and client.
+- **PR shape: single PR.** No staging deploy, no outside reviewers, no user base to preserve. Splitting would manufacture a compilable intermediate state (middleware landed, old JWT code still around) for no reviewer benefit. One atomic "remove auth layer, add token middleware" change.
+- **WebSocket handshake auth: covered in the same middleware.** Today `/ws` has no auth at all; Tier 0 closes that gap, not just simplifies the existing pattern.
 
-**Character.** Mostly deletions. Opens the door for Tier 1+ to be simple filter-only features with no auth story to reconcile.
+#### End state
 
-**Defer to kickoff.** Exact auth mechanism (Basic vs bearer), env var naming, whether to fold cleanup into one PR or split.
+**Request lifecycle** (HTTP and WS identical):
+1. Request arrives.
+2. Middleware reads `Authorization: Bearer <token>`. Constant-time compare against `G3_API_TOKEN` loaded at startup. Miss → 401, stop.
+3. Handler runs with no auth concerns.
+
+**What leaves the request envelope.** The `Token` field on every `Req*` struct in `g3lib/api.go`. The `ReqLogin` / `ReqRefreshJwt` / `ReqTicket` structs and their responses. The multipart `auth` form field on `/file/upload`. The per-message `Token` field in the WS envelope.
+
+**Endpoints after Tier 0:** `/scan/start`, `/scan/stop`, `/scan/list`, `/scan/get`, `/scan/progress`, `/scan/tasks`, `/scan/tasks/status`, `/scan/logs`, `/file/upload`, `/report/*`, `/plugin/*`, `/script/*`, `/ws`.
+
+**Endpoints removed:** `/auth/login`, `/auth/refresh`, `/auth/ticket`, `/file/download`, `/file/ls`, `/file/rm`.
+
+#### Middleware
+
+Single Go wrapper applied to every `http.HandleFunc` registration in `g3api.go`, including `/ws`:
+
+- Reads `Authorization: Bearer <token>` via `strings.CutPrefix`.
+- Compares with `subtle.ConstantTimeCompare` against the startup-loaded token.
+- On failure: `SendApiError(w, 401, "Unauthorized.")` and return — handler never runs.
+- Token loaded once from `G3_API_TOKEN` at `g3api` startup. Empty value → fail-fast log and exit; the binary refuses to start without a configured token. This is strictly stricter than today's `G3_JWT_SECRET` posture.
+
+Handler body becomes pure business logic. Today's representative shape:
+
+```go
+userid, err := g3lib.ValidateJwt(request.Token)
+if err != nil { ...401... }
+isAuthorized, err := g3lib.IsUserAuthorized(sql_db, userid, request.ScanID)
+if err != nil { ...401... }
+if isAuthorized != 1 { ...401... }
+// actual handler work
+```
+
+After:
+
+```go
+// actual handler work
+```
+
+Same collapse for the four handlers that today carry `// no authorization needed` and call only `ValidateJwt`.
+
+#### WebSocket handshake
+
+`/ws` registers through the same middleware wrapper. The check runs on the initial HTTP GET before `upgrader.Upgrade()`; a failed token returns a plain 401 and no upgrade happens. Safe because the middleware only writes to `w` on the failure path — success delegates untouched to the handler, so `gorilla/websocket`'s "nothing written before Upgrade" requirement holds.
+
+`g3cli`'s WS dialer already passes an `http.Header` to `DialContext`. The header value swaps from JWT to `G3_API_TOKEN`. No other client-side change.
+
+Per-session trust: once the socket is open, no per-message re-auth. The message envelope's `Token` field is dropped.
+
+#### Cleanups
+
+**Filesystem.**
+- `/file/upload` and `/scan/start`: `/tmp/{userid}/{uuid}.bin` → `/tmp/{uuid}.bin`. No userid dir, no `MkdirAll` for it. UUID namespace is already collision-free.
+- No migration of existing `/tmp` files. Nothing is live.
+
+**Database schema — `volumes/mariadb/initdb.d/create_tables.sql`.**
+- Delete the `users` table block (lines 22-27).
+- Delete the `scans` permissions table block (lines 29-37).
+- Delete both seed `INSERT`s and their comment (lines 39-42).
+- Final file contains only the `logs` and `progress` tables.
+- Redeploy via `docker compose down -v && docker compose up` to wipe the MariaDB volume. Not a migration — a reset.
+
+**`g3lib` deletions.**
+- `g3lib/jwt.go` — whole file.
+- From `g3lib/sql.go`: `IsUserAuthorized`, `AddUserToScan`, `RemoveUserFromScan`, `GetScansForUser`, `Login`, `GetUserID`, plus any private helpers only those functions use.
+- From `g3lib/api.go`: `ReqLogin`, `ReqRefreshJwt`, `ReqTicket` and their responses. `Token` field stripped from every remaining `Req*` struct and from the WS message envelope.
+
+**`g3cli` (`g3cli.go`).**
+- Drop `Username` / `Password` CLI flags.
+- Remove the login round-trip (lines 182-194) and any refresh logic.
+- `MakeApiRequest` loads `G3_API_TOKEN` once at startup, injects it on every HTTP and WS call. Unset env → fail-fast, same posture as `g3api`.
+- `/file/upload` multipart builder: drop the `auth` form field.
+
+**Environment and compose.**
+- `.env`: add `G3_API_TOKEN=changeme` with a comment flagging operator override. Remove `G3_JWT_SECRET` and `G3_JWT_LIFETIME`.
+- `docker-compose.yml`: pass `G3_API_TOKEN` through to `g3api`; remove `G3_JWT_SECRET` plumbing.
+- `nginx`: expected unchanged. Read the config before deleting endpoints — any `/auth/*` rewrites or `X-Auth-*` forwarding gets removed in the same PR.
+
+**Grep list at implementation time** (belt-and-braces): `ValidateJwt`, `GenerateJwt`, `GenerateTemporaryJwt`, `IsUserAuthorized`, `JWT_SECRET`, `auth/login`, `auth/refresh`, `auth/ticket`. Hits outside the files above are unanticipated call sites — surface before deleting.
+
+#### Verification
+
+Manual smoke via `docker compose up` + `g3cli`. No Go test harness introduced — out of scope.
+
+1. **Auth gate.** `g3cli list` with correct `G3_API_TOKEN` succeeds. Wrong value → 401. Unset env → CLI fails at startup.
+2. **WS handshake.** `g3cli get --scan <id>` receives progress events. `websocat` or `curl -i --http1.1 -H "Upgrade: websocket"` without the bearer header returns 401 before upgrade.
+3. **File upload path.** Run a scan with an import file through `g3cli`. Confirm `/tmp/<uuid>.bin` appears briefly and is consumed by `/scan/start`.
+4. **Schema boots clean.** `docker compose down -v && docker compose up` on a fresh MariaDB volume. End-to-end scan populates `logs` and `progress` rows.
+5. **Dead endpoints 404.** `curl -H "Authorization: Bearer $G3_API_TOKEN" .../auth/login` etc. return 404, not a silent handler hit.
+6. **Lint gate.** Existing correctness-only `golangci-lint` run passes. Unused-function flags from deletions get resolved by finishing the deletion, not by `_ = foo` silencing.
+
+#### Risks
+
+- **Unknown call site we didn't grep for.** Mitigated by the grep list plus the Go compiler — any remaining importer of a deleted symbol fails the build. Residual risk is scripts or docs referencing `admin:admin`; low.
+- **nginx config carries `/auth/*` or `X-Auth-*` logic.** Read before deleting endpoints.
+- **`G3_API_TOKEN` accidentally unset.** Fail-fast at both `g3api` and `g3cli` startup prevents a silent "accept anything" window. Strictly stricter than today's `G3_JWT_SECRET` behaviour (which silently accepts JWTs signed with the empty string).
+
+#### Non-risks (named so they don't drift into scope)
+
+- User-data migration. No users to migrate.
+- Backwards compatibility for external API consumers. There are none.
+- Token rotation, revocation, expiry. Single shared cred; rotated by editing `.env` and restarting. Rotation semantics are BFF concerns.
+
+#### Character
+
+Almost entirely deletions plus one small middleware. Opens the door for Tiers 1-3 to ship as pure filter / stream / routing features with no auth story to reconcile.
 
 ### Tier 1 — Per-scan WebSocket subscription
 
