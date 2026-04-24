@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
-	"golang.org/x/crypto/bcrypt"
 
 	// For the time being I am deliberately not supporting Oracle since it requires proprietary C code to work.
 	// As for the rest of the drivers, check each one for DSN and environment variable details on how to use them.
@@ -23,8 +22,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"           // SQLite
 	_ "github.com/nakagami/firebirdsql"       // Firebird
 	_ "github.com/ydb-platform/ydb-go-sdk/v3" // YandexDB
-
-	log "golismero.com/g3log"
 )
 
 const SQL_DRIVER = "SQL_DRIVER"
@@ -335,6 +332,24 @@ func UpdateScanProgress(db SQLDBClient, scanid string, status G3SCANSTATUS, prog
 	return err
 }
 
+// Get the scan IDs of every scan known to the progress table.
+func GetAllScanIDs(db SQLDBClient) ([]string, error) {
+	var ids []string
+	rows, err := db.db.Query("SELECT `scanid` FROM `progress`")
+	if err != nil {
+		return ids, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if e := rows.Scan(&id); e != nil {
+			return ids, e
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 // Get the progress of each scan.
 func GetProgressList(db SQLDBClient) ([]ScanStatusEntry, error) {
 	var scanstatus []ScanStatusEntry
@@ -379,109 +394,5 @@ func GetScanStatus(db SQLDBClient, scanid string) (ScanStatusEntry, error) {
 func DeleteScanProgress(db SQLDBClient, scanid string) error {
 	query := "DELETE FROM `progress` WHERE `scanid` = ?"
 	_, err := db.db.ExecContext(context.Background(), query, scanid)
-	return err
-}
-
-// Log in to the application.
-func Login(db SQLDBClient, username, password string) bool {
-	query := "SELECT `password` FROM `users` WHERE `username` = ?"
-	var hashed []byte
-	err := db.db.QueryRow(query, username).Scan(&hashed)
-	if err != nil {
-		log.Error(err.Error())
-		return false
-	}
-	return bcrypt.CompareHashAndPassword(hashed, []byte(password)) == nil
-}
-
-// Get the user ID for a username.
-func GetUserID(db SQLDBClient, username string) int {
-	query := "SELECT `id` FROM `users` WHERE `username` = ?"
-	var userid int
-	err := db.db.QueryRow(query, username).Scan(&userid)
-	if err != nil {
-		log.Error(err.Error())
-		return 0
-	}
-	return userid
-}
-
-// Check if a user is authorized to access a scan.
-// Returns 1 if authorized, 0 if not, -1 if the scan does not exist.
-func IsUserAuthorized(db SQLDBClient, userid int, scanid string) (int, error) {
-
-	// Get a Tx for making transaction requests.
-	tx, err := db.db.BeginTx(context.Background(), nil)
-	if err != nil {
-		log.Error(err.Error())
-		return 0, err
-	}
-
-	// Defer a rollback in case anything fails.
-	defer tx.Rollback()
-
-	// Check if the scan exists.
-	query := "SELECT COUNT(`id`) FROM `scans` WHERE `scanid` = ? LIMIT 1"
-	var scanExists int
-	err = tx.QueryRow(query, scanid).Scan(&scanExists)
-	if err != nil {
-		log.Error(err.Error())
-		return 0, err
-	}
-
-	// Check if the user is authorized for that scan.
-	// We issue both queries for regular users to mitigate possible timing attacks.
-	// For the admin user we skip this query.
-	query = "SELECT COUNT(`id`) FROM `scans` WHERE `userid` = ? AND `scanid` = ? LIMIT 1"
-	var isAuthorized int
-	if userid == 1 {
-		isAuthorized = 1
-	} else {
-		err = tx.QueryRow(query, userid, scanid).Scan(&isAuthorized)
-		if err != nil {
-			log.Error(err.Error())
-			return 0, err
-		}
-	}
-
-	// Return -1 if the scan does not exist, 1 or 0 if the user is authorized or not.
-	if scanExists == 0 {
-		return -1, nil
-	}
-	return isAuthorized, nil
-}
-
-// Grant permissions to a user to access a given scan.
-func AddUserToScan(db SQLDBClient, userid int, scanid string) error {
-	query := "INSERT INTO `scans` (`userid`, `scanid`) VALUES (?, ?)"
-	_, err := db.db.ExecContext(context.Background(), query, userid, scanid)
-	return err
-}
-
-// Get the list of scan IDs this user can access.
-func GetScansForUser(db SQLDBClient, userid int) ([]string, error) {
-	var scanidlist []string
-	query := "SELECT `scanid` FROM `scans` WHERE `userid` = ? or 1 = ?"
-	rows, err := db.db.Query(query, userid, userid)
-	if err != nil {
-		return scanidlist, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var scanid string
-		e := rows.Scan(&scanid)
-		if e != nil {
-			err = e
-			continue
-		}
-		scanidlist = append(scanidlist, scanid)
-	}
-	return scanidlist, err
-}
-
-// Remove permissions from a user to access a given scan.
-func RemoveUserFromScan(db SQLDBClient, userid int, scanid string) error {
-	query := "DELETE FROM `scans` WHERE `userid` = ? AND `scanid` = ?"
-	_, err := db.db.ExecContext(context.Background(), query, userid, scanid)
 	return err
 }

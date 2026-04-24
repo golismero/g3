@@ -307,8 +307,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT
       - REDIS_PASSWORD
-      - G3_JWT_SECRET
-      - G3_JWT_LIFETIME
+      - G3_API_TOKEN
       - G3_WS_ADDR=0.0.0.0
       - G3_WS_PORT
       - G3_WS_BUFFER
@@ -397,7 +396,7 @@ services:
 
 </details>
 
-Finally, you will want to change the default credentials, which are admin:admin for the test deployment. You can find the database initialization script with the hashed credentials at [volumes/mariadb/initdb.d/create_tables.sql](../blob/master/volumes/mariadb/initdb.d/create_tables.sql). The credentials are protected using bcrypt, but you can use any online service to come up with your own values, for example: [https://bcrypt.online/](https://bcrypt.online/).
+Finally, you will want to change the default `G3_API_TOKEN` in `.env` from `changeme` to a long random value. `g3api` is internal-only and sits behind a trust boundary; the token gates both HTTP and WebSocket calls from `g3cli` and any future front-end.
 
 Now you can start the services using Docker Compose. Note the -d at the end, this instructs Docker to run all services in the background.
 

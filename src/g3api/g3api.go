@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -9,12 +10,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/asaskevich/govalidator"
 	"github.com/go-playground/validator/v10"
@@ -26,11 +25,27 @@ import (
 )
 
 const G3_API_ID = "G3_API_ID"                   // MQTT client ID. Must be unique in your deployment or bad things will happen.
+const G3_API_TOKEN = "G3_API_TOKEN"             // Shared bearer token required on every HTTP and WebSocket call.
 const G3_WS_ADDR = "G3_WS_ADDR"                 // Address to bind to for the HTTP server.
 const G3_WS_PORT = "G3_WS_PORT"                 // Port to bind to for the HTTP server.
 const G3_WS_PATH = "G3_WS_PATH"                 // Path to route the API.
 const G3_FILE_UPLOAD_MAX = "G3_FILE_UPLOAD_MAX" // Maximum file size for uploads.
 const G3_WS_BUFFER = "G3_WS_BUFFER"             // Buffer size for the websocket.
+
+// requireToken wraps an http.HandlerFunc with a bearer-token check.
+// The check runs before upgrader.Upgrade() on the WebSocket path, so a
+// failed token returns 401 and the socket never opens.
+func requireToken(expected string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		hdr := r.Header.Get("Authorization")
+		token, ok := strings.CutPrefix(hdr, "Bearer ")
+		if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
+			g3lib.SendApiError(w, http.StatusUnauthorized, "Unauthorized.")
+			return
+		}
+		h(w, r)
+	}
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // This structure tracks scan IDs to channels of goroutines who asked for updates on that scan.
@@ -94,15 +109,10 @@ func Main() int {
 	// Initialize the logger.
 	log.InitLogger()
 
-	// Make sure we have the JWT environment variables.
-	_, err = g3lib.GetJwtSecret()
-	if err != nil {
-		log.Critical(err.Error())
-		return 1
-	}
-	_, err = g3lib.GetJwtLifetime()
-	if err != nil {
-		log.Critical(err.Error())
+	// Load the shared API bearer token.
+	apiToken := os.Getenv(G3_API_TOKEN)
+	if apiToken == "" {
+		log.Critical("Missing environment variable: " + G3_API_TOKEN)
 		return 1
 	}
 
@@ -249,121 +259,15 @@ func Main() int {
 		}
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Log in to the application.
-		//
-		http.HandleFunc(apiPath + "/auth/login", func (w http.ResponseWriter, r *http.Request) {
-			log.Debug("Handling: auth/login")
-			var request g3lib.ReqLogin
-			err := request.Decode(r)
-			if err != nil {
-				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Error decoding payload.")
-				return
-			}
-
-			// Log in to the application.
-			if ! g3lib.Login(sql_db, request.Username, request.Password) {
-				log.Error("Login failed for username: " + request.Username)
-				g3lib.SendApiError(w, http.StatusUnauthorized, "Username or password incorrect.")
-				return
-			}
-
-			// Get the user ID. It's important to do this AFTER logging in.
-			// Otherwise, it could be used to bruteforce valid usernames.
-			userid := g3lib.GetUserID(sql_db, request.Username)
-			if userid == 0 {
-				log.Error("Error getting user ID for username: " + request.Username)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
-				return
-			}
-
-			// Generate and sign the JWT token.
-			tokenString, err := g3lib.GenerateJwt(userid)
-			if err != nil {
-				log.Error("Error generating JWT token: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
-				return
-			}
-
-			// Return the JWT token.
-			g3lib.SendApiResponse(w, tokenString)
-		})
-
-		///////////////////////////////////////////////////////////////////////////////////////////
-		// Refresh the JWT token.
-		//
-		http.HandleFunc(apiPath + "/auth/refresh", func (w http.ResponseWriter, r *http.Request) {
-			log.Debug("Handling: auth/refresh")
-			var request g3lib.ReqRefresh
-			err := request.Decode(r)
-			if err != nil {
-				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Invalid token.")
-				return
-			}
-
-			// Refresh the JWT token if valid.
-			tokenString, err := g3lib.RefreshJwt(request.Token)
-			if err != nil {
-				log.Error("Error refreshing JWT token: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
-				return
-			}
-
-			// Return the new JWT token.
-			g3lib.SendApiResponse(w, tokenString)
-		})
-
-		///////////////////////////////////////////////////////////////////////////////////////////
-		// Generate a temporary JWT for using as a cookie when needed.
-		//
-		http.HandleFunc(apiPath + "/auth/ticket", func (w http.ResponseWriter, r *http.Request) {
-			log.Debug("Handling: auth/ticket")
-			var request g3lib.ReqTicket
-			err := request.Decode(r)
-			if err != nil {
-				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-
-			// Create a ticket. This is actually a very time limited JWT.
-			// However from the user's perspective this is an opaque value.
-			// That lets me change the mechanism in the future.
-			ticket, err := g3lib.GenerateTemporaryJwt(userid, time.Second * time.Duration(30))
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-				return
-			}
-
-			// Return the response.
-			log.Debugf("Produced ticket: %v", []byte(ticket))
-			g3lib.SendApiResponse(w, ticket)
-		})
-
-		///////////////////////////////////////////////////////////////////////////////////////////
 		// Start a scan.
 		//
-		http.HandleFunc(apiPath + "/scan/start", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/start", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/start")
 			var request g3lib.ReqStartScan
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -378,19 +282,26 @@ func Main() int {
 				return
 			}
 
-			// If the scan exists, check if the user has permission to access it.
-			// If the scan does not exist, fail.
-			// If no scan ID was provided, create one.
+			// If a scan ID was provided, require it to already exist — guards
+			// against typos silently spawning a phantom scan. The progress row
+			// is the cheapest existence witness.
+			//
+			// TODO: race. A scan is published to MQTT here before g3scanner
+			// writes its first WAITING progress row, so a second /scan/start
+			// arriving for the same ID inside that window will falsely 404.
+			// Narrow (milliseconds) and harmless in the single-author case,
+			// but a proper fix needs an existence source that's authoritative
+			// at dispatch time — e.g. writing the progress row here before
+			// publishing, or checking Redis task state / MongoDB presence in
+			// addition to the progress table.
 			if request.ScanID != "" {
-				isAuthorized, err := g3lib.IsUserAuthorized(sql_db, userid, request.ScanID)
-				if err != nil {
-					log.Error(err.Error())
-					g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-					return
-				}
-				if isAuthorized != 1 {
-					log.Error("Not authorized.")
-					g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
+				if _, err := g3lib.GetScanStatus(sql_db, request.ScanID); err != nil {
+					if errors.Is(err, sql.ErrNoRows) {
+						g3lib.SendApiError(w, http.StatusNotFound, "Scan does not exist.")
+						return
+					}
+					log.Error(err)
+					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
 					return
 				}
 			} else {
@@ -400,12 +311,6 @@ func Main() int {
 					return
 				}
 				request.ScanID = uuid.NewString()
-				err = g3lib.AddUserToScan(sql_db, userid, request.ScanID)
-				if err != nil {
-					log.Error("Error adding new scan to SQL database: " + err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
-					return
-				}
 			}
 
 			// Log the parsed script.
@@ -450,7 +355,7 @@ func Main() int {
 					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, imported file not found.")
 					return
 				}
-				inputfile := fmt.Sprintf("/tmp/%d/%s.bin", userid, parsedImport.Path)
+				inputfile := fmt.Sprintf("/tmp/%s.bin", parsedImport.Path)
 				stdin, err := os.Open(inputfile)
 				if err != nil {
 					log.Critical("Cannot open file " + inputfile + ": " + err.Error())
@@ -499,24 +404,18 @@ func Main() int {
 
 			// Return the response.
 			g3lib.SendApiResponse(w, request.ScanID)
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Show the progress of the currently running scans.
 		//
-		http.HandleFunc(apiPath + "/scan/progress", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/progress", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/progress")
 			var request g3lib.ReqGetScanProgressTable
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			_, err = g3lib.ValidateJwt(request.Token) // no authorization needed
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -528,24 +427,18 @@ func Main() int {
 			} else {
 				g3lib.SendApiResponse(w, progressList)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Get the list of tasks for a scan
 		//
-		http.HandleFunc(apiPath + "/scan/tasks", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/tasks", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/tasks")
 			var request g3lib.ReqQueryScanTaskList
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			_, err = g3lib.ValidateJwt(request.Token) // no authorization needed
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -557,24 +450,18 @@ func Main() int {
 			} else {
 				g3lib.SendApiResponse(w, tasklist)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Show the logs of a scan or task
 		//
-		http.HandleFunc(apiPath + "/scan/logs", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/logs", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/logs")
 			var request g3lib.ReqQueryLog
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			_, err = g3lib.ValidateJwt(request.Token) // no authorization needed
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -586,24 +473,18 @@ func Main() int {
 			} else {
 				g3lib.SendApiResponse(w, tasklog)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Show per-task status summary for a scan (first/last log timestamps, age, line count).
 		//
-		http.HandleFunc(apiPath + "/scan/tasks/status", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/tasks/status", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/tasks/status")
 			var request g3lib.ReqQueryScanTaskStatus
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			_, err = g3lib.ValidateJwt(request.Token) // no authorization needed
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -663,35 +544,18 @@ func Main() int {
 				ScanStatus: scanStatus.Status,
 				Tasks:      entries,
 			})
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Stop a scan.
 		//
-		http.HandleFunc(apiPath + "/scan/stop", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/stop", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/stop")
 			var request g3lib.ReqStopScan
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			isAuthorized, err := g3lib.IsUserAuthorized(sql_db, userid, request.ScanID)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			if isAuthorized != 1 {
-				log.Error("Not authorized.")
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -703,12 +567,12 @@ func Main() int {
 			} else {
 				g3lib.SendApiResponse(w, request.ScanID)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// List all accessible scans for this user.
+		// List every scan known to the engine.
 		//
-		http.HandleFunc(apiPath + "/scan/list", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/list", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/list")
 			var request g3lib.ReqEnumerateScans
 			err := request.Decode(r)
@@ -717,50 +581,27 @@ func Main() int {
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
 
 			// Get the list of scan IDs.
-			scanidlist, err := g3lib.GetScansForUser(sql_db, userid)
+			scanidlist, err := g3lib.GetAllScanIDs(sql_db)
 			if err != nil {
 				log.Error(err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
 			} else {
 				g3lib.SendApiResponse(w, scanidlist)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Delete a scan.
 		//
-		http.HandleFunc(apiPath + "/scan/delete", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/delete", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/delete")
 			var request g3lib.ReqDeleteScan
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			isAuthorized, err := g3lib.IsUserAuthorized(sql_db, userid, request.ScanID)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			if isAuthorized != 1 {
-				log.Error("Not authorized.")
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -806,13 +647,6 @@ func Main() int {
 			} else {
 				log.Debug("Cleared scan progress.")
 			}
-			err = g3lib.RemoveUserFromScan(sql_db, userid, scanid)
-			if err != nil {
-				log.Critical("Error removing user permissions for scan: " + err.Error())
-				reterr = reterr + "Error removing user permissions for scan: " + err.Error() + "\n"
-			} else {
-				log.Debug("Removed user permissions for scan.")
-			}
 
 			// If we logged any errors, return with an error condition.
 			// Otherwise, we succeeded.
@@ -821,35 +655,18 @@ func Main() int {
 			} else {
 				g3lib.SendApiResponse(w, nil)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Generate a report.
 		//
-		http.HandleFunc(apiPath + "/scan/report", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/report", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/report")
 			var request g3lib.ReqReport
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			isAuthorized, err := g3lib.IsUserAuthorized(sql_db, userid, request.ScanID)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			if isAuthorized != 1 {
-				log.Error("Not authorized.")
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -918,35 +735,18 @@ func Main() int {
 				}
 				g3lib.SendApiResponse(w, result)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Enumerate the data objects.
 		//
-		http.HandleFunc(apiPath + "/scan/datalist", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/datalist", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/datalist")
 			var request g3lib.ReqGetScanDataIDs
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			isAuthorized, err := g3lib.IsUserAuthorized(sql_db, userid, request.ScanID)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			if isAuthorized != 1 {
-				log.Error("Not authorized.")
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -958,35 +758,18 @@ func Main() int {
 			} else {
 				g3lib.SendApiResponse(w, idArray)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Load the data objects.
 		//
-		http.HandleFunc(apiPath + "/scan/data", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/scan/data", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/data")
 			var request g3lib.ReqLoadData
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			isAuthorized, err := g3lib.IsUserAuthorized(sql_db, userid, request.ScanID)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-			if isAuthorized != 1 {
-				log.Error("Not authorized.")
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -1005,24 +788,18 @@ func Main() int {
 			} else {
 				g3lib.SendApiResponse(w, data)
 			}
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Get the list of available plugins.
 		//
-		http.HandleFunc(apiPath + "/plugin/list", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/plugin/list", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: plugin/list")
 			var request g3lib.ReqListPlugins
 			err := request.Decode(r)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			_, err = g3lib.ValidateJwt(request.Token) // no authorization needed
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
 				return
 			}
 
@@ -1048,12 +825,12 @@ func Main() int {
 
 			// Send the response back to the caller.
 			g3lib.SendApiResponse(w, pluginList)
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// File upload handler.
 		//
-		http.HandleFunc(apiPath + "/file/upload", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/file/upload", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: file/upload")
 			if r.Method != http.MethodPost {
 				log.Error("Method not allowed: " + r.Method)
@@ -1061,7 +838,6 @@ func Main() int {
 				return
 			}
 
-			var userid int
 			var err error
 
 			// If a maximum file upload size was set, enforce it.
@@ -1079,45 +855,15 @@ func Main() int {
 				log.Warning("No maximum upload file size was set!")
 			}
 
-			// Parse the multipart reader, part by part.
+			// Parse the multipart reader. Only one part is expected: the file.
 			reader, err := r.MultipartReader()
 			if err != nil {
-				log.Error("Error reading auth ticket multipart form: " + err.Error())
+				log.Error("Error reading multipart form: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
-
-			// The first part should be the authentication ticket.
 			p, err := reader.NextPart()
 			if err != nil {
-				log.Error("Error reading auth ticket: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			defer p.Close()
-			if p.FormName() != "auth" {
-				log.Error("Invalid form part name: " + p.FormName())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			ticketBytes := make([]byte, 8192) // 8k is an almost standard max size for JWT
-			ticketLength, err := p.Read(ticketBytes)
-			if err != nil && err != io.EOF {
-				log.Error("Error parsing auth ticket: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			ticket := string(ticketBytes[:ticketLength])
-			userid, err = g3lib.ValidateJwt(ticket)
-			if err != nil {
-				log.Error("Invalid auth ticket: " + err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-
-			// The second part should be the file.
-			p, err = reader.NextPart()
-			if err != nil && err != io.EOF {
 				log.Error("Error reading multipart file form: " + err.Error())
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
@@ -1129,19 +875,12 @@ func Main() int {
 				return
 			}
 
-			// Create the user directory if it does not exist.
-			userdir := fmt.Sprintf("/tmp/%d/", userid)
-			err = os.Mkdir(userdir, 0700)
-			if err != nil && !os.IsExist(err) {
-				log.Error("Error creating user directory: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-				return
-			}
-
 			// Save the uploaded contents into a file with a random name.
 			// This way we don't need to trust and/or sanitize user input.
 			filename := uuid.NewString()
-			fd, err := os.OpenFile(userdir + filename + ".bin", os.O_WRONLY | os.O_CREATE, 0600)
+			binPath := "/tmp/" + filename + ".bin"
+			txtPath := "/tmp/" + filename + ".txt"
+			fd, err := os.OpenFile(binPath, os.O_WRONLY | os.O_CREATE, 0600)
 			if err != nil {
 				log.Error("Error creating upload file: " + err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
@@ -1150,14 +889,14 @@ func Main() int {
 			defer fd.Close()
 			_, err = io.Copy(fd, p)
 			if err != nil {
-				os.Remove(userdir + filename + ".bin") //nolint:errcheck
+				os.Remove(binPath) //nolint:errcheck
 				log.Error("Error writing to upload file: " + err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
-			err = os.WriteFile(userdir + filename + ".txt", []byte(p.FileName()), 0600)
+			err = os.WriteFile(txtPath, []byte(p.FileName()), 0600)
 			if err != nil {
-				os.Remove(userdir + filename + ".bin") //nolint:errcheck
+				os.Remove(binPath) //nolint:errcheck
 				log.Error("Error saving upload file metadata: " + err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
@@ -1165,191 +904,12 @@ func Main() int {
 
 			// Return the new filename to the caller.
 			g3lib.SendApiResponse(w, filename)
-		})
-
-		///////////////////////////////////////////////////////////////////////////////////////////
-		// File download handler.
-		//
-		http.HandleFunc(apiPath + "/file/download", func (w http.ResponseWriter, r *http.Request) {
-			log.Debug("Handling: file/download")
-			if r.Method != http.MethodGet && r.Method != http.MethodHead {
-				log.Error("Method not allowed: " + r.Method)
-				g3lib.SendApiError(w, http.StatusMethodNotAllowed, "Error decoding payload.")
-				return
-			}
-
-			// Get the token from a cookie and validate it.
-			var userid int
-			var err error
-			found := false
-			for _, cookie := range r.Cookies() {
-				if cookie.Name == "auth" {
-					userid, err = g3lib.ValidateJwt(cookie.Value)
-					if err != nil {
-						log.Error(err.Error())
-						g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-						return
-					}
-					found = true
-					break
-				}
-			}
-			if !found {
-				log.Error("Missing auth cookie")
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-
-			// Calculate the real path of the file based on the user and file IDs.
-			fileid := r.URL.Query().Get("fileid")
-			if ! govalidator.IsUUIDv4(fileid) {
-				log.Error("Invalid file ID: " + fileid)
-				g3lib.SendApiError(w, http.StatusBadRequest, "Invalid file ID.")
-				return
-			}
-			basename := fmt.Sprintf("/tmp/%d/%s", userid, fileid)
-
-			// Read the file with the metadata.
-			fakenameBytes, err := os.ReadFile(basename + ".txt")
-			if err != nil {
-				log.Error(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "File not found.")
-				return
-			}
-			fakename := string(fakenameBytes)
-			fakename = strings.ReplaceAll(fakename, "\r", "") // this prevents HTTP
-			fakename = strings.ReplaceAll(fakename, "\n", "") // request smuggling
-			if fakename == "" {
-				fakename = fileid
-			}
-
-			// Open the file with the data.
-			fd, err := os.Open(basename + ".bin")
-			if err != nil {
-				log.Error(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "File not found.")
-				return
-			}
-			defer fd.Close()
-			fi, err := fd.Stat()
-			if err != nil {
-				log.Error(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "File not found.")
-				return
-			}
-
-			// Return the file contents for GET requests, just the headers for HEAD.
-			//w.Header().Set("Accept-Ranges", "bytes")	// TODO
-			w.Header().Set("Connection", "close")
-			w.Header().Set("Content-Disposition", "attachment; filename=" + fakename)
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", fi.Size()))
-			w.Header().Set("Content-Type", "application/octet-binary")
-			w.WriteHeader(http.StatusOK)
-			if r.Method == http.MethodGet {
-				_, err = io.Copy(w, fd)
-				if err != nil {
-					log.Error(err)
-					return
-				}
-			}
-		})
-
-		///////////////////////////////////////////////////////////////////////////////////////////
-		// File list.
-		//
-		http.HandleFunc(apiPath + "/file/ls", func (w http.ResponseWriter, r *http.Request) {
-			log.Debug("Handling: file/ls")
-			var request g3lib.ReqListFiles
-			err := request.Decode(r)
-			if err != nil {
-				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-
-			// List all files in the user directory.
-			var fakenames []map[string]interface{}
-			files, err := os.ReadDir(fmt.Sprintf("/tmp/%d/", userid))
-			if err != nil {
-				g3lib.SendApiResponse(w, fakenames)
-				return
-			}
-			for _, file := range files {
-				if !file.Type().IsRegular() {
-					continue
-				}
-				name := file.Name()
-				ext := filepath.Ext(name)
-				fid := strings.TrimSuffix(name, ext)
-				if ext != ".txt" {
-					continue
-				}
-				data, err := os.ReadFile(fmt.Sprintf("/tmp/%d/%s", userid, name))
-				if err != nil {
-					log.Error(err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-					return
-				}
-				fi, err := os.Stat(fmt.Sprintf("/tmp/%d/%s.bin", userid, fid))
-				if err != nil {
-					log.Error(err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-					return
-				}
-				fakenames = append(fakenames,
-					map[string]interface{}{"fileid": fid, "name": string(data), "size": fi.Size(), "ts": fi.ModTime().Unix()})
-			}
-
-			// Return the list of objects.
-			g3lib.SendApiResponse(w, fakenames)
-		})
-
-		///////////////////////////////////////////////////////////////////////////////////////////
-		// File remove.
-		//
-		http.HandleFunc(apiPath + "/file/rm", func (w http.ResponseWriter, r *http.Request) {
-			log.Debug("Handling: file/rm")
-			var request g3lib.ReqRemoveFile
-			err := request.Decode(r)
-			if err != nil {
-				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-			userid, err := g3lib.ValidateJwt(request.Token)
-			if err != nil {
-				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusUnauthorized, "User is not authorized to perform this operation.")
-				return
-			}
-
-			// Delete the files if they exist.
-			prefix := fmt.Sprintf("/tmp/%d/%s", userid, request.FileID)
-			err1 := os.Remove(prefix + ".bin")
-			err2 := os.Remove(prefix + ".txt")
-			if err1 != nil {
-				log.Error(err1.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-				return
-			}
-			if err2 != nil {
-				log.Error(err2.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-				return
-			}
-			g3lib.SendApiResponse(w, nil)
-		})
+		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Websocket handler.
 		//
-		http.HandleFunc(apiPath + "/ws", func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath + "/ws", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: /ws")
 
 			// Upgrade from HTTP to websocket.
@@ -1374,13 +934,6 @@ func Main() int {
 					return
 				}
 
-				// Check the JWT token.
-				userid, err := g3lib.ValidateJwt(request.Token)
-				if err != nil {
-					log.Error(err.Error())
-					return
-				}
-
 				// Decide what to do based on the request type.
 				switch request.MsgType {
 
@@ -1388,7 +941,7 @@ func Main() int {
 				case "scanprogress":
 
 					// Create a channel and register it with the notification tracker.
-					log.Debugf("User ID %d subscribed to progress updates.", userid)
+					log.Debug("Subscribed to progress updates.")
 					channel := make(chan any)
 					ticket := notifyTracker.AddChannel(channel)
 					defer notifyTracker.RemoveChannel(ticket)
@@ -1422,7 +975,7 @@ func Main() int {
 					conn.WriteError("Unknown websocket request type.")
 				}
 			}
-		})
+		}))
 
 		// Start the web server.
 		log.Info("Listening for HTTP requests on " + bindAddr + ":" + bindPort)

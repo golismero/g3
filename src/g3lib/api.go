@@ -39,7 +39,7 @@ func ValidateHttpRequest(r *http.Request) error {
 }
 
 // Make an API request as a client.
-func MakeApiRequest(ctx context.Context, baseurl string, endpoint string, body any) (*APIResponse, error) {
+func MakeApiRequest(ctx context.Context, baseurl string, endpoint string, token string, body any) (*APIResponse, error) {
 
 	// Figure out if we have to show debug output for the API calls.
 	doDebugAPI := DoDebugAPI()
@@ -71,6 +71,7 @@ func MakeApiRequest(ctx context.Context, baseurl string, endpoint string, body a
 	}
 	r = r.WithContext(ctx)
 	r.Header.Add("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer " + token)
 	client := http.DefaultClient
 	res, err := client.Do(r)
 	if err != nil {
@@ -151,7 +152,6 @@ func SendApiError(w http.ResponseWriter, statusCode int, errorMsg string) {
 }
 
 type WSRequest struct {
-	AuthenticatedRequest
 	MsgType string              `json:"msgtype"             validate:"required"`
 	ScanID string               `json:"scanid,omitempty"    validate:"omitempty,uuid"`
 }
@@ -175,40 +175,7 @@ func (resp *APIResponse) Write(w http.ResponseWriter) {
 	w.Write(respBytes) //nolint:errcheck
 }
 
-type ReqLogin struct {
-	Username string             `json:"username"            validate:"required"`
-	Password string             `json:"password"            validate:"required"`
-}
-func (req *ReqLogin) Decode(r *http.Request) error {
-	if err := ValidateHttpRequest(r); err != nil { return err }
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return validator.New().Struct(req)
-}
-
-type AuthenticatedRequest struct {
-	Token string                `json:"token"               validate:"required"`
-}
-
-type ReqRefresh struct {
-	AuthenticatedRequest
-}
-func (req *ReqRefresh) Decode(r *http.Request) error {
-	if err := ValidateHttpRequest(r); err != nil { return err }
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return validator.New().Struct(req)
-}
-
-type ReqTicket struct {
-	AuthenticatedRequest
-}
-func (req *ReqTicket) Decode(r *http.Request) error {
-	if err := ValidateHttpRequest(r); err != nil { return err }
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return validator.New().Struct(req)
-}
-
 type ReqStartScan struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid,omitempty"    validate:"omitempty,uuid"`
 	Script string               `json:"script,omitempty"    validate:"omitempty"`
 }
@@ -219,7 +186,6 @@ func (req *ReqStartScan) Decode(r *http.Request) error {
 }
 
 type ReqStopScan struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid"              validate:"uuid"`
 }
 func (req *ReqStopScan) Decode(r *http.Request) error {
@@ -229,7 +195,6 @@ func (req *ReqStopScan) Decode(r *http.Request) error {
 }
 
 type ReqEnumerateScans struct {
-	AuthenticatedRequest
 }
 func (req *ReqEnumerateScans) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
@@ -238,7 +203,6 @@ func (req *ReqEnumerateScans) Decode(r *http.Request) error {
 }
 
 type ReqDeleteScan struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid"              validate:"uuid"`
 }
 func (req *ReqDeleteScan) Decode(r *http.Request) error {
@@ -248,7 +212,6 @@ func (req *ReqDeleteScan) Decode(r *http.Request) error {
 }
 
 type ReqGetScanProgressTable struct {
-	AuthenticatedRequest
 }
 func (req *ReqGetScanProgressTable) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
@@ -257,7 +220,6 @@ func (req *ReqGetScanProgressTable) Decode(r *http.Request) error {
 }
 
 type ReqGetScanDataIDs struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid"              validate:"uuid"`
 }
 func (req *ReqGetScanDataIDs) Decode(r *http.Request) error {
@@ -267,7 +229,6 @@ func (req *ReqGetScanDataIDs) Decode(r *http.Request) error {
 }
 
 type ReqLoadData struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid"              validate:"uuid"`
 	DataIDs []string            `json:"dataids"             validate:"omitempty,dive,mongodb"`
 }
@@ -278,7 +239,6 @@ func (req *ReqLoadData) Decode(r *http.Request) error {
 }
 
 type ReqReport struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid"              validate:"uuid"`
 }
 func (req *ReqReport) Decode(r *http.Request) error {
@@ -288,7 +248,6 @@ func (req *ReqReport) Decode(r *http.Request) error {
 }
 
 type ReqQueryLog struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid"              validate:"uuid"`
 	TaskID string               `json:"taskid"              validate:"uuid"`
 }
@@ -299,7 +258,6 @@ func (req *ReqQueryLog) Decode(r *http.Request) error {
 }
 
 type ReqQueryScanTaskList struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid"              validate:"uuid"`
 }
 func (req *ReqQueryScanTaskList) Decode(r *http.Request) error {
@@ -309,7 +267,6 @@ func (req *ReqQueryScanTaskList) Decode(r *http.Request) error {
 }
 
 type ReqQueryScanTaskStatus struct {
-	AuthenticatedRequest
 	ScanID string               `json:"scanid"              validate:"uuid"`
 }
 func (req *ReqQueryScanTaskStatus) Decode(r *http.Request) error {
@@ -319,7 +276,6 @@ func (req *ReqQueryScanTaskStatus) Decode(r *http.Request) error {
 }
 
 type ReqListPlugins struct {
-	AuthenticatedRequest
 }
 func (req *ReqListPlugins) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
@@ -328,29 +284,9 @@ func (req *ReqListPlugins) Decode(r *http.Request) error {
 }
 
 type ReqCheckScriptSyntax struct {
-	AuthenticatedRequest
 	Script string               `json:"script"              validate:"required"`
 }
 func (req *ReqCheckScriptSyntax) Decode(r *http.Request) error {
-	if err := ValidateHttpRequest(r); err != nil { return err }
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return validator.New().Struct(req)
-}
-
-type ReqListFiles struct {
-	AuthenticatedRequest
-}
-func (req *ReqListFiles) Decode(r *http.Request) error {
-	if err := ValidateHttpRequest(r); err != nil { return err }
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return validator.New().Struct(req)
-}
-
-type ReqRemoveFile struct {
-	AuthenticatedRequest
-	FileID string               `json:"fileid"              validate:"uuid"`
-}
-func (req *ReqRemoveFile) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
 	return validator.New().Struct(req)
