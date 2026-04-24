@@ -204,6 +204,11 @@ func ParseScript(plugins G3PluginMetadata, script string) (ParsedScript, error) 
 		parsed.Pipelines = append(parsed.Pipelines, pipeline)
 	}
 
+	// If no "mode" command was used, set it to the default.
+	if parsed.Mode == "" {
+		parsed.Mode = "parallel"
+	}
+
 	// Return the object with the parsed script.
 	// This is not exactly the same object that is sent to g3scanner later,
 	// since targets and imports are executed locally, and pipelines remotely.
