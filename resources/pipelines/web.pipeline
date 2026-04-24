@@ -1,0 +1,8 @@
+nmap-fast | testssl
+nmap-fast | vulners
+dig | nmap-fast | testssl
+dig | nmap-fast | vulners
+sublist3r | dig | nmap-fast | testssl
+sublist3r | dig | nmap-fast | vulners
+nikto
+wafw00f

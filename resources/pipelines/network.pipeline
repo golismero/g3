@@ -1,0 +1,4 @@
+nmap-full | testssl
+dig | nmap-full | testssl
+nmap-full | hydra
+dig | nmap-full | hydra
