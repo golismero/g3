@@ -120,13 +120,6 @@ cd src && make ../bin/g3api && make ../bin/g3cli
 
 Expected: both binaries build. If Go complains about `apiToken declared and not used` on `g3cli`, mark it unused with `_ = apiToken` *only for this commit* (Task 2 removes the workaround). Document this in the commit message.
 
-- [ ] **Step 6: Commit**
-
-```
-git add src/g3api/g3api.go src/g3cli/g3cli.go
-git commit -m "g3api/g3cli: add token middleware helper and G3_API_TOKEN env reader"
-```
-
 ---
 
 ## Task 2: Flip to bearer auth (wrap handlers, update g3cli, remove Token field usage)
@@ -278,15 +271,6 @@ cd src && make ../bin/g3api && make ../bin/g3cli
 
 Expected: both build clean. Any remaining `undefined: userid` or `unused: err` is a missed edit from Step 2 — fix before proceeding.
 
-- [ ] **Step 8: Commit**
-
-```
-git add src/g3api/g3api.go src/g3cli/g3cli.go src/g3lib/api.go
-git commit -m "g3api/g3cli: replace per-handler JWT/ACL with middleware-level bearer check"
-```
-
-(If Path B was chosen in Step 3, `src/g3lib/api.go` will not be in this commit — drop it from the `git add`.)
-
 ---
 
 ## Task 3: Delete dead endpoints and unused request/response types
@@ -335,13 +319,6 @@ cd /home/crapula/code/g3 && grep -rn "auth/login\|auth/refresh\|auth/ticket\|fil
 
 Expected: no hits in `src/`. Any hit in `docs/` is a documentation cleanup that gets folded into this commit. Any hit in `scripts/` is genuinely surprising and needs investigation.
 
-- [ ] **Step 7: Commit**
-
-```
-git add src/g3api/g3api.go src/g3lib/api.go
-git commit -m "g3api: delete /auth/* and /file/{download,ls,rm} endpoints + request types"
-```
-
 ---
 
 ## Task 4: Flatten `/tmp/{userid}/{uuid}.bin` → `/tmp/{uuid}.bin`
@@ -386,13 +363,6 @@ cd src && make ../bin/g3api
 ```
 
 Expected: clean build.
-
-- [ ] **Step 4: Commit**
-
-```
-git add src/g3api/g3api.go
-git commit -m "g3api: flatten /tmp/{userid}/{uuid}.bin to /tmp/{uuid}.bin"
-```
 
 ---
 
@@ -454,15 +424,6 @@ cd /home/crapula/code/g3 && golangci-lint run ./src/...
 
 Expected: clean, except for lint issues that existed before this work. Any new `unused` warning means a helper got stranded — delete it.
 
-- [ ] **Step 7: Commit**
-
-```
-git add src/g3lib/sql.go
-git commit -m "g3lib: delete jwt.go and user/ACL helpers (IsUserAuthorized, AddUserToScan, ...)"
-```
-
-`git rm` in Step 2 already staged the deletion, so `jwt.go` is included in this commit automatically.
-
 ---
 
 ## Task 6: Simplify SQL schema
@@ -506,13 +467,6 @@ cd /home/crapula/code/g3 && grep -rn "users\b\|\\bscans\b" volumes/mariadb/ 2>/d
 ```
 
 Expected: only the edited file. If any `.sql` seed or migration file references `users` or `scans`, evaluate whether it's dead too and delete if so.
-
-- [ ] **Step 3: Commit**
-
-```
-git add volumes/mariadb/initdb.d/create_tables.sql
-git commit -m "mariadb: drop users and scans permission tables; remove default credentials"
-```
 
 ---
 
@@ -586,142 +540,3 @@ cd /home/crapula/code/g3 && grep -rn "JWT_SECRET\|JWT_LIFETIME\|admin:admin\|use
 ```
 
 Expected: no hits. Any hit in `docs/` is a doc cleanup that should be folded into this commit. Any hit in actual config (`.env*`, `compose*`, `volumes/**/*.conf`) is a missed edit — fix before committing.
-
-- [ ] **Step 5: Commit**
-
-```
-git add .env docker-compose.yml volumes/nginx/app.conf
-git commit -m "env/compose/nginx: swap G3_JWT_SECRET+LIFETIME for G3_API_TOKEN; drop /api/auth route"
-```
-
----
-
-## Task 8: End-to-end manual smoke verification
-
-**Purpose.** Confirm the six checks from the design doc's Verification section. Produces no commit — this is the "have we broken anything" pass before opening the PR.
-
-**Prerequisites.** Fresh MariaDB volume. All prior tasks committed. Binaries rebuilt.
-
-- [ ] **Step 1: Rebuild and reset stack**
-
-```
-cd /home/crapula/code/g3
-docker compose down -v
-make all
-docker compose up -d
-```
-
-Expected: all services start. `docker compose ps` shows `g3api`, `g3scanner1`, `g3worker1` (and friends) as healthy. If `g3api` exits immediately, check its logs — most likely cause is `G3_API_TOKEN` unset in `.env`.
-
-- [ ] **Step 2: Check 1 — Auth gate (positive)**
-
-```
-export G3_API_TOKEN=changeme
-./bin/g3cli list
-```
-
-Expected: returns an empty scan list (or whatever the no-scans response is) without error. No "Unauthorized" in the output.
-
-- [ ] **Step 3: Check 1 — Auth gate (negative: wrong token)**
-
-```
-G3_API_TOKEN=wrongvalue ./bin/g3cli list
-```
-
-Expected: 401 Unauthorized error surfaced by `g3cli`. Exit code non-zero.
-
-- [ ] **Step 4: Check 1 — Auth gate (negative: unset)**
-
-```
-unset G3_API_TOKEN
-./bin/g3cli list
-```
-
-Expected: `g3cli` fails fast at startup with "G3_API_TOKEN is required." — does not attempt the request.
-
-- [ ] **Step 5: Check 2 — WS handshake (negative)**
-
-```
-curl -i -H "Connection: Upgrade" -H "Upgrade: websocket" \
-     -H "Sec-WebSocket-Key: dGVzdA==" -H "Sec-WebSocket-Version: 13" \
-     http://localhost/api/ws
-```
-
-Expected: HTTP 401 response, **not** 101 Switching Protocols. Proves auth runs before upgrade.
-
-- [ ] **Step 6: Check 2 — WS handshake (positive)**
-
-```
-export G3_API_TOKEN=changeme
-./bin/g3cli get --scan <any-scanid-or-none>
-```
-
-Expected: connection succeeds and subscribes. `get` without an active scan may just sit idle; that's fine — we're proving the socket opens.
-
-- [ ] **Step 7: Check 3 — File upload path**
-
-Create a tiny import file and run a scan that consumes it (adapt the exact `g3cli` syntax to whatever the current scan-start command uses — check `g3cli --help` for the import flag):
-
-```
-echo '{"host":"127.0.0.1"}' > /tmp/testimport.json
-./bin/g3cli scan start --import /tmp/testimport.json  # flag name may differ
-```
-
-While it runs:
-
-```
-docker compose exec g3api ls /tmp | grep '\.bin$'
-```
-
-Expected: a `<uuid>.bin` file appears briefly (not inside a userid-numbered subdir), then disappears as `/scan/start` consumes it. Check `docker compose exec g3api ls /tmp/1` returns no such directory.
-
-- [ ] **Step 8: Check 4 — Schema boots clean**
-
-After a scan runs to completion:
-
-```
-docker compose exec mariadb mariadb -u root -ppassword golismero -e "SHOW TABLES;"
-```
-
-Expected: exactly two rows — `logs` and `progress`. No `users`, no `scans`.
-
-```
-docker compose exec mariadb mariadb -u root -ppassword golismero -e "SELECT COUNT(*) FROM logs; SELECT COUNT(*) FROM progress;"
-```
-
-Expected: counts > 0 after a completed scan.
-
-- [ ] **Step 9: Check 5 — Dead endpoints return 404**
-
-```
-for p in auth/login auth/refresh auth/ticket file/download file/ls file/rm; do
-  printf '%-20s ' "$p"
-  curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $G3_API_TOKEN" -X POST "http://localhost/api/$p" -d '{}'
-done
-```
-
-Expected: every line prints `404`. A `401` would mean the endpoint still exists but rejects auth (which is wrong — it should not exist at all).
-
-- [ ] **Step 10: Check 6 — Lint gate**
-
-```
-cd /home/crapula/code/g3 && golangci-lint run ./src/...
-```
-
-Expected: no new issues compared to pre-existing lint state on `main`. Any new `unused` warning points at a helper that got stranded — return to the relevant task and finish the deletion.
-
-- [ ] **Step 11: Record verification outcome**
-
-No commit. If all ten checks above passed, open the PR. Paste a copy of this checklist with all boxes ticked into the PR description, for reviewer confidence.
-
----
-
-## Post-plan review checklist
-
-Before marking the branch ready:
-
-- `git log main..HEAD --oneline` shows 7 commits (Tasks 1-7).
-- `git diff main --stat` shows roughly: ~200 lines removed from `g3api.go`, ~100 removed from `g3cli.go`, `jwt.go` deleted, `sql.go` shrunk, `create_tables.sql` at ~18 lines, compose minor, nginx -6 lines.
-- `grep -rn "ValidateJwt\|IsUserAuthorized\|ReqLogin\|JWT_SECRET" src/` returns zero hits.
-- All binaries build from a clean checkout: `make clean && make all`.
-- Smoke checklist in Task 8 ticked in the PR description.
