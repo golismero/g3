@@ -1,4 +1,4 @@
-FROM golang:1.25 AS builder
+FROM golang:latest AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 WORKDIR /app
