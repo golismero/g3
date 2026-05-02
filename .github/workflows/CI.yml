@@ -106,12 +106,6 @@ jobs:
   golangci:
     name: golangci-lint (${{ matrix.module }})
     needs: [detect]
-    # Skip a matrix cell only when this is a push and the detect job said
-    # the module's filter didn't match. Any other event (workflow_dispatch,
-    # workflow_call) runs the full matrix unconditionally.
-    if: |
-      github.event_name != 'push' ||
-      needs.detect.outputs[matrix.module] == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -119,12 +113,22 @@ jobs:
       fail-fast: false
       matrix:
         module: [g3, g3api, g3cli, g3config, g3lib, g3log, g3scanner, g3worker]
+    # `matrix` isn't available in job-level `if:`, but it is available in
+    # job-level `env:`. Compose the gate here and each meaningful step
+    # references SHOULD_RUN. Skip a matrix cell only when this is a push
+    # and the detect job said the module's filter didn't match; any other
+    # event (workflow_dispatch, workflow_call) runs the full matrix.
+    env:
+      SHOULD_RUN: ${{ github.event_name != 'push' || needs.detect.outputs[matrix.module] == 'true' }}
     steps:
       - uses: actions/checkout@v4
+        if: env.SHOULD_RUN == 'true'
       - uses: actions/setup-go@v5
+        if: env.SHOULD_RUN == 'true'
         with:
           go-version-file: src/${{ matrix.module }}/go.mod
       - uses: golangci/golangci-lint-action@v9
+        if: env.SHOULD_RUN == 'true'
         with:
           working-directory: src/${{ matrix.module }}
           version: latest
