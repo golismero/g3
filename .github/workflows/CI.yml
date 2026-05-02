@@ -42,8 +42,76 @@ jobs:
       - name: Lint Dockerfiles
         run: git ls-files '*Dockerfile*' | xargs -r hadolint
 
+  # Detect which Go modules a push touched, so golangci-lint only runs for
+  # modules whose source (or whose shared-library deps) actually changed.
+  # g3log has no internal deps; g3lib depends on g3log; the six binaries
+  # depend on both — so a change to g3log fans out to everything, a change
+  # to g3lib fans out to the binaries (but not g3log), and a change inside
+  # a binary's own dir affects only that binary.
+  #
+  # The dorny step is gated on push events; for workflow_dispatch and
+  # workflow_call the outputs stay empty and the golangci `if:` below
+  # short-circuits to "run all".
+  detect:
+    name: Detect changed modules
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    outputs:
+      g3: ${{ steps.filter.outputs.g3 }}
+      g3api: ${{ steps.filter.outputs.g3api }}
+      g3cli: ${{ steps.filter.outputs.g3cli }}
+      g3config: ${{ steps.filter.outputs.g3config }}
+      g3lib: ${{ steps.filter.outputs.g3lib }}
+      g3log: ${{ steps.filter.outputs.g3log }}
+      g3scanner: ${{ steps.filter.outputs.g3scanner }}
+      g3worker: ${{ steps.filter.outputs.g3worker }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'push'
+        with:
+          filters: |
+            g3log:
+              - 'src/g3log/**'
+            g3lib:
+              - 'src/g3lib/**'
+              - 'src/g3log/**'
+            g3:
+              - 'src/g3/**'
+              - 'src/g3lib/**'
+              - 'src/g3log/**'
+            g3api:
+              - 'src/g3api/**'
+              - 'src/g3lib/**'
+              - 'src/g3log/**'
+            g3cli:
+              - 'src/g3cli/**'
+              - 'src/g3lib/**'
+              - 'src/g3log/**'
+            g3config:
+              - 'src/g3config/**'
+              - 'src/g3lib/**'
+              - 'src/g3log/**'
+            g3scanner:
+              - 'src/g3scanner/**'
+              - 'src/g3lib/**'
+              - 'src/g3log/**'
+            g3worker:
+              - 'src/g3worker/**'
+              - 'src/g3lib/**'
+              - 'src/g3log/**'
+
   golangci:
     name: golangci-lint (${{ matrix.module }})
+    needs: [detect]
+    # Skip a matrix cell only when this is a push and the detect job said
+    # the module's filter didn't match. Any other event (workflow_dispatch,
+    # workflow_call) runs the full matrix unconditionally.
+    if: |
+      github.event_name != 'push' ||
+      needs.detect.outputs[matrix.module] == 'true'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -63,7 +131,9 @@ jobs:
 
   smoke-tests:
     name: Smoke Tests
-    needs: [ruff, hadolint, golangci]
+    # `detect` is in needs so that if dorny fails on a push, smoke-tests
+    # surfaces it instead of letting golangci silently skip.
+    needs: [ruff, hadolint, detect, golangci]
     if: always()
     runs-on: ubuntu-latest
     steps:
