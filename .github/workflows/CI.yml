@@ -68,6 +68,8 @@ jobs:
       g3scanner: ${{ steps.filter.outputs.g3scanner }}
       g3worker: ${{ steps.filter.outputs.g3worker }}
     steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push'
       - uses: dorny/paths-filter@v3
         id: filter
         if: github.event_name == 'push'
