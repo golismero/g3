@@ -58,7 +58,7 @@ elif raw_input[0] == "[":
         try:
             ip = item["ip"].split("/")[1]
             port = item["port"]
-            key = item["ip"] + ":" + item["port"]
+            key = ip + ":" + item["port"]
             if key not in items:
                 items[key] = []
             items[key].append(item)

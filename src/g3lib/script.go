@@ -136,7 +136,7 @@ func ParseScript(plugins G3PluginMetadata, script string) (ParsedScript, error) 
 			}
 
 			// Check that the files to import actually exist.
-			// We don't need to be very through here since we can also error out later when importing,
+			// We don't need to be very thorough here since we can also error out later when importing,
 			// but it is useful to do some minimal checking here where we can report the script line number.
 			for _, token := range commands[2:] {
 				if govalidator.IsUUIDv4(token) {

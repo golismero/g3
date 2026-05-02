@@ -46,7 +46,7 @@ try:
         parse_iana_descriptions(json.load(fd))
     HTTP_DESC = get_iana_description("http", 80, "tcp")
     HTTP_ALT_DESC = get_iana_description("http-alt", 8080, "tcp")
-except:
+except Exception:
     traceback.print_exc()
 
 # This function parses a single host from the Nmap output.
@@ -136,7 +136,7 @@ TLS_IANA = ['3par-mgmt-ssl', 'amqps', 'amt-redir-tls', 'amt-soap-https', 'appser
 def get_open_plaintext_ports(host):
 
     # Report open ports that do not use SSL.
-    # 
+    #
     # This is tricky if we don't know for a fact the scan was run with service detection. My plan was:
     #
     #   1) if there is at least one "ssl" property, we can assume detection was performed.
@@ -161,7 +161,7 @@ def get_open_plaintext_ports(host):
             else:
                 try:
                     name = socket.getservbyport(int(srv["port"]), srv["protocol"])
-                except:
+                except Exception:
                     continue
             if (has_sv and "ssl" not in srv) or (not has_sv and name not in TLS_IANA):
                 desc = get_iana_description(name, srv["port"], srv["protocol"])

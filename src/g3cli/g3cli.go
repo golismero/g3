@@ -1142,6 +1142,7 @@ func (cmd *ExportCmd) Run(vars CmdContext) error {
 	} else {
 		fmt.Fprintf(fd, "]")
 	}
+	fd.Sync()
 	return nil
 }
 
@@ -1231,6 +1232,7 @@ func (cmd *ToolsCmd) Run(vars CmdContext) error {
 			fmt.Fprintln(fd, "")
 		}
 	}
+	fd.Sync()
 	return nil
 }
 

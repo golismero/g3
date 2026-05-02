@@ -90,7 +90,7 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "")):
                 # Run Hydra, piping stdout and stderr directly to our stderr.
                 # This will send all of the text output into the G3 logs.
                 # On error an exception is raised.
-                result = subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
+                subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=True)
 
                 # Call the importer on the output file.
                 # Capture stdout so we can parse it later.

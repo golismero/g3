@@ -86,7 +86,7 @@
         // The default options change the entry point to "/usr/bin/g3i".
         dockeropt: ["-i", "--rm", "--entrypoint", "/usr/bin/g3i"],
 
-        // The command here is optional and does not support templates.
+        // The command here is optional and supports environment variable expansions.
         command: [],
 
         // The fingerprint for the command, so Golismero doesn't try to re-scan this target.
@@ -105,7 +105,7 @@
         // The default options change the entry point to "/usr/bin/g3m".
         dockeropt: ["-i", "--rm", "--entrypoint", "/usr/bin/g3m"],
 
-        // The command here is optional and does not support templates.
+        // The command here is optional and supports environment variable expansions.
         command: [],
     },
 }
