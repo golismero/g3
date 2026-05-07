@@ -1,6 +1,6 @@
 .PHONY: all g3lib g3log
 
-all: ../bin/g3 ../bin/g3api ../bin/g3cli ../bin/g3config ../bin/g3scanner ../bin/g3worker
+all: ../bin/g3 ../bin/g3api ../bin/g3cli ../bin/g3config ../bin/g3scanner ../bin/g3tui ../bin/g3worker
 
 g3lib:
 	cd g3lib && go mod tidy && go build
@@ -22,6 +22,9 @@ g3log:
 
 ../bin/g3scanner: g3lib g3log
 	cd g3scanner && go mod tidy && go build -o ../../bin/g3scanner
+
+../bin/g3tui: g3lib g3log
+	cd g3tui && go mod tidy && go build -o ../../bin/g3tui
 
 ../bin/g3worker: g3lib g3log
 	cd g3worker && go mod tidy && go build -o ../../bin/g3worker

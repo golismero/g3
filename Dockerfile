@@ -21,5 +21,5 @@ RUN apt-get update -y && \
     apt-get install -y --no-install-recommends docker-ce-cli && \
     apt-get clean -y && \
     rm -rf /var/lib/apt/lists/*
-COPY --from=builder /bin/g3 /bin/g3api /bin/g3cli /bin/g3config /bin/g3scanner /bin/g3worker /bin/
+COPY --from=builder /bin/g3 /bin/g3api /bin/g3cli /bin/g3config /bin/g3tui /bin/g3scanner /bin/g3worker /bin/
 CMD [ "/bin/g3" ]

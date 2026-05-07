@@ -221,16 +221,12 @@ func Main() int {
 	topic := g3lib.SubscribeAsAPI(mq_client, func(client g3lib.MessageQueueClient, msg g3lib.G3ScanStatus) {
 		log.Debug("Received scan status: " + g3lib.PrettyPrintJSON(msg))
 
-		// Update the scan progress in the database.
-		switch msg.Status {
-		case g3lib.STATUS_RUNNING:
-			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, &msg.Progress, msg.Message) //nolint:errcheck
-		case g3lib.STATUS_FINISHED:
-			hundred := 100
-			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, &hundred, msg.Message) //nolint:errcheck
-		default:
-			g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, nil, msg.Message) //nolint:errcheck
-		}
+		// Update the scan progress in the database. msg.Progress is
+		// already nullable (*int) — UpdateScanProgress nil-skips the
+		// progress column, so we pass it through verbatim. The sender
+		// is the authority on whether the value is meaningful; the
+		// subscriber doesn't second-guess.
+		g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, msg.Progress, msg.Message) //nolint:errcheck
 
 		// Notify the event if anyone wants it.
 		notifyTracker.SendNotification(msg)

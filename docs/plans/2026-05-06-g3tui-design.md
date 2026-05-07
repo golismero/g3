@@ -363,11 +363,12 @@ src/g3tui/
 
 **Tests are user-owned.** Implementing agents do not write unit tests, integration tests, or test scaffolding for `g3tui`. The user writes whatever tests they want at their own cadence, separately from the implementation plan.
 
-**Agent-side verification per task** is the toolchain plus behavioral observation:
+**Agent-side verification per task** is strictly the toolchain — no runtime behavior checks:
 
 - `go build` (compile success).
 - `golangci-lint run ./...` (correctness lints; project's correctness-only config, no formatting enforcement).
-- Run the binary against a live `g3api` (e.g. via `docker compose up`) and confirm the workflow behaves as the spec describes — that the dashboard refreshes, the wizard submits, the log viewer streams, etc.
+
+Running the binary, sourcing `.env`, hitting the live API, or starting/stopping `docker compose` services is user-owned. Agents do not perform any behavioral verification. The user runs the binary at their own cadence and reports back if behavior diverges from the spec.
 
 If/when the user does write tests later, they would naturally split along the existing package boundaries — `internal/client/` against `httptest.Server`, `internal/pipelines/` for `Load()` cases, `internal/ui/` via `teatest` substring assertions. None of that is in scope for the implementation plan.
 

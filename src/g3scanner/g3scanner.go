@@ -375,9 +375,13 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		totalScanSteps += len(pipe)
 	}
 
-	// Notify the scan has started.
-	if err := g3lib.SendScanProgress(mq_client, msg.ScanID, 0, totalScanSteps); err != nil {
-		log.Error(err.Error())
+	// Notify the scan has started. Pure-import scans (no pipelines)
+	// have nothing to track yet — the FINISHED message at the end
+	// covers them.
+	if totalScanSteps > 0 {
+		if err := g3lib.SendScanProgress(mq_client, msg.ScanID, 0, totalScanSteps); err != nil {
+			log.Error(err.Error())
+		}
 	}
 
 	// Load the array of starting data.
@@ -402,11 +406,11 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 	// Skip the pipeline execution part if we have no pipelines.
 	// This can happen if the scan script consisted entirely of imports.
+	// No interim progress message is emitted — the merger phase + the
+	// FINISHED notification at the end of this function cover the
+	// "completed" state.
 	if len(msg.Pipelines) == 0 {
 		log.Debug("No pipelines to be executed, skipping to reporting phase.")
-		if err := g3lib.SendScanProgress(mq_client, msg.ScanID, totalScanSteps, totalScanSteps); err != nil {
-			log.Error(err.Error())
-		}
 	} else {
 
 		// Use the requested mode of operation.
@@ -980,8 +984,12 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 
 	// Update the scan progress now that all of the pipelines are complete.
-	if err := g3lib.SendScanProgress(mq_client, msg.ScanID, totalScanSteps, totalScanSteps); err != nil {
-		log.Error(err.Error())
+	// Pure-import scans (totalScanSteps == 0) skip this — the FINISHED
+	// notification later in this function carries the 100% value.
+	if totalScanSteps > 0 {
+		if err := g3lib.SendScanProgress(mq_client, msg.ScanID, totalScanSteps, totalScanSteps); err != nil {
+			log.Error(err.Error())
+		}
 	}
 
 	// Scanning is over, but we need to merge duplicated issues.

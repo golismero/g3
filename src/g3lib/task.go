@@ -102,7 +102,12 @@ type G3Scan struct {            // MessageType: MSG_SCAN
 type G3ScanStatus struct {      // MessageType: MSG_STATUS
 	G3Message
 	Status G3SCANSTATUS         `json:"status"`
-	Progress int			    `json:"progress"`
+	// Progress is intentionally a pointer so senders that don't know
+	// the current progress (e.g. SendScanStopped, SendScanFailed) can
+	// leave it nil. With omitempty, nil is omitted from the wire JSON;
+	// receivers (DB updater, TUI) interpret nil as "no change to
+	// progress" — never as zero.
+	Progress *int               `json:"progress,omitempty"`
 	Message string       	    `json:"message"`
 }
 
@@ -220,6 +225,9 @@ func SendScanStop(client MessageQueueClient, scanid string) error {
 
 // Send a running scan progress message to the broker.
 func SendScanProgress(client MessageQueueClient, scanid string, currentScanStep, totalScanSteps int) error {
+	if totalScanSteps <= 0 {
+		return errors.New("totalScanSteps must be positive")
+	}
 	progress := (currentScanStep * 100) / totalScanSteps
 	if progress < 0 {
 		progress = 0
@@ -231,7 +239,7 @@ func SendScanProgress(client MessageQueueClient, scanid string, currentScanStep,
 	msg.SenderID = GetClientID(client)
 	msg.ScanID = scanid
 	msg.Status = STATUS_RUNNING
-	msg.Progress = progress
+	msg.Progress = &progress
 	if progress == 100 {
 		msg.Message = "Analyzing results..."
 	} else {
@@ -279,11 +287,13 @@ func SendScanFailed(client MessageQueueClient, scanid, errorMessage string) erro
 
 // Send a scan completed message to the broker.
 func SendScanCompleted(client MessageQueueClient, scanid string) error {
+	hundred := 100
 	msg := G3ScanStatus{}
 	msg.MessageType = MSG_STATUS
 	msg.SenderID = GetClientID(client)
 	msg.ScanID = scanid
 	msg.Status = STATUS_FINISHED
+	msg.Progress = &hundred
 	msg.Message = "Scan complete."
 	err := validator.New().Struct(msg)
 	if err != nil {

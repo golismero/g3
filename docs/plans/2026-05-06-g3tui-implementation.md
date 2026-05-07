@@ -12,7 +12,7 @@
 
 **Status:** Tier 0 detailed and ready to implement. Tiers 1–3 outlined only — detail each at its own kickoff per project convention (memory: `feedback_tiered_implementation_plans.md`).
 
-**Tests are user-owned** (memory: `feedback_tests_are_user_owned.md`). The plan does not include test-writing tasks. Agent verification per task is `go build` + `golangci-lint run ./...` + behavioral checks against a live `g3api`.
+**Tests are user-owned** (memory: `feedback_tests_are_user_owned.md`). The plan does not include test-writing tasks. **Agent verification per task is strictly `go build` + `golangci-lint run ./...`.** Running the binary, hitting the live API, and any other behavioral verification is user-owned — agents do not run smoke tests, do not source `.env` and exec `bin/g3tui`, and do not bring `docker compose` services up/down/restart. Suggested smoke commands appear in each task as guidance for the user; agents skip those steps.
 
 **Git is user-owned** (memory: `feedback_git_is_user_owned.md`). Agents must not run mutating git commands. Each task ends at a "STOP — user commits" checkpoint with a suggested commit message in plain text; the user commits at their chosen boundaries. Read-only inspection (`git status`, `git diff`, `git log`) is fine.
 
@@ -22,9 +22,9 @@
 
 | Tier | End state | Status |
 |---|---|---|
-| **0 — Foundations** | `make bin` produces `bin/g3tui`. Running it loads env, fetches `/scan/list` once, prints scan IDs, then exits. Pipelines package loads embedded + user scan types. Client package has typed wrappers for every endpoint, the `tea.Msg` types, the WS scanprogress subscription with reconnect FSM, and the generic poller. `golangci-lint` clean. No TUI yet. | **Detailed below** |
-| **1 — Dashboard** | Persistent dashboard launches: left panel shows live scan list (WS), right pane shows per-task table for selected scan (2s poll), header connection indicator, footer keybinds, cancel/delete confirmation flows. Initial connection failure goes to a full-screen retry/quit prompt. | Outlined |
-| **2 — New-scan wizard** | `[N]` opens the modal overlay. Targets textarea, imports overlay (tool-first batch picker → multi-file picker), mode toggle, scan-type list with `Custom…`, parallel uploads (cap 4), `/scan/start`. New scan appears in left panel via WS push. | Outlined |
+| **0 — Foundations** | `make bin` produces `bin/g3tui`. Running it loads env, fetches `/scan/list` once, prints scan IDs, then exits. Pipelines package loads embedded + user scan types. Client package has typed wrappers for every endpoint, the `tea.Msg` types, the WS scanprogress subscription with reconnect FSM, and the generic poller. `golangci-lint` clean. No TUI yet. | Detailed (complete) |
+| **1 — Dashboard** | Persistent dashboard launches: left panel shows live scan list (WS), right pane shows per-task table for selected scan (2s poll), header connection indicator, footer keybinds, cancel/delete confirmation flows. Initial connection failure goes to a full-screen retry/quit prompt. | Detailed (complete) |
+| **2 — New-scan wizard** | `[N]` opens the modal overlay. Targets textarea, imports overlay (tool-first batch picker → multi-file picker), mode toggle, scan-type list with `Custom…`, parallel uploads (cap 4), `/scan/start`. New scan appears in left panel via WS push. | **Detailed below** |
 | **3 — Logs & report viewers + README** | `[L]` opens log viewer with task switcher, 2s polling, follow-tail, save-to-file. `[R]` opens Glamour-rendered report with save-as-Markdown. Both pause polling on terminal scan state. `src/g3tui/README.md` written (env vars, build, install, six workflows, config-dir overrides). | Outlined |
 
 ---
@@ -53,7 +53,7 @@ If any verification step fails, stop and report — don't paper over connection 
 - `internal/client/` has typed wrappers for every endpoint the TUI will use, `tea.Msg` types for every event, a generic poller, and a WS subscription with reconnect FSM.
 - `internal/pipelines/` loads embedded + user-supplied `.pipeline` files with the merge rule.
 
-**Behavioral verification per task.** Each task ends with a manual check — `go build` succeeds, `golangci-lint run ./...` is clean, and running the binary produces the expected stdout against a live `g3api`. The user commits at each task's STOP checkpoint. No automated tests in this plan (those are user-owned).
+**Verification per task.** Agent-side: `go build` (or `make bin`) succeeds, and `golangci-lint run ./...` is clean. That is the entire scope of agent verification. Each task lists "Run: ... bin/g3tui" smoke-test commands and "Expected: ..." outputs — those are guidance for the **user** to run if they want to verify behaviorally. Agents do not execute the binary, do not source `.env`, and do not poke the live API. The user commits at each task's STOP checkpoint (or batches commits at the tier boundary — see memory: `feedback_plan_commit_cadence.md`). No automated tests in this plan (those are user-owned).
 
 **Prerequisites.** A reachable `g3api` (compose stack `docker compose up`) with `G3_API_TOKEN` set, plus `.env` populated. A scan or two already in the database is helpful for Task 0.5 verification; the `samples/` directory has scripts you can submit via `g3cli` to seed state.
 
@@ -1221,30 +1221,139 @@ Stop here. Tier 0 is complete — `bin/g3tui` builds, lints clean, and exercises
 
 ## Tier 1 — Dashboard with live updates
 
-**Intent.** Replace the smoke-test `main` with a Bubble Tea program that runs the persistent dashboard. Owns the WS lifecycle, scan-list rendering, per-task drill-in, header connection indicator, footer keybinds, cancel/delete confirmation flows, and the initial-connection-failure screen.
+**Intent.** Replace the smoke-test `main` with a Bubble Tea program that runs the persistent dashboard. The dashboard owns the WS lifecycle, scan-list rendering, per-task drill-in, header connection indicator, footer keybinds, cancel/delete confirmation flows, and the initial-connection-failure screen.
 
 **End state.**
-- Launching `bin/g3tui` lands in the dashboard. Left panel lists scans (live via WS), sorted RUNNING-first.
+- Launching `bin/g3tui` lands in the dashboard. Left panel lists scans (live via WS, polling fallback), sorted RUNNING-first.
 - Selecting a scan fills the right pane with the per-task table (2s polled, off on terminal scan state).
 - Header dot reflects WS state in real time (green/yellow/red).
 - `c` on a selected scan opens a confirm overlay → `/scan/stop`.
 - `d` on a non-running selected scan opens a confirm overlay → `/scan/stop` then `/scan/delete`.
-- Initial WS dial failure shows a full-screen retry/quit prompt.
+- Initial WS dial failure (or auth failure on first HTTP call) shows a full-screen retry/quit prompt.
 - `q` / `Ctrl-C` exits cleanly.
 
-**Key tasks (to be detailed at Tier 1 kickoff).**
-1. `internal/ui/styles.go` and `internal/ui/keys.go` — single source of truth for Lip Gloss styles and `key.Binding` declarations.
-2. `internal/ui/app.go` — top-level `tea.Model`, `JoinHorizontal` layout, message routing, WS lifecycle ownership.
-3. `internal/ui/scanlist.go` — left panel: live list, sort, filter (`/`), selection.
-4. `internal/ui/scandetail.go` — right pane task table; mirror the column shape from `g3cli ps <scanid>`.
-5. Header bar with connection indicator; footer bar with sub-model-overridable keybinds.
-6. Cancel/delete confirmation overlays.
-7. Initial-connection-failure full-screen handler with retry.
-8. Replace `main.go` smoke driver with `tea.NewProgram(ui.New(...)).Run()`.
+**Build order rationale.** Polling-only scan list lands first (Task 1.2), then per-task drill-in (1.3), then chrome (1.4). WS subscription is wired in *after* the polling-only path works (1.5) so the UI is fully debuggable before adding a second transport. Confirm overlays come last among interactive features (1.6) because they depend on the scan-list selection and the right pane being mature. The initial-failure screen (1.7) is bolt-on ahead of the polish task (1.8).
+
+---
+
+### Task 1.1: UI foundations & app skeleton
+
+**Files (create):**
+- `src/g3tui/internal/ui/styles.go` — single Lip Gloss palette: header, footer, list-pane border, list-row (default/selected/dimmed), table-header, indicator dot variants. No theming for v1.
+- `src/g3tui/internal/ui/keys.go` — `key.Binding` declarations for global keys (`q` quit, `?` help, `↑↓` navigate, `enter` select, `c` cancel, `d` delete, `n` new, `l` logs, `r` report, `esc` back, `/` filter).
+- `src/g3tui/internal/ui/app.go` — top-level `tea.Model` with `Init/Update/View`. Owns `client.Client`, the `[]pipelines.Pipeline` cache, the cached plugin list, the scan list, the selected scan ID, the WS connection state, and a sub-model focus enum. View is a placeholder for now (title bar + "loading…" body) — sub-pane rendering arrives in 1.2/1.3.
+
+**Files (modify):**
+- `src/g3tui/main.go` — strip the smoke driver. Load config, build `client.Client`, do the one-shot `/scan/list` + `/plugin/list` fetches synchronously to seed the model (so initial render isn't blank), then `tea.NewProgram(ui.New(cfg, cli, plugins, pipes), tea.WithAltScreen()).Run()`. On error during seeding, emit a friendly stderr message and exit 1 (the full retry screen is added in 1.7; until then a hard-fail at launch is acceptable).
+
+**Design decisions.**
+- `App.Update` uses a top-level `switch m := msg.(type)` and dispatches to the sub-model owning the focus. Messages from `client.*` (e.g. `ScanListSnapshot`, `StreamStateChanged`) are broadcast to the relevant pane.
+- Window-resize handling lives in `App` and re-flows the layout on each `tea.WindowSizeMsg`. Sub-models receive their own resize as a `paneResize` message we synthesize from the parent.
+- `tea.WithAltScreen()` is set so the dashboard takes the full terminal and restores cleanly on exit.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 1.2: Scan list pane (polling-only first)
+
+**Files (create):**
+- `src/g3tui/internal/ui/scanlist.go` — `ScanList` sub-model. Owns: filtered/sorted list, current selection index, filter string, focus state. View renders the left panel: title row, then one row per scan with status pill + progress %.
+
+**Wiring.**
+- `App.Init()` returns a `tea.Cmd` that spawns a 3s `client.Poll` for `/scan/progress`, sending `ScanListSnapshot`. The poller's context is owned by `App`; cancelled on quit.
+- On `ScanListSnapshot`, `ScanList` replaces its entries, re-sorts (RUNNING → WAITING → terminal-newest-first), and re-applies the current filter.
+- Sort uses status precedence then a stable secondary by `LastSeen` (descending). Filter is an inline ID-prefix or status-name match — no fuzzy matching for v1.
+
+**Keybinds owned here.**
+- `↑/↓` move selection.
+- `/` enters filter mode (textinput attached to the bottom of the panel; `esc` clears and exits).
+- `enter` is a no-op in 1.2 (drill-in arrives in 1.3).
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 1.3: Scan detail pane (per-task table)
+
+**Files (create):**
+- `src/g3tui/internal/ui/scandetail.go` — `ScanDetail` sub-model. Renders the right pane: a table of tasks for the currently-selected scan.
+
+**Columns** mirror `g3cli ps <scanid>`: TASK ID (truncated), STATE, TOOL, WORKER (truncated), LAST SEEN (relative duration), AGE (relative duration), LINES.
+
+**Wiring.**
+- `App` watches scan selection changes from `ScanList` and tells `ScanDetail` to focus on the new scan. `ScanDetail` spawns a 2s `client.Poll` for `/scan/tasks/status` keyed on the focused scan ID; cancels its previous poller on selection change.
+- Polling pauses when the scan reaches a terminal status (FINISHED/CANCELED/FAILED) — `ScanDetail` checks the latest entry from the scan list before deciding whether to re-arm the ticker.
+- Empty state mirrors `g3cli ps`: "Scan has no tasks yet" if the response is empty.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 1.4: Header bar + footer
+
+**Files (modify):**
+- `src/g3tui/internal/ui/app.go` — add `renderHeader()` and `renderFooter()` helpers, joined into the top-level `View()` via `lipgloss.JoinVertical`.
+
+**Header.** `g3tui` title, a connection indicator (placeholder dot in 1.4 — fully wired in 1.5), and the host portion of `cfg.BaseURL` (never the token). Right-aligned filler.
+
+**Footer.** Default keybinds joined with `·`. Sub-models contribute their own keybinds via a `Help() []key.Binding` interface — the footer renders the focused sub-model's bindings in addition to the globals.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 1.5: WS subscription + connection indicator
+
+**Files (modify):**
+- `src/g3tui/internal/ui/app.go` — wire `client.SubscribeScanProgress` lifecycle. The subscription runs in a goroutine spawned from `App.Init` via a `tea.Cmd` that returns once the goroutine is running. Messages flow through `tea.Program.Send` (passed as the `send` callback to the subscription).
+
+**State machine.**
+- `App` tracks the latest `StreamState` (Connecting / Connected / Disconnected / Reconnecting) plus the most recent error.
+- Header dot color: green = Connected, yellow = Connecting/Reconnecting, red = Disconnected.
+- When state transitions to Connected, `App` cancels the polling fallback's context. When it goes Disconnected, `App` arms a new `client.Poll` against `/scan/progress` at 3s. The `ScanList` is agnostic: it accepts `ScanListSnapshot` (from poll) and `ScanProgressUpdate` (from WS) and merges accordingly.
+
+**ScanProgressUpdate handling.** Single-row update; `ScanList` upserts by ScanID. Re-sort is amortized — flag the list as dirty and re-sort once per render frame, not per message.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 1.6: Cancel/delete confirmation overlays
+
+**Files (create):**
+- `src/g3tui/internal/ui/confirm.go` — generic `Confirm` sub-model: title, body line, [Y]es / [N]o keybinds, on-confirm callback that returns a `tea.Cmd`.
+
+**Files (modify):**
+- `src/g3tui/internal/ui/app.go` — `c` on a selected scan opens `Confirm("Cancel scan <id>?", ...)` whose callback issues `client.StopScan`. `d` on a non-running selected scan opens `Confirm("Delete scan <id>? This cannot be undone.", ...)` whose callback issues `client.StopScan` then `client.DeleteScan` (matches `g3cli rm`'s sequencing).
+
+**Error surfacing.** If the API call fails, render a one-line red banner under the header for ~5s (consume an `ErrorMsg` and time it out via a `tea.Tick`). No modal blockers.
+
+**Out of scope for 1.6.** Per-task cancel (server doesn't expose it, see design's "Future API improvements").
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 1.7: Initial-connection-failure screen
+
+**Files (modify):**
+- `src/g3tui/main.go` — instead of exiting on initial seed failure, hand control to a small `ui.RetryScreen` model that renders the error, the host, and `[R]etry / [Q]uit`. On `R`, it re-attempts `/scan/list` + `/plugin/list` and the WS dial; on success it transitions to the dashboard model. On `Q`, exit 0.
+- `src/g3tui/internal/ui/app.go` — accept the seeded data via the constructor; the retry screen builds the data and hands it over.
+
+**Distinct from mid-session failure.** Mid-session WS drops are silent reconnects (1.5's responsibility) — only the *first* dial or first auth call uses this screen.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 1.8: Tier 1 polish & lint wrap-up
+
+**Files:** sweep across `src/g3tui/` for any straggler `fmt.Print*` smoke-test residue, dead imports, TODO comments left from in-progress work.
+
+**Final agent verification.** `make bin` clean across the whole module, `golangci-lint run ./...` clean. Hand back to user for behavioral verification (layout, drill-in, cancel, delete, indicator color flips on `docker compose restart g3api`).
 
 **Out of scope for Tier 1.** New-scan wizard (Tier 2), logs viewer (Tier 3), report viewer (Tier 3).
-
-**Verification.** Behavioral, against a live server with at least one running and one finished scan in the database. Confirm: layout, live updates, selection, drill-in poll cadence (visible in `g3api` logs), cancel works, delete works, header indicator changes when `docker compose restart g3api` is run.
 
 ---
 
@@ -1254,25 +1363,101 @@ Stop here. Tier 0 is complete — `bin/g3tui` builds, lints clean, and exercises
 
 **End state.**
 - `[N]` opens the wizard overlay. Tab/Shift-Tab navigates between Targets, Imports, Mode, Scan type sections.
-- Targets: multi-line textarea, blank lines ignored, soft warning on unparseable lines.
-- Imports: tool-first batch flow — pick a plugin, then multi-select files via `bubbles/filepicker`.
+- Targets: multi-line textarea, blank lines ignored.
+- Imports: tool-first batch flow — pick a plugin, then multi-select files via a small custom file browser (`Space` toggle, `Enter` confirm).
 - Mode: two-button toggle, default `parallel`.
 - Scan type: list of embedded + user pipelines (alphabetical), then `Custom…`.
-- `Custom…` opens a textarea; validation via `g3lib.ParseScript` of `mode parallel` + `target placeholder` + content.
-- Submit: parallel uploads (cap 4 via buffered-channel semaphore) → script assembly → `/scan/start`. New scan appears in left panel via WS push.
+- `Custom…` opens a textarea; validation via `g3lib.ParseScript("mode parallel\ntarget placeholder.local\n" + content)`.
+- Submit: parallel uploads (cap 4 via buffered-channel semaphore) → script assembly → `/scan/start`. New scan appears in left panel via WS push (already wired in Tier 1).
 - Server errors render in a banner inside the overlay; the form is preserved for correction.
 
-**Key tasks (to be detailed at Tier 2 kickoff).**
-1. `internal/ui/wizard.go` — top-level overlay model and section navigation.
-2. Sub-overlays: import tool dropdown + multi-file picker; custom-pipeline textarea.
-3. Script assembly helper (in `internal/ui/wizard.go` or a small `internal/script/` package — TBD at kickoff).
-4. Parallel upload coordinator with semaphore.
-5. Validation banner component (reusable for Tier 1's cancel/delete error reporting).
-6. Plumb `PluginsLoaded` cache through `App` to the wizard.
+**Build order rationale.** Skeleton + tab navigation lands first (2.1) so every subsequent section can drop into a known frame. The three "static" sections (targets/mode/scan-type list) come together in 2.2. The Custom… textarea and the imports stack are larger and get their own tasks (2.3, 2.4). Submit pipeline closes out (2.5) — depends on every other section being complete.
 
-**Out of scope for Tier 2.** Pre-filtering the import-tool dropdown to importer-only plugins (requires server-side `/plugin/list` extension; logged in the design doc as a future API improvement).
+**Out of scope for Tier 2.** Pre-filtering the import-tool dropdown to importer-only plugins (requires server-side `/plugin/list` extension; logged in the design doc as a future API improvement). Live preview pane (operators who want hand-crafted scripts use `g3cli scan -i my.script` per the design's coexist-with-g3cli story).
 
-**Verification.** Submit a scan with two targets and three same-tool imports; confirm it appears in the left panel and runs to completion. Submit a scan with a custom pipeline; same. Submit one with no targets and no imports; confirm the local validator blocks it before any API call.
+---
+
+### Task 2.1: Wizard skeleton & overlay plumbing
+
+**Files (create):**
+- `src/g3tui/internal/ui/wizard.go` — `Wizard` sub-model with sections enum, focused-section index, Tab/Shift-Tab navigation, esc-to-dismiss, banner state. View renders the four section headers as inert placeholders for now; sections themselves arrive in 2.2/2.3/2.4.
+
+**Files (modify):**
+- `src/g3tui/internal/ui/app.go` — `n` key opens the wizard (App holds `wizard *Wizard`, nil when inactive). While the wizard is open, App routes all keystrokes to it. Wizard dismissal via a `wizardClosedMsg` clears `a.wizard`.
+- `src/g3tui/internal/ui/keys.go` — add bindings for Tab / Shift-Tab if missing.
+
+**Design decisions.**
+- Mirror Tier 1's `Confirm` plumbing: pointer-or-nil on App, dismissal message, Help() override.
+- Wizard banner reuses the same `bannerExpiredMsg` infra and the same red `BannerError` style.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 2.2: Targets / Mode / Scan type sections
+
+**Files (modify):**
+- `src/g3tui/internal/ui/wizard.go` — implement the three "static" sections.
+- `src/g3tui/go.mod` — add `github.com/charmbracelet/bubbles/textarea` (auto-pulled by `go mod tidy` once imported).
+
+**Sections.**
+- **Targets.** `bubbles/textarea` (multi-line). Blank lines stripped at submit time. No soft warning per line in v1 — server's `BuildTargets` is the validation authority.
+- **Mode.** Two-button toggle: `( ) sequential   (●) parallel`. Default `parallel`. `←/→` or `space` toggles when focused.
+- **Scan type.** Plain list (no nested model). `↑/↓` selects. Sources merged from `App.pipes` (already sorted alphabetically by `pipelines.Load`). `Custom…` is appended as the last entry — selection just sets a flag in 2.2; the actual sub-overlay arrives in 2.3.
+
+**Tab navigation.** Tab focuses Targets → Imports (placeholder for now) → Mode → Scan type → Targets. Shift-Tab goes backward. Per-section keybinds only fire when that section is focused.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 2.3: Custom… scan-type sub-overlay
+
+**Files (modify):**
+- `src/g3tui/internal/ui/wizard.go` — when the Scan type list has `Custom…` selected and the user presses `Enter`, push a `customPipelineEditor` sub-overlay (a textarea + validation footer). On `esc`, return to the wizard with whatever content was typed (preserved across re-opens). On `Enter` outside the textarea (e.g. on the validation footer button), validate via `g3lib.ParseScript`.
+
+**Validation contract.**
+- Wrap user content with synthetic `mode parallel\ntarget placeholder.local\n` prefix and call `g3lib.ParseScript(nil, wrapped)`.
+- On parse error: show the error inline below the textarea, do not dismiss.
+- On success: dismiss sub-overlay, retain content in wizard state.
+- Empty content is treated as "user wants to abandon Custom" — wizard reverts the Scan type selection to whatever was previously highlighted.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 2.4: Imports section (tool dropdown + multi-file picker)
+
+**Files (modify):**
+- `src/g3tui/internal/ui/wizard.go` — Imports section: list of `<tool>  <path>  [×]` rows; `[+ Add]` button opens the stacked sub-overlay flow.
+- `src/g3tui/internal/ui/picker.go` (new) — small file browser with multi-select. Renders a list of files in the current directory; `↑/↓` move the cursor, `Space` toggles selection on the current row, `Enter` confirms (returns `[]string` of selected paths), `←` (or `h`) goes up a directory, `→` (or `l`) descends into a directory under cursor.
+
+**Stacked sub-overlay flow.**
+1. Tool dropdown — alphabetical from `App.plugins`. `↑/↓` select, `Enter` confirm, `Esc` cancel. Sets `pendingTool` on the wizard, then opens the file picker. (Future API improvement: when `/plugin/list` exposes `has_importer`, filter this list. Not in scope for v1.)
+2. File picker — lands in `$HOME` (or `$PWD` if `$HOME` is unset). Shows directories + files; multi-select via Space. On Enter, each selected file becomes an imports row with `tool = pendingTool`. On Esc, abort without adding.
+
+**Imports list editing.** `Enter` on a row removes it. The `[+ Add]` button is conceptually below the rows; `↓` past the last row selects it; `Enter` opens the tool dropdown.
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
+
+---
+
+### Task 2.5: Submit pipeline
+
+**Files (create):**
+- `src/g3tui/internal/script/build.go` — single function: `Build(targets []string, imports []ImportEntry, mode string, content string) (string, error)`. Returns the full script as a string by simple templating (no parser round-trip in the render path; see design's "Submit flow" step 1). Caller is responsible for substituting file IDs into the imports before calling.
+
+**Files (modify):**
+- `src/g3tui/internal/ui/wizard.go` — wire `Enter` (when not inside a section's own input) to submit. Submit flow:
+  1. **Local validation.** ≥1 non-blank target OR ≥1 import row; a scan type is selected; if Custom is selected, content is non-empty and parses.
+  2. **Parallel uploads.** For each import row, POST `/file/upload` via `client.UploadFile`. Cap concurrency at 4 using a buffered-channel semaphore. Implemented in a single goroutine spawned by a `tea.Cmd` that returns a `wizardSubmitProgress` message stream — but for v1 simplicity, the goroutine collects all results and sends a single `wizardUploadsDoneMsg{results []FileUploaded, errs []ErrorMsg}`. No per-file progress UI.
+  3. **Substitute file IDs** into the imports before calling `script.Build`.
+  4. **POST `/scan/start`** via `client.StartScan` with the assembled script. On success, dispatch `wizardClosedMsg` (App clears the wizard); the new scan arrives via the existing WS push.
+  5. **On any error** (validation, upload, or start): banner inside the wizard, form preserved.
+
+**Concurrency note.** The semaphore goroutine is spawned by a `tea.Cmd` — it runs to completion without further coordination from the model. This is acceptable because uploads are short and the form is locked while submitting (a "submitting…" banner replaces the regular footer hint).
+
+**Verification (agent).** `make bin` clean, `golangci-lint run ./...` clean.
 
 ---
 

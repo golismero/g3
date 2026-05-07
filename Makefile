@@ -23,6 +23,7 @@ install:
 	sudo ln -s -f $$(pwd)/bin/g3cli /usr/bin/g3cli
 	sudo ln -s -f $$(pwd)/bin/g3config /usr/bin/g3config
 	sudo ln -s -f $$(pwd)/bin/g3scanner /usr/bin/g3scanner
+	sudo ln -s -f $$(pwd)/bin/g3tui /usr/bin/g3tui
 	sudo ln -s -f $$(pwd)/bin/g3worker /usr/bin/g3worker
 endif
 
