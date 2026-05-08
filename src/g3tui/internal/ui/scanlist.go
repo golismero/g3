@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"golismero.com/g3lib"
@@ -23,9 +24,11 @@ type ScanList struct {
 
 	filtering bool
 	filter    textinput.Model
+	viewport  viewport.Model
 
-	width  int
-	height int
+	width   int
+	height  int
+	focused bool
 }
 
 func NewScanList() ScanList {
@@ -33,7 +36,7 @@ func NewScanList() ScanList {
 	ti.Placeholder = "filter (id prefix or status)"
 	ti.Prompt = "/ "
 	ti.CharLimit = 64
-	return ScanList{filter: ti}
+	return ScanList{filter: ti, viewport: viewport.New(0, 0)}
 }
 
 // Filtering reports whether the textinput currently owns keystrokes. The
@@ -53,6 +56,25 @@ func (s *ScanList) SetSize(w, h int) {
 	s.width = w
 	s.height = h
 	s.filter.Width = max(0, w-3)
+
+	// Viewport content area: total panel height minus chrome (border 2)
+	// minus title (1) + spacer (1), minus optional filter input (2 when
+	// filtering active).
+	chrome := 2
+	titleAndSpacer := 2
+	filterRows := 0
+	if s.filtering {
+		filterRows = 2
+	}
+	inner := w - 4 // border 2 + padding 1+1
+	contentHeight := max(1, h-chrome-titleAndSpacer-filterRows)
+	s.viewport.Width = inner
+	s.viewport.Height = contentHeight
+}
+
+// SetFocused toggles the focused-border style. Called by App.applyFocus.
+func (s *ScanList) SetFocused(focused bool) {
+	s.focused = focused
 }
 
 func (s ScanList) Update(msg tea.Msg) (ScanList, tea.Cmd) {
@@ -63,11 +85,13 @@ func (s ScanList) Update(msg tea.Msg) (ScanList, tea.Cmd) {
 		if s.cursor >= len(s.filtered) {
 			s.cursor = max(0, len(s.filtered)-1)
 		}
+		s.ensureCursorVisible()
 		return s, nil
 
 	case client.ScanProgressUpdate:
 		needBackfill := s.upsert(m)
 		s.applyFilter()
+		s.ensureCursorVisible()
 		if needBackfill {
 			scanID := m.ScanID
 			return s, func() tea.Msg { return backfillProgressMsg{ScanID: scanID} }
@@ -83,10 +107,30 @@ func (s ScanList) Update(msg tea.Msg) (ScanList, tea.Cmd) {
 			if s.cursor > 0 {
 				s.cursor--
 			}
+			s.ensureCursorVisible()
 		case key.Matches(m, Keys.Down):
 			if s.cursor < len(s.filtered)-1 {
 				s.cursor++
 			}
+			s.ensureCursorVisible()
+		case key.Matches(m, Keys.PgUp):
+			s.viewport.HalfPageUp()
+			s.cursor = max(0, s.cursor-s.viewport.Height/2)
+			s.ensureCursorVisible()
+		case key.Matches(m, Keys.PgDn):
+			s.viewport.HalfPageDown()
+			if len(s.filtered) > 0 {
+				s.cursor = min(len(s.filtered)-1, s.cursor+s.viewport.Height/2)
+			}
+			s.ensureCursorVisible()
+		case key.Matches(m, Keys.GotoTop):
+			s.cursor = 0
+			s.viewport.GotoTop()
+		case key.Matches(m, Keys.GotoBottom):
+			if len(s.filtered) > 0 {
+				s.cursor = len(s.filtered) - 1
+			}
+			s.viewport.GotoBottom()
 		case key.Matches(m, Keys.Filter):
 			s.filtering = true
 			s.filter.SetValue("")
@@ -95,6 +139,24 @@ func (s ScanList) Update(msg tea.Msg) (ScanList, tea.Cmd) {
 		}
 	}
 	return s, nil
+}
+
+// ensureCursorVisible scrolls the viewport so the cursor row stays
+// within view. Each scan renders as 2 rows (id line + status line), so
+// the cursor's pixel-row is cursor*2.
+func (s *ScanList) ensureCursorVisible() {
+	if len(s.filtered) == 0 {
+		return
+	}
+	rowsPerEntry := 2
+	cursorTop := s.cursor * rowsPerEntry
+	cursorBottom := cursorTop + rowsPerEntry - 1
+
+	if cursorTop < s.viewport.YOffset {
+		s.viewport.SetYOffset(cursorTop)
+	} else if cursorBottom >= s.viewport.YOffset+s.viewport.Height {
+		s.viewport.SetYOffset(cursorBottom - s.viewport.Height + 1)
+	}
 }
 
 func (s ScanList) updateFiltering(msg tea.KeyMsg) (ScanList, tea.Cmd) {
@@ -204,39 +266,56 @@ func statusPriority(s g3lib.G3SCANSTATUS) int {
 
 func (s ScanList) View() string {
 	title := AppTitle.Render("Scans")
-	parts := []string{title, ""}
+
+	// Available width for the UUID line, after the panel chrome and
+	// the 2-char cursor prefix.
+	idWidth := max(colTaskIDFloor, s.width-6)
+
+	var content string
 	if len(s.filtered) == 0 {
-		empty := ListItemDimmed.Render("No scans yet — press [N] to start one")
-		parts = append(parts, empty)
+		content = ListItemDimmed.Render("No scans yet — press [N] to start one")
 	} else {
+		rows := make([]string, 0, len(s.filtered)*2)
 		for i, e := range s.filtered {
-			row := formatScanRow(e, s.width-2)
-			if i == s.cursor {
-				row = ListItemSelected.Render(row)
-			}
-			parts = append(parts, row)
+			idLine, statusLine := formatScanRow(e, i == s.cursor, idWidth)
+			rows = append(rows, idLine, statusLine)
 		}
+		content = lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
+	s.viewport.SetContent(content)
+
+	parts := []string{title, "", s.viewport.View()}
 	if s.filtering {
 		parts = append(parts, "", s.filter.View())
 	}
-	return PaneBorder.Width(s.width - 2).Render(
+	border := PaneBorder
+	if s.focused {
+		border = PaneBorderFocused
+	}
+	// Explicit Height keeps the scan-list panel border closing at the
+	// allocated bottom row even when the entry list is shorter than
+	// the panel — without it, the border was content-sized and visibly
+	// shorter than the right-hand stack on most terminal sizes.
+	return border.Width(s.width - 2).Height(s.height - 2).Render(
 		lipgloss.JoinVertical(lipgloss.Left, parts...),
 	)
 }
 
-func formatScanRow(e g3lib.ScanStatusEntry, width int) string {
-	const idShown = 12
-	short := e.ScanID
-	if len(short) > idShown {
-		short = short[:idShown] + "…"
-	}
+// formatScanRow returns two lines per scan: the full UUID (or its
+// middle-ellipsis collapse if idWidth < 36), then a status pill +
+// progress underneath. Each scan therefore takes 2 rows of vertical
+// space; UUIDs that don't fit alongside the status on one row get the
+// vertical-space treatment instead of horizontal mangling.
+func formatScanRow(e g3lib.ScanStatusEntry, selected bool, idWidth int) (idLine, statusLine string) {
 	pill := statusStyle(e.Status).Render(string(e.Status))
-	row := fmt.Sprintf("%-13s %s %3d%%", short, pill, e.Progress)
-	if width > 0 && lipgloss.Width(row) > width {
-		row = row[:width]
+	id := collapseID(e.ScanID, idWidth)
+	if selected {
+		idLine = ListItemSelected.Render("▸ " + id)
+	} else {
+		idLine = "  " + id
 	}
-	return row
+	statusLine = fmt.Sprintf("    %s %3d%%", pill, e.Progress)
+	return idLine, statusLine
 }
 
 func statusStyle(s g3lib.G3SCANSTATUS) lipgloss.Style {

@@ -13,6 +13,11 @@ var (
 			BorderForeground(lipgloss.Color("240")).
 			Padding(0, 1)
 
+	PaneBorderFocused = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("63")).
+				Padding(0, 1)
+
 	HeaderBar = lipgloss.NewStyle().Bold(true)
 	FooterBar = lipgloss.NewStyle().Faint(true)
 
@@ -30,6 +35,7 @@ var (
 	StatusError      = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	StatusCanceled   = lipgloss.NewStyle().Faint(true)
 	StatusDispatched = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
+	StatusUnknown    = lipgloss.NewStyle().Faint(true).Italic(true)
 
 	TableHeader = lipgloss.NewStyle().Bold(true).Underline(true)
 	TableRow    = lipgloss.NewStyle()

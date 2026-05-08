@@ -60,9 +60,9 @@ services:
       - ./volumes/mosquitto/config:/mosquitto/config/
       - ./volumes/mosquitto/log:/mosquitto/log/
       - ./volumes/mosquitto/data:/mosquitto/data/
-    ports:
-      - "127.0.0.1:1883:1883"
-      - "127.0.0.1:9001:9001"
+#    ports:
+#      - "127.0.0.1:1883:1883"
+#      - "127.0.0.1:9001:9001"
 
   # MQTT Admin is useful for debugging.
   # mqtt-admin:
@@ -98,8 +98,8 @@ services:
     volumes:
       - ./volumes/mariadb/data:/var/lib/mysql
       - ./volumes/mariadb/initdb.d:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "127.0.0.1:3306:3306"
+ #   ports:
+ #     - "127.0.0.1:3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: "${SQL_ROOT_PASSWORD}"
       MYSQL_DATABASE: "${SQL_DATABASE}"
@@ -132,8 +132,8 @@ services:
       - g3net
     volumes:
       - ./volumes/redis:/data
-    ports:
-      - "127.0.0.1:${REDIS_PORT}:${REDIS_PORT}"
+  #  ports:
+  #    - "127.0.0.1:${REDIS_PORT}:${REDIS_PORT}"
 
   # Vulners-Proxy saves on Vulners credits by caching API responses.
   vulners-proxy:
@@ -144,8 +144,8 @@ services:
     volumes:
       - ./volumes/vulners-proxy/vulners-proxy.cache:/tmp/vulners-proxy.cache
       - ./volumes/vulners-proxy/vulners-proxy.statistic.cache:/tmp/vulners-proxy.statistic.cache
-    ports:
-      - "127.0.0.1:${VULNERS_PROXY_PORT}:8000"
+  #  ports:
+  #    - "127.0.0.1:${VULNERS_PROXY_PORT}:8000"
     environment:
       - apiKey=${VULNERS_API_KEY}
 

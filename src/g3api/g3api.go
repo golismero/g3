@@ -484,10 +484,11 @@ func Main() int {
 				return
 			}
 
-			// Redis is authoritative for which tasks exist and what state they're in.
-			// The SQL logs table supplies timestamps and line counts as augmentation.
-			// A terminal scan that has been cleaned up will have no Redis keys; we
-			// deliberately do NOT reconstruct task state from logs in that case.
+			// Redis is authoritative for live per-task state. When Redis has
+			// expired the data (terminated scan, after cleanup), we fall back to
+			// reconstructing from structured log markers — see the fallback
+			// further down. The SQL logs table supplies timestamps and line
+			// counts as augmentation.
 			taskStates, err := g3lib.GetTaskStates(rdb_client, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
@@ -529,6 +530,28 @@ func Main() int {
 			sort.Slice(entries, func(i, j int) bool {
 				return entries[i].DispatchTS < entries[j].DispatchTS
 			})
+
+			// If Redis has expired the per-task state, fall back to reconstructing
+			// from structured log markers. SQL `logs` is durable, so this works
+			// for terminated scans whose Redis keys have been cleaned up.
+			if len(entries) == 0 {
+				reconstructed, rerr := g3lib.ReconstructTaskStatesFromLogs(sql_db, request.ScanID)
+				if rerr != nil {
+					log.Error("ReconstructTaskStatesFromLogs failed: " + rerr.Error())
+					// Soft-fail: respond with an empty list rather than 500.
+					// The TUI handles empty gracefully.
+				} else {
+					for _, entry := range reconstructed {
+						if le, ok := logByTask[entry.TaskID]; ok {
+							entry.FirstLogTS = le.FirstLogTS
+							entry.LastLogTS = le.LastLogTS
+							entry.LineCount = le.LineCount
+							entry.AgeSeconds = le.AgeSeconds
+						}
+						entries = append(entries, entry)
+					}
+				}
+			}
 
 			scanStatus, err := g3lib.GetScanStatus(sql_db, request.ScanID)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {

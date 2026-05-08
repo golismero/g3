@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -395,4 +397,113 @@ func DeleteScanProgress(db SQLDBClient, scanid string) error {
 	query := "DELETE FROM `progress` WHERE `scanid` = ?"
 	_, err := db.db.ExecContext(context.Background(), query, scanid)
 	return err
+}
+
+// ReconstructTaskStatesFromLogs walks the structured lifecycle markers
+// in the `logs` table and builds a TaskStatusEntry per task. It is the
+// fallback path for /scan/tasks/status when Redis-backed task state has
+// expired — the structured markers persist in SQL.
+//
+// Markers it understands:
+//
+//	[g3:dispatch] task=<id> tool=<name>   (from scanner)
+//	[g3:start]    task=<id> worker=<id>   (from worker)
+//	[g3:done]     task=<id> state=<S>     (from worker, or scanner on dispatch-fail)
+//	[g3:cancel]   task=<id>               (from scanner)
+//
+// Defensive parsing: only the FIRST [g3:dispatch] per task is treated
+// as authoritative. Anything later that looks like a marker is from
+// tool stdout and is ignored.
+func ReconstructTaskStatesFromLogs(db SQLDBClient, scanid string) ([]TaskStatusEntry, error) {
+	query := "SELECT `taskid`, `timestamp`, `text` FROM `logs` " +
+		"WHERE `scanid` = ? AND `text` LIKE '[g3:%' " +
+		"ORDER BY `taskid`, `timestamp`, `id` ASC"
+	rows, err := db.db.Query(query, scanid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type acc struct {
+		entry        TaskStatusEntry
+		dispatchSeen bool
+		startSeen    bool
+		doneSeen     bool
+	}
+	byTask := map[string]*acc{}
+
+	for rows.Next() {
+		var taskid string
+		var ts int64
+		var text string
+		if e := rows.Scan(&taskid, &ts, &text); e != nil {
+			return nil, e
+		}
+		a, ok := byTask[taskid]
+		if !ok {
+			a = &acc{entry: TaskStatusEntry{TaskID: taskid}}
+			byTask[taskid] = a
+		}
+		switch {
+		case strings.HasPrefix(text, "[g3:dispatch]"):
+			if a.dispatchSeen {
+				continue // defensive: only first dispatch wins
+			}
+			a.dispatchSeen = true
+			a.entry.DispatchTS = ts
+			a.entry.Tool = parseMarkerField(text, "tool")
+			if a.entry.State == "" {
+				a.entry.State = string(STATUS_WAITING)
+			}
+		case strings.HasPrefix(text, "[g3:start]"):
+			a.startSeen = true
+			a.entry.StartTS = ts
+			a.entry.Worker = parseMarkerField(text, "worker")
+			a.entry.State = string(STATUS_RUNNING)
+		case strings.HasPrefix(text, "[g3:done]"):
+			a.doneSeen = true
+			a.entry.CompleteTS = ts
+			if s := parseMarkerField(text, "state"); s != "" {
+				a.entry.State = s
+			} else {
+				a.entry.State = string(STATUS_FINISHED)
+			}
+		}
+		// [g3:cancel] is recognized but ignored here: the actual
+		// end-state arrives later as [g3:done] with state=CANCELED;
+		// updating State on the cancel marker would be premature.
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Promote partial states to UNKNOWN when start was seen but done
+	// never arrived (worker crashed mid-run).
+	out := make([]TaskStatusEntry, 0, len(byTask))
+	for _, a := range byTask {
+		if a.startSeen && !a.doneSeen {
+			a.entry.State = string(STATUS_UNKNOWN)
+		}
+		out = append(out, a.entry)
+	}
+	// Sort: oldest dispatch first (mirrors the live-path ordering in
+	// the /scan/tasks/status handler).
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].DispatchTS < out[j].DispatchTS
+	})
+	return out, nil
+}
+
+// parseMarkerField extracts a `key=value` field from a [g3:*] marker
+// line. Values are tokenized at whitespace; this matches the format
+// the scanner/worker emit, where values are simple identifiers (UUIDs,
+// tool names, worker IDs, state names) without spaces.
+func parseMarkerField(text, key string) string {
+	prefix := key + "="
+	for _, tok := range strings.Fields(text) {
+		if strings.HasPrefix(tok, prefix) {
+			return tok[len(prefix):]
+		}
+	}
+	return ""
 }
