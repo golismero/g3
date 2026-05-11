@@ -26,7 +26,7 @@ if "url" in input_data:
         with os.fdopen(fd, 'r') as tmpfd:
             args = list(base_args)
             args.extend(["-oJ", tmp, "--overwrite", "--", url])
-            subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=True)
+            subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
             process = subprocess.Popen(["/usr/bin/g3i", tmp], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
             stdout, stderr = process.communicate()
             if stderr:
@@ -100,7 +100,7 @@ else:
                     # Run testssl.sh, piping stdout and stderr directly to our stderr.
                     # This will send all of the text output into the G3 logs.
                     # On error an exception is raised.
-                    subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=True)
+                    subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
 
                     # Call the importer on the output file.
                     # Capture stdout so we can parse it later.

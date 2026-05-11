@@ -36,7 +36,7 @@ try:
 
         # Run the tool.
         #sys.stderr.write(repr(args) + "\n")
-        result = subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=True)
+        result = subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
 
         # Parse the output of the tool and generate G3 objects.
         # The output from Sublist3r is simply a text file with a domain name in each line.
