@@ -1,4 +1,4 @@
-.PHONY: all bin clean misc docker plugins pull update install help
+.PHONY: all bin clean misc docker plugins pull update install lint help
 
 # Default target — show help when invoked as bare `make`.
 .DEFAULT_GOAL := help
@@ -48,6 +48,7 @@ endif
 	@printf "  $(C_CYAN)clean$(C_RESET)    Remove the compiled binaries from ./bin/\n"
 	@printf "  $(C_CYAN)install$(C_RESET)  Symlink ./bin/g3* into /usr/bin/ (requires sudo)\n"
 	@printf "  $(C_CYAN)update$(C_RESET)   Update all Go module dependencies\n"
+	@printf "  $(C_CYAN)lint$(C_RESET)     Lint all Go code\n"
 else
 ifdef DOCKER
 	@printf "  $(C_CYAN)all$(C_RESET)      Build all Docker images $(C_DIM)(no Go: bin/clean/install skipped)$(C_RESET)\n"
@@ -58,6 +59,7 @@ endif
 	@printf "  $(C_DIM)clean              (disabled — Go not detected)$(C_RESET)\n"
 	@printf "  $(C_DIM)install            (disabled — Go not detected)$(C_RESET)\n"
 	@printf "  $(C_DIM)update             (disabled — Go not detected)$(C_RESET)\n"
+	@printf "  $(C_DIM)lint               (disabled — Go not detected)$(C_RESET)\n"
 endif
 ifdef PYTHON
 	@printf "  $(C_CYAN)misc$(C_RESET)     Install Python build requirements (misc/requirements.txt)\n"
@@ -103,6 +105,12 @@ endif
 ifdef GO
 update:
 	cd src && $(MAKE) update
+endif
+
+# Lint all Go code.
+ifdef GO
+lint:
+	cd src && $(MAKE) lint
 endif
 
 # Target to build all that is buildable given the available toolchains.

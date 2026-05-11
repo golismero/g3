@@ -1,4 +1,4 @@
-.PHONY: all update g3lib g3log
+.PHONY: all update lint g3lib g3log
 
 all: ../bin/g3 ../bin/g3api ../bin/g3cli ../bin/g3config ../bin/g3scanner ../bin/g3tui ../bin/g3worker
 
@@ -31,3 +31,6 @@ g3log:
 
 update:
 	set -e; for d in */; do (cd "$$d" && go get -u ./... && go mod tidy); done
+
+lint:
+	set -e; for d in */; do (cd "$$d" && echo "Linting: $$d" && golangci-lint run); done
