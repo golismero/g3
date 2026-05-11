@@ -1,3 +1,5 @@
-.PHONY: all
+.PHONY: all pull
 all:
 	docker build -t ghcr.io/golismero/dig .
+pull:
+	docker pull ghcr.io/golismero/dig

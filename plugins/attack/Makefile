@@ -1,9 +1,13 @@
-.PHONY: all hydra nikto
+.PHONY: all pull hydra nikto
 
 all: hydra nikto
 
+pull:
+	cd hydra && $(MAKE) pull
+	cd nikto && $(MAKE) pull
+
 hydra:
-	cd hydra && $(MAKE)
+	cd hydra && $(MAKE) all
 
 nikto:
-	cd nikto && $(MAKE)
+	cd nikto && $(MAKE) all

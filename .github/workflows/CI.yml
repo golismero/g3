@@ -167,6 +167,12 @@ jobs:
           - image: nikto
             context: plugins/attack/nikto
             prep: osvdb2cve
+          - image: error
+            context: plugins/debug/error
+          - image: force-exec
+            context: plugins/debug/force-exec
+          - image: passthrough
+            context: plugins/debug/passthrough
           - image: dig
             context: plugins/misc/dig
           - image: nmap
