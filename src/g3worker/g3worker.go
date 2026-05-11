@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"os"
@@ -596,10 +597,10 @@ func main() {
 		}
 
 		// Calculate the command that's going to be run.
-		parsed, errors := g3lib.BuildToolCommand(plugin, task.Index, data)
-		if len(errors) > 0 {
+		parsed, buildErrs := g3lib.BuildToolCommand(plugin, task.Index, data)
+		if len(buildErrs) > 0 {
 			log.Errorf("Error executing plugin %s:", plugin.Name)
-			for i, err := range errors {
+			for i, err := range buildErrs {
 				log.Errorf("%d) %s", i, err.Error())
 			}
 			markTerminal(task.ScanID, task.TaskID, "ERROR")
@@ -654,6 +655,19 @@ func main() {
 			log.Error(e.Error())
 		}
 
+		// Per-task cancel from the scanner: RunPluginCommand propagates
+		// the cancelled context as context.Canceled. Treat as CANCELED
+		// (not ERROR — the task didn't fail, it was stopped on request).
+		// Worker-level SIGTERM also cancels the context, so this branch
+		// covers both per-task cancel and shutdown-while-running.
+		if errors.Is(err, context.Canceled) {
+			markTerminal(task.ScanID, task.TaskID, "CANCELED")
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+				log.Error(err.Error())
+			}
+			return
+		}
+
 		// Detect errors when executing the plugin.
 		if err != nil {
 			log.Error("Error executing plugin " + plugin.Name + ": " + err.Error())
@@ -665,10 +679,10 @@ func main() {
 			return
 		}
 
-		// If we received SIGTERM, drop the output. This is also the normal exit
-		// path for tasks cancelled mid-execution via the scanner's cancel — the
-		// plugin context was cancelled and RunPluginCommand returned. Either way
-		// the task did not complete normally, so state transitions to CANCELED.
+		// SIGTERM-after-success: plugin ran to completion before the
+		// worker received SIGTERM. Don't ship the output since this
+		// worker is going away — mark CANCELED so the scan-level state
+		// is consistent with what other workers' tasks will be doing.
 		if cancelled {
 			markTerminal(task.ScanID, task.TaskID, "CANCELED")
 			err = g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)

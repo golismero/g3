@@ -391,6 +391,11 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 			}
 		}
 		log.Info("Container stopped.")
+		// Propagate the cancellation up to the caller. Without this the
+		// function would return (outputArray, nil) and the worker would
+		// be unable to distinguish a cancelled task from a successful
+		// run, leading to a spurious [g3:done] state=DONE marker.
+		err = ctx.Err()
 	case e := <-c:
 		err = e
 	}
