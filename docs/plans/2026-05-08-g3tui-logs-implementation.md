@@ -10,6 +10,8 @@
 
 **Source spec:** [`docs/plans/2026-05-08-g3tui-logs-design.md`](2026-05-08-g3tui-logs-design.md)
 
+**Status:** Implemented and tested 2026-05-11. All four tasks landed; two unrelated cross-component bugs surfaced during testing and were fixed (see **Post-implementation refinements** near the bottom). The design doc has been updated alongside.
+
 **Tests are user-owned** (memory: `feedback_tests_are_user_owned.md`). The plan does not include test-writing or behavioral-testing tasks. **Agent verification per task is strictly `go build ./...` (or `make bin`) + `golangci-lint run ./...`.** No `bin/g3tui` runs, no `docker compose` interactions, no live `/scan/logs` calls.
 
 **Git is user-owned** (memory: `feedback_git_is_user_owned.md`). No mutating git commands in any task. Read-only inspection (`git status`, `git diff`, `git log`) is fine.
@@ -1286,7 +1288,7 @@ The design doc has the full list. The cases worth restating because they affect 
 
 - **Polymorphic `/scan/logs` response.** The TUI's two client methods (`GetTaskLogs` returns `G3TaskLog`, `GetScanLogs` returns `[]LogEntry`) decode into different Go types, so callers never have to switch on shape. External consumers — currently only `g3cli logs` — always supply a non-empty `TaskID`, so they hit the unchanged single-task path.
 - **Late `[g3:dispatch]` markers in the unified stream.** A line whose `taskid` is not yet in the viewer's tool map renders as `[?]`. Self-correcting on the next poll. Acceptable behavior; no special handling beyond the rebuild-on-each-fetch already in `rebuildToolMap`.
-- **Viewer cadence fixed at open time.** The full-screen viewer captures `scanStatus` at construction and uses it to gate its 2 s ticks. If the scan transitions from RUNNING to FINISHED while the viewer is open, the viewer continues polling at 2 s until the user closes it. Accepted v1 behavior — the polls are cheap (read-only SQL against retained log rows) and viewers are typically closed shortly after a scan finishes. Wiring `client.ScanProgressUpdate` into an open viewer to switch it to one-shot mode mid-session is a future iteration.
+- **Viewer cadence fixed at open time.** ~~The full-screen viewer captures `scanStatus` at construction and uses it to gate its 2 s ticks. If the scan transitions from RUNNING to FINISHED while the viewer is open, the viewer continues polling…~~ **Resolved in post-implementation:** `LogsViewer.SetScanStatus` is now called from `App.dispatchToScanList` on every `ScanListSnapshot` / `ScanProgressUpdate`, so the viewer's `isTerminal()` check sees the live status and polling winds down without waiting for the user to close the viewer. See **Post-implementation refinements** below.
 
 ## Out of plan
 
@@ -1300,3 +1302,49 @@ The following remain explicitly deferred per the design doc:
 ## Verification scope (agent-side)
 
 `go build ./...` (or `make bin`) plus `golangci-lint run ./...` after each task. Behavioral verification — multiple terminal widths, real scans with accumulating log lines, debounce under fast cursor movement, dispatch-marker parsing against real `[g3:` content, the "scan logs viewer" interaction across `RUNNING → FINISHED` transitions — is user-owned.
+
+---
+
+## Post-implementation refinements
+
+The four original tasks landed cleanly through subagent-driven implementation + spec review + code quality review. Code review caught a handful of items inside each task and they were fixed in the same review loop. Behavioral testing afterwards surfaced two cross-component bugs unrelated to the logs work itself but exposed by it; both were rolled into this work since they shared the same test session.
+
+### Refinements within the plan's scope
+
+| Refinement | Where | Why |
+|---|---|---|
+| `entries := make([]g3lib.LogEntry, 0)` on the scan-level branch | `src/g3api/g3api.go` `/scan/logs` handler | Nil slice marshals as JSON `null`; other handlers in the same file use the `make` pattern to guarantee `[]` on empty. Caught in Task 1 code review. |
+| `logsChunkMsg{Generation, Chunk}` wrapper for inline panel | `src/g3tui/internal/ui/logspanel.go` | `client.LogChunk` carries `(ScanID, TaskID)` but no generation. If a binding cycled T1→T2→T1 with a fetch in flight, the stale chunk would be accepted on return because the `(scanID, taskID)` guard passed — creating parallel poll chains. The wrapper stamps the generation at fetch issue, the receiver checks it before applying. Caught in Task 3 code review. |
+| `logsViewerChunkMsg{Generation, Chunk}` wrapper for viewer | `src/g3tui/internal/ui/logsviewer.go` | Symmetric fix to the panel's wrapper for the same race when a viewer closes and reopens for the same scan within ~2s. Caught in the cross-task final review. |
+| `LogsViewer.SetScanStatus` called from `dispatchToScanList` | `src/g3tui/internal/ui/{logsviewer.go,app.go,scanlist.go}` | The viewer captured `scanStatus` at open time and never refreshed it, so a viewer left open across a RUNNING→FINISHED transition kept polling forever. Added `ScanList.StatusByID(id)` accessor, `LogsViewer.SetScanStatus(status)` mutator, and a sync block at the end of `dispatchToScanList`. The plan flagged this as accepted v1 behavior; user-driven post-implementation feedback prioritized fixing it. |
+| Focus-independent action-key hints in footer | `src/g3tui/internal/ui/app.go` `renderFooter` | `Keys.Logs` / `Report` / `Cancel` / `Delete` now appended outside the focus-switch (inside the outer `default:` arm) so they show in any focus state when a scan is selected. `Keys.Report` is additionally gated on `isTerminal(SelectedStatus())`. User feedback during testing. |
+| Removed duplicate `l logs` hint from `ScanDetail.Help()` | `src/g3tui/internal/ui/scandetail.go` | `Keys.Logs` was being appended both by `ScanDetail.Help()` (when a task is selected) and by the global action-key append in `renderFooter`. Removed the local one. User feedback during testing. |
+| PgUp/PgDn dropped from advertised keys | `src/g3tui/internal/ui/{scandetail.go,logspanel.go,logsviewer.go}` `Help()` | Keys still work in each panel's `Update`; just not shown in the footer line, which was getting crowded. User feedback during testing. |
+| Removed in-viewer footer string from `LogsViewer.View` | `src/g3tui/internal/ui/logsviewer.go` | The viewer rendered its own `[PgUp/PgDn] scroll · [g/G] top/bot · [esc] back` strip in addition to the global dashboard footer. `LogsViewer.Help()` already feeds the global footer with the same keys; the duplicate was strict noise and ate one row of body. Caught in Task 4 code review. |
+| `toolWidth: 1` initialization in `NewLogsViewer` | `src/g3tui/internal/ui/logsviewer.go` | Zero value meant the `?`-prefix padding was wrong on the very first frame before any `[g3:dispatch]` markers were parsed. Cosmetic. Caught in Task 4 code review. |
+| Non-deprecated viewport methods | `src/g3tui/internal/ui/{logspanel.go,logsviewer.go}` | Used `ScrollUp(1)`/`ScrollDown(1)`/`HalfPageUp()`/`HalfPageDown()` rather than the deprecated `LineUp`/`LineDown`/`HalfViewUp`/`HalfViewDown` flagged by staticcheck. Behavior identical. |
+
+### Cross-component bugs discovered during testing (outside plan scope but fixed here)
+
+These two were not part of the logs work but were surfaced by it — the reconstructor's UI rendering made wrong terminal states visible, and the worker bug had been silently writing wrong `[g3:done]` markers for months.
+
+| Bug | Fix | Files |
+|---|---|---|
+| `runPluginInternal` silently swallowed task cancellation. `select { case <-ctx.Done(): ...; case e := <-c: err = e }` set a local `cancelled` flag but never assigned `ctx.Err()` to the returned `err`, so cancelled tasks looked indistinguishable from successful empty runs. The worker fell through to `markTerminal(..., "DONE")` and wrote `[g3:done] state=DONE` for tasks that had in fact been cancelled by the scanner. | Set `err = ctx.Err()` in the cancellation branch of the select; add `errors.Is(err, context.Canceled)` branch in the worker to mark CANCELED before the generic err→ERROR branch; renamed a local `errors` variable to `buildErrs` to avoid shadowing the stdlib package. | `src/g3lib/plugin.go`, `src/g3worker/g3worker.go` |
+| Reconstructor (from the 2026-05-08 layout-redesign work) recognized `[g3:cancel]` but didn't track it. Tasks with `[g3:start]` ✓ `[g3:done]` ✗ `[g3:cancel]` ✓ were promoted to `STATUS_UNKNOWN` instead of `STATUS_CANCELED`. Manifested for nmap-full tasks whose worker container was killed before it could write `[g3:done]`. | Added `cancelSeen` accumulator field; `[g3:cancel]` marker now sets it and records `CompleteTS`. Promotion step prefers `STATUS_CANCELED` over `STATUS_UNKNOWN` when `cancelSeen && !doneSeen`. | `src/g3lib/sql.go` `ReconstructTaskStatesFromLogs` |
+
+The two bugs interacted: with both fixed, the worker writes `[g3:done] state=CANCELED` in the common case (worker survives long enough to call `markTerminal`), and the reconstructor's `cancelSeen → CANCELED` fallback handles the genuine edge case where the worker is killed so abruptly that even `markTerminal` doesn't run.
+
+---
+
+## Known follow-ups (next sessions)
+
+Still out of scope per the design doc, listed here for visibility:
+
+- **Save-to-file (`[S]`)** for both Logs viewer and the future Report viewer. Needs a save-mode added to the existing `FilePicker` (currently multi-select-only). Best done alongside the Report viewer rather than for Logs alone since both want it.
+- **Report viewer (`r` handler).** Footer hint is now correctly conditional on terminal status, but there's no actual handler — pressing `r` is a no-op. The 2026-05-06 design has the full spec (Glamour-rendered Markdown into a viewport, errors banner, `[S]` save-as). Uses the same overlay pattern `LogsViewer` just established.
+- **WebSocket log streaming** — would replace the 2s polling chain in both `LogsPanel` and `LogsViewer` with a subscription. The polling-layer abstraction is already designed so this is a `client/` swap, no UI change.
+- **Incremental log cursor (`since=<index>`).** Would let the viewer fetch deltas instead of full re-fetch + tool-map rebuild on every tick. Mostly obviated by WS streaming.
+- **Per-task filtering** inside the full-screen viewer.
+- **Movable panel boundaries / preference persistence** (carried over from the 2026-05-08 layout redesign doc).
+- **Per-task cancellation API** — waiting on a server-side API extension; tracked in `docs/plans/2026-04-24-api-extensions-for-web-gui.md`.

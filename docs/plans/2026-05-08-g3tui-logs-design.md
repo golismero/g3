@@ -1,6 +1,6 @@
 # g3tui Logs — Inline Panel and Full-Screen Viewer
 
-**Status:** Design approved 2026-05-08. Implementation plan to follow.
+**Status:** Implemented and tested 2026-05-11. Implementation plan: [`2026-05-08-g3tui-logs-implementation.md`](2026-05-08-g3tui-logs-implementation.md). This document was updated post-implementation to reflect a few details that were settled or refined during code review and testing — call-outs are in the relevant sections, with a consolidated summary in **Resolved during implementation** near the bottom.
 
 **Scope:** Replace the placeholder inline `LogsPanel` with a working live preview that auto-tracks the Tasks-panel cursor, and implement the `l` keybinding's full-screen scan-level logs viewer that today renders only a "coming soon" banner.
 
@@ -259,6 +259,18 @@ No new border styles — the inline panel reuses `PaneBorder` / `PaneBorderFocus
 - **Late dispatch markers in the unified stream.** A line that arrives before its `[g3:dispatch]` marker (same-timestamp ordering edge case) renders as `[?]`. Self-correcting on the next poll. Documented in code at the parser site.
 - **Cursor-thrash log fetches.** Mitigated by the 250ms debounce on binding changes. The poll cadence is unchanged across the rest of the dashboard, so server load is bounded by `1 fetch per active LogsPanel` plus `1 fetch per open LogsViewer`, both at 2s.
 - **Empty per-task panel for terminated scans.** The `/scan/logs` task-mode call already works against the SQL `logs` table directly (not Redis), so terminated scans show their preserved log lines as long as the SQL data is retained. No new fallback logic needed for this surface.
+
+## Resolved during implementation
+
+- **Empty-array JSON shape on scan-level fetch.** Server initializes `entries := make([]g3lib.LogEntry, 0)` rather than `var entries []g3lib.LogEntry`. A nil slice marshals as JSON `null`; the rest of `g3api`'s slice responses use the same `make` pattern to guarantee `[]` on empty. Consistency fix from code review.
+- **Generation-stamped chunk envelopes.** `client.LogChunk` and `client.ScanLogChunk` carry `ScanID` and `Err` but not a generation counter; that's a transport concern not a binding-state concern. The TUI wraps them in private message types `logsChunkMsg{Generation, Chunk}` (inline panel) and `logsViewerChunkMsg{Generation, Chunk}` (viewer) so a slow in-flight fetch that returns after a binding rebind cycled `(scanID, taskID)` back to the same value is correctly rejected. Without this, two parallel poll chains could form silently.
+- **Viewer scan-status updates.** `LogsViewer.scanStatus` is captured at open time but kept in sync afterwards via a new `SetScanStatus` mutator that `App.dispatchToScanList` calls whenever a `ScanListSnapshot` or `ScanProgressUpdate` reports a new status for the viewer's scan. When the scan transitions to terminal while the viewer is open, the next 2s tick observes `isTerminal()` and the polling loop winds down without waiting for the user to close the viewer.
+- **Focus-independent action keys in the footer.** `Keys.Logs`, `Keys.Report`, `Keys.Cancel`, `Keys.Delete` now appear in the footer in any focus state (not only when `focusScans` is active), reflecting that they act on the selected scan regardless of which panel has focus. `Keys.Report` is additionally gated on `isTerminal(SelectedStatus())` so the hint only appears when the report can be generated.
+- **PgUp/PgDn dropped from advertised keys.** The keys still work in `ScanDetail.Update`, `LogsPanel.Update`, and `LogsViewer.Update`; they're just not shown in the footer line, which was getting crowded.
+- **Duplicate `l logs` hint removed.** `ScanDetail.Help()` no longer appends `Keys.Logs` — the focus-independent global append covers it.
+- **In-viewer footer string removed.** `LogsViewer.View` previously rendered its own hint strip (`[PgUp/PgDn] scroll · [g/G] top/bot · [esc] back`) in addition to the global dashboard footer. Removed; `LogsViewer.Help()` feeds the global footer with the same keys, recovering one row of body height.
+- **`toolWidth: 1` initialization.** `NewLogsViewer` initializes `toolWidth: 1` rather than leaving the zero value, so the `?`-prefix path renders cleanly even on the first frame before any `[g3:dispatch]` markers are parsed.
+- **Non-deprecated viewport methods.** Both `LogsPanel` and `LogsViewer` use `ScrollUp(1)`, `ScrollDown(1)`, `HalfPageUp()`, `HalfPageDown()` rather than the deprecated `LineUp`/`LineDown`/`HalfViewUp`/`HalfViewDown`. Behavior identical; staticcheck-clean.
 
 ## Verification scope (agent-side)
 

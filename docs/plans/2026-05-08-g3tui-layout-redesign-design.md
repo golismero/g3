@@ -249,6 +249,7 @@ Per-task: ~3-4 marker rows. For a scan with 100 tasks: ~300-400 rows scanned, no
 
 - Task dispatched but worker never picked up (no `[g3:start]`): synthesized state = `DISPATCHED`, completion timestamp = null, runtime = null.
 - Task started but never reported done (worker crashed mid-run): state = `UNKNOWN` (a new lifecycle bucket meaning "we don't know"). Display rendering: dim italic, similar to CANCELED.
+- **Task cancelled but `[g3:done]` never arrived** (worker container killed too abruptly to write the completion marker): state = `CANCELED`, completion timestamp = the `[g3:cancel]` marker's timestamp. **Added 2026-05-11** after testing surfaced nmap-full tasks landing as UNKNOWN when their cancel was clearly visible in the log stream; see the implementation plan's post-implementation refinements.
 - Multiple `[g3:done]` rows: take the latest.
 - Stray text matching `[g3:` from tool output: defensive — only the **first occurrence** of `[g3:dispatch]` per task is treated as authoritative. Anything later that looks like a marker is ignored.
 
@@ -294,10 +295,12 @@ This is documented as **Path 2-lite** in the brainstorm — no schema change, no
 - **Detail-pane title 1-row guarantee** — added `renderDetailTitle` with progressive collapse; full-UUID titles were wrapping to multiple visual rows on narrow panes and overflowing the layout.
 - **Scan-list UUID collapse** — same `collapseID` middle-ellipsis treatment as the task table.
 - **Minimum-size guard** — 60×14 threshold below which the dashboard renders only `⚠ terminal too small`.
+- **Reconstructor `cancelSeen` fallback** (added 2026-05-11) — `[g3:cancel]` was originally recognized but not tracked, so when the worker container was killed before it could write `[g3:done]` the task landed as UNKNOWN. Now the accumulator records `cancelSeen` and the promotion step prefers `CANCELED` over `UNKNOWN` when no `[g3:done]` arrived. See `2026-05-08-g3tui-logs-implementation.md` post-implementation refinements for the discovery context (a related worker-side bug was fixed at the same time).
 
 ## Out of plan / future iterations
 
-- The 250 ms debounce for log fetches is a Tier 3 concern; flagged here so the relevant skill knows it when log panel is implemented.
+- The 250 ms debounce for log fetches is a Tier 3 concern; flagged here so the relevant skill knows it when log panel is implemented. **Resolved 2026-05-11** via [`2026-05-08-g3tui-logs-implementation.md`](2026-05-08-g3tui-logs-implementation.md) (Task 3).
+- Logs panel implementation (was reserved as Tier 3). **Resolved 2026-05-11** via [`2026-05-08-g3tui-logs-implementation.md`](2026-05-08-g3tui-logs-implementation.md).
 
 ---
 

@@ -10,7 +10,7 @@
 
 **Source spec:** [`docs/plans/2026-05-08-g3tui-layout-redesign-design.md`](2026-05-08-g3tui-layout-redesign-design.md)
 
-**Status:** Implemented and tested 2026-05-08. See "Post-implementation refinements" near the bottom for the additional fixes settled during testing.
+**Status:** Implemented and tested 2026-05-08. See "Post-implementation refinements" near the bottom for the additional fixes settled during testing. **Updated 2026-05-11:** Task 1's reconstructor was refined to track `[g3:cancel]` markers and prefer `STATUS_CANCELED` over `STATUS_UNKNOWN` when no `[g3:done]` arrives. Discovered during testing of the logs plan; full context in [`2026-05-08-g3tui-logs-implementation.md`](2026-05-08-g3tui-logs-implementation.md) post-implementation refinements.
 
 **Tests are user-owned** (memory: `feedback_tests_are_user_owned.md`). The plan does not include test-writing or behavioral-testing tasks. **Agent verification per task is strictly `go build` (or `make bin`) + `golangci-lint run ./...`.** No `bin/g3tui` runs, no `docker compose` interactions.
 
