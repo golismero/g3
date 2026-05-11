@@ -108,7 +108,7 @@ func (v LogsViewer) InitCmd() tea.Cmd {
 }
 
 func (v LogsViewer) Help() []key.Binding {
-	return []key.Binding{Keys.PgUp, Keys.PgDn, Keys.GotoTop, Keys.GotoBottom, Keys.Back}
+	return []key.Binding{Keys.GotoTop, Keys.GotoBottom, Keys.Back}
 }
 
 func (v LogsViewer) Update(msg tea.Msg) (LogsViewer, tea.Cmd) {

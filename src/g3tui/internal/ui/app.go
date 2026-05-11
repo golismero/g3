@@ -444,11 +444,15 @@ func (a App) renderFooter() string {
 			bindings = append(bindings, a.logsPanel.Help()...)
 		}
 		// Scan-scoped action hints visible in any focus state when a scan is
-		// selected. `l` (open logs viewer) is focus-independent; the other
-		// three are scan-scoped actions that don't require Scans-panel focus
-		// either, so they live with `l`.
+		// selected. `l` (open logs viewer) is focus-independent; Cancel and
+		// Delete apply to any scan. Report only makes sense once the scan
+		// has reached a terminal state.
 		if a.scanList.SelectedID() != "" {
-			bindings = append(bindings, Keys.Logs, Keys.Report, Keys.Cancel, Keys.Delete)
+			bindings = append(bindings, Keys.Logs)
+			if isTerminal(a.scanList.SelectedStatus()) {
+				bindings = append(bindings, Keys.Report)
+			}
+			bindings = append(bindings, Keys.Cancel, Keys.Delete)
 		}
 	}
 	parts := make([]string, 0, len(bindings))

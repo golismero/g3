@@ -100,12 +100,13 @@ func (l *LogsPanel) SetFocused(focused bool) {
 }
 
 // Help returns the keybinds shown in the footer when the Logs panel
-// has focus. ↑↓/PgUp/PgDn/g/G are the documented in-panel navigation.
+// has focus. PgUp/PgDn still work (handled in Update) but aren't
+// advertised — the footer line is tight.
 func (l LogsPanel) Help() []key.Binding {
 	if len(l.lines) == 0 {
 		return nil
 	}
-	return []key.Binding{Keys.Up, Keys.Down, Keys.PgUp, Keys.PgDn, Keys.GotoTop, Keys.GotoBottom}
+	return []key.Binding{Keys.Up, Keys.Down, Keys.GotoTop, Keys.GotoBottom}
 }
 
 func (l LogsPanel) Update(msg tea.Msg) (LogsPanel, tea.Cmd) {

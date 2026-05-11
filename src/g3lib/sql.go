@@ -429,6 +429,7 @@ func ReconstructTaskStatesFromLogs(db SQLDBClient, scanid string) ([]TaskStatusE
 		dispatchSeen bool
 		startSeen    bool
 		doneSeen     bool
+		cancelSeen   bool
 	}
 	byTask := map[string]*acc{}
 
@@ -468,21 +469,42 @@ func ReconstructTaskStatesFromLogs(db SQLDBClient, scanid string) ([]TaskStatusE
 			} else {
 				a.entry.State = string(STATUS_FINISHED)
 			}
+		case strings.HasPrefix(text, "[g3:cancel]"):
+			// Record that a cancel was issued. We don't set State here
+			// because if the worker survives long enough to emit
+			// [g3:done] state=CANCELED, that's the authoritative
+			// completion record. The promotion step below uses
+			// cancelSeen as a fallback when [g3:done] never arrives —
+			// e.g. worker container killed before it could write the
+			// done line — so the task lands as CANCELED rather than
+			// UNKNOWN.
+			a.cancelSeen = true
+			if a.entry.CompleteTS == 0 {
+				a.entry.CompleteTS = ts
+			}
 		}
-		// [g3:cancel] is recognized but ignored here: the actual
-		// end-state arrives later as [g3:done] with state=CANCELED;
-		// updating State on the cancel marker would be premature.
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	// Promote partial states to UNKNOWN when start was seen but done
-	// never arrived (worker crashed mid-run).
+	// Resolve final state for tasks without a [g3:done] marker:
+	//   - cancelSeen → CANCELED (user-initiated stop; worker likely
+	//     didn't survive long enough to write the done line, or the
+	//     task was killed before it ever started).
+	//   - startSeen but no done/cancel → UNKNOWN (worker crashed
+	//     mid-run with no explicit termination signal).
+	// Tasks whose [g3:done] arrived keep whatever state that marker
+	// set; no further promotion needed.
 	out := make([]TaskStatusEntry, 0, len(byTask))
 	for _, a := range byTask {
-		if a.startSeen && !a.doneSeen {
-			a.entry.State = string(STATUS_UNKNOWN)
+		if !a.doneSeen {
+			switch {
+			case a.cancelSeen:
+				a.entry.State = string(STATUS_CANCELED)
+			case a.startSeen:
+				a.entry.State = string(STATUS_UNKNOWN)
+			}
 		}
 		out = append(out, a.entry)
 	}

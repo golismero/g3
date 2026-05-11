@@ -636,9 +636,5 @@ func taskStateStyle(state string) lipgloss.Style {
 }
 
 func (sd ScanDetail) Help() []key.Binding {
-	bindings := []key.Binding{Keys.Up, Keys.Down, Keys.PgUp, Keys.PgDn}
-	if sd.SelectedTaskID() != "" {
-		bindings = append(bindings, Keys.Logs)
-	}
-	return bindings
+	return []key.Binding{Keys.Up, Keys.Down}
 }
