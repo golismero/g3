@@ -1,4 +1,4 @@
-.PHONY: all g3lib g3log
+.PHONY: all update g3lib g3log
 
 all: ../bin/g3 ../bin/g3api ../bin/g3cli ../bin/g3config ../bin/g3scanner ../bin/g3tui ../bin/g3worker
 
@@ -28,3 +28,6 @@ g3log:
 
 ../bin/g3worker: g3lib g3log
 	cd g3worker && go mod tidy && go build -o ../../bin/g3worker
+
+update:
+	set -e; for d in */; do (cd "$$d" && go get -u ./... && go mod tidy); done
