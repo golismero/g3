@@ -336,7 +336,7 @@ services:
       - REDIS_PORT
       - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker-nmap
-      - G3_WORKER_PLUGINS=nmap
+      - G3_WORKER_PLUGINS=nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
 
@@ -374,7 +374,7 @@ services:
       - REDIS_PORT
       - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker1
-      - G3_WORKER_PLUGINS=!nmap
+      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCE
       - G3_LOG_LEVEL
       - VIRUSTOTAL_API_KEY
@@ -415,7 +415,7 @@ services:
       - REDIS_PORT
       - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker2
-      - G3_WORKER_PLUGINS=!nmap
+      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCE
       - G3_LOG_LEVEL
       - VIRUSTOTAL_API_KEY
@@ -456,7 +456,7 @@ services:
       - REDIS_PORT
       - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker3
-      - G3_WORKER_PLUGINS=!nmap
+      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
       - VIRUSTOTAL_API_KEY
@@ -497,7 +497,7 @@ services:
       - REDIS_PORT
       - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker4
-      - G3_WORKER_PLUGINS=!nmap
+      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
       - VIRUSTOTAL_API_KEY
