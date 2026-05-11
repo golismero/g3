@@ -461,7 +461,25 @@ func Main() int {
 				return
 			}
 
-			// Get the logs for this task
+			if request.TaskID == "" {
+				// Scan-level: stream all log rows for the scan, return []LogEntry.
+				// Order is timestamp ASC then row id ASC (set by QueryLog), so the
+				// client receives a chronologically interleaved stream across tasks.
+				entries := make([]g3lib.LogEntry, 0)
+				cb := func(e g3lib.LogEntry) error {
+					entries = append(entries, e)
+					return nil
+				}
+				if err := g3lib.QueryLog(sql_db, cb, request.ScanID); err != nil {
+					log.Error(err.Error())
+					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+					return
+				}
+				g3lib.SendApiResponse(w, entries)
+				return
+			}
+
+			// Task-scoped: single G3TaskLog (existing behavior, unchanged).
 			tasklog, err := g3lib.QueryLogForTask(sql_db, request.ScanID, request.TaskID)
 			if err != nil {
 				log.Error(err.Error())

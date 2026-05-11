@@ -22,10 +22,10 @@
 
 | Tier | End state | Status |
 |---|---|---|
-| **0 — Foundations** | `make bin` produces `bin/g3tui`. Running it loads env, fetches `/scan/list` once, prints scan IDs, then exits. Pipelines package loads embedded + user scan types. Client package has typed wrappers for every endpoint, the `tea.Msg` types, the WS scanprogress subscription with reconnect FSM, and the generic poller. `golangci-lint` clean. No TUI yet. | Detailed (complete) |
-| **1 — Dashboard** | Persistent dashboard launches: left panel shows live scan list (WS), right pane shows per-task table for selected scan (2s poll), header connection indicator, footer keybinds, cancel/delete confirmation flows. Initial connection failure goes to a full-screen retry/quit prompt. | Detailed (complete) |
-| **2 — New-scan wizard** | `[N]` opens the modal overlay. Targets textarea, imports overlay (tool-first batch picker → multi-file picker), mode toggle, scan-type list with `Custom…`, parallel uploads (cap 4), `/scan/start`. New scan appears in left panel via WS push. | **Detailed below** |
-| **3 — Logs & report viewers + README** | `[L]` opens log viewer with task switcher, 2s polling, follow-tail, save-to-file. `[R]` opens Glamour-rendered report with save-as-Markdown. Both pause polling on terminal scan state. `src/g3tui/README.md` written (env vars, build, install, six workflows, config-dir overrides). | Outlined |
+| **0 — Foundations** | `make bin` produces `bin/g3tui`. Running it loads env, fetches `/scan/list` once, prints scan IDs, then exits. Pipelines package loads embedded + user scan types. Client package has typed wrappers for every endpoint, the `tea.Msg` types, the WS scanprogress subscription with reconnect FSM, and the generic poller. `golangci-lint` clean. No TUI yet. | Implemented |
+| **1 — Dashboard** | Persistent dashboard launches: left panel shows live scan list (WS), right pane shows per-task table for selected scan (2s poll), header connection indicator, footer keybinds, cancel/delete confirmation flows. Initial connection failure goes to a full-screen retry/quit prompt. | Implemented; layout/columns/scrolling rebrainstormed and reimplemented in the [2026-05-08 redesign](2026-05-08-g3tui-layout-redesign-design.md) |
+| **2 — New-scan wizard** | `[N]` opens the modal overlay. Targets textarea, imports overlay (tool-first batch picker → multi-file picker), mode toggle, scan-type list with `Custom…`, parallel uploads (cap 4), `/scan/start`. New scan appears in left panel via WS push. | Implemented |
+| **3 — Logs & report viewers + README** | `[L]` opens log viewer with task switcher, 2s polling, follow-tail, save-to-file. `[R]` opens Glamour-rendered report with save-as-Markdown. Both pause polling on terminal scan state. `src/g3tui/README.md` written (env vars, build, install, six workflows, config-dir overrides). | Outlined; not yet started |
 
 ---
 
@@ -1220,6 +1220,8 @@ Stop here. Tier 0 is complete — `bin/g3tui` builds, lints clean, and exercises
 ---
 
 ## Tier 1 — Dashboard with live updates
+
+> **Note (2026-05-08):** The dashboard layout (column shape, scrolling, panel structure, focus model) was rebrainstormed and reimplemented against [`2026-05-08-g3tui-layout-redesign-design.md`](2026-05-08-g3tui-layout-redesign-design.md) and [`2026-05-08-g3tui-layout-redesign-implementation.md`](2026-05-08-g3tui-layout-redesign-implementation.md). The right pane is now a stacked Tasks + Logs panel pair with progressive column collapse, scrolling viewports in both list and table, Tab-driven focus cycling, and a server-side fallback that reconstructs task state from log markers for terminated scans. The Tier 1 description below documents the original first-pass intent; the redesign supersedes it for the layout/columns/scrolling concerns. Tier 2 (wizard) and Tier 3 (logs/report viewers) are still valid as written.
 
 **Intent.** Replace the smoke-test `main` with a Bubble Tea program that runs the persistent dashboard. The dashboard owns the WS lifecycle, scan-list rendering, per-task drill-in, header connection indicator, footer keybinds, cancel/delete confirmation flows, and the initial-connection-failure screen.
 

@@ -77,10 +77,20 @@ func (c *Client) GetTaskStatus(ctx context.Context, scanID string) (g3lib.ScanTa
 	return out, err
 }
 
-// GetLogs → /scan/logs for one (scan, task).
-func (c *Client) GetLogs(ctx context.Context, scanID, taskID string) (g3lib.G3TaskLog, error) {
+// GetTaskLogs → /scan/logs for one (scan, task). Returns the existing
+// G3TaskLog response (top-level taskid, lines:[{timestamp,text}]).
+func (c *Client) GetTaskLogs(ctx context.Context, scanID, taskID string) (g3lib.G3TaskLog, error) {
 	var out g3lib.G3TaskLog
 	err := c.call(ctx, "/scan/logs", g3lib.ReqQueryLog{ScanID: scanID, TaskID: taskID}, &out)
+	return out, err
+}
+
+// GetScanLogs → /scan/logs with empty TaskID, returning all rows for
+// the scan as []LogEntry (chronologically interleaved per the server's
+// ORDER BY timestamp,id ASC). Used by the full-screen logs viewer.
+func (c *Client) GetScanLogs(ctx context.Context, scanID string) ([]g3lib.LogEntry, error) {
+	var out []g3lib.LogEntry
+	err := c.call(ctx, "/scan/logs", g3lib.ReqQueryLog{ScanID: scanID}, &out)
 	return out, err
 }
 

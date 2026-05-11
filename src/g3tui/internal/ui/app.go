@@ -67,11 +67,13 @@ type App struct {
 	scanList    ScanList
 	scanDetail  ScanDetail
 	logsPanel   LogsPanel
+	logsViewer  *LogsViewer
 	confirm     *Confirm
 	wizard      *Wizard
 	banner      string
 	streamState client.StreamState
 	focus       panelFocus
+	prevFocus   panelFocus
 
 	width  int
 	height int
@@ -85,7 +87,7 @@ func New(cfg Config, cli *client.Client, pipes []pipelines.Pipeline, plugins []c
 		plugins:     plugins,
 		scanList:    NewScanList(),
 		scanDetail:  NewScanDetail(cli),
-		logsPanel:   NewLogsPanel(),
+		logsPanel:   NewLogsPanel(cli),
 		streamState: client.StreamConnecting,
 		focus:       focusScans,
 	}
@@ -111,6 +113,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.wizard != nil {
 			a.wizard.SetSize(a.width, a.bodyHeight())
 		}
+		if a.logsViewer != nil {
+			a.logsViewer.SetSize(a.rightPaneWidth(), a.bodyHeight())
+		}
 		return a, nil
 
 	case tea.KeyMsg:
@@ -123,6 +128,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.confirm != nil {
 			c, cmd := a.confirm.Update(m)
 			a.confirm = &c
+			return a, cmd
+		}
+		if a.logsViewer != nil {
+			v, cmd := a.logsViewer.Update(m)
+			a.logsViewer = &v
 			return a, cmd
 		}
 		// Tab cycling is global to the dashboard. Even when the scan
@@ -174,30 +184,29 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 		case key.Matches(m, Keys.Logs):
-			// `l` is the one focus-aware action. Tasks-focused →
-			// per-task logs viewer; Scans-focused → multi-task logs
-			// for the scan. Both viewers are deferred to a follow-up.
-			switch a.focus {
-			case focusTasks:
-				if tid := a.scanDetail.SelectedTaskID(); tid != "" {
-					a.banner = "logs viewer for task " + tid + " — coming in a follow-up release"
-					return a, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return bannerExpiredMsg{} })
-				}
-			case focusScans:
-				if sid := a.scanList.SelectedID(); sid != "" {
-					a.banner = "scan logs viewer — coming in a follow-up release"
-					return a, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return bannerExpiredMsg{} })
-				}
+			sid := a.scanList.SelectedID()
+			if sid == "" {
+				return a, nil
 			}
-			return a, nil
+			v := NewLogsViewer(a.cli, sid, a.scanList.SelectedStatus())
+			v.SetSize(a.rightPaneWidth(), a.bodyHeight())
+			a.logsViewer = &v
+			a.prevFocus = a.focus
+			return a, v.InitCmd()
 		}
 		// Routing per focused panel.
 		switch a.focus {
 		case focusScans:
 			return a.dispatchToScanList(m)
 		case focusTasks:
+			prevTaskID := a.scanDetail.SelectedTaskID()
 			var cmd tea.Cmd
 			a.scanDetail, cmd = a.scanDetail.Update(m)
+			if a.scanDetail.SelectedTaskID() != prevTaskID {
+				var lpCmd tea.Cmd
+				a.logsPanel, lpCmd = a.logsPanel.Update(a.currentLogsBinding())
+				return a, tea.Batch(cmd, lpCmd)
+			}
 			return a, cmd
 		case focusLogs:
 			var cmd tea.Cmd
@@ -218,9 +227,34 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.dispatchToScanList(m)
 
 	case focusChangedMsg, client.TaskStatusUpdate:
+		prevTaskID := a.scanDetail.SelectedTaskID()
 		var cmd tea.Cmd
 		a.scanDetail, cmd = a.scanDetail.Update(m)
+		if a.scanDetail.SelectedTaskID() != prevTaskID {
+			var lpCmd tea.Cmd
+			a.logsPanel, lpCmd = a.logsPanel.Update(a.currentLogsBinding())
+			return a, tea.Batch(cmd, lpCmd)
+		}
 		return a, cmd
+
+	case logsChunkMsg, logsDebounceFiredMsg, logsTickMsg:
+		var cmd tea.Cmd
+		a.logsPanel, cmd = a.logsPanel.Update(m)
+		return a, cmd
+
+	case logsViewerChunkMsg, logsViewerTickMsg:
+		if a.logsViewer == nil {
+			return a, nil // stale message after viewer closed
+		}
+		v, cmd := a.logsViewer.Update(m)
+		a.logsViewer = &v
+		return a, cmd
+
+	case logsViewerClosedMsg:
+		a.logsViewer = nil
+		a.focus = a.prevFocus
+		a.applyFocus()
+		return a, nil
 
 	case client.StreamStateChanged:
 		a.streamState = m.State
@@ -273,19 +307,48 @@ func (a *App) applyFocus() {
 	a.logsPanel.SetFocused(a.focus == focusLogs)
 }
 
+// currentLogsBinding computes the inline Logs panel's binding from the
+// scan list's selection, the task panel's cursor, and the selected
+// scan's status. Empty strings/empty status are valid: the panel
+// renders a "no task selected" state and skips polling.
+func (a App) currentLogsBinding() logsBindingChangedMsg {
+	return logsBindingChangedMsg{
+		ScanID:     a.scanList.SelectedID(),
+		TaskID:     a.scanDetail.SelectedTaskID(),
+		ScanStatus: a.scanList.SelectedStatus(),
+	}
+}
+
 // dispatchToScanList forwards a message to the ScanList and, if the
 // selection changed as a result, also notifies ScanDetail to refocus.
 func (a App) dispatchToScanList(msg tea.Msg) (tea.Model, tea.Cmd) {
-	prev := a.scanList.SelectedID()
+	prevID := a.scanList.SelectedID()
+	prevStatus := a.scanList.SelectedStatus()
 	var slCmd tea.Cmd
 	a.scanList, slCmd = a.scanList.Update(msg)
-	current := a.scanList.SelectedID()
-	if current != prev {
+	currentID := a.scanList.SelectedID()
+	currentStatus := a.scanList.SelectedStatus()
+	cmds := []tea.Cmd{slCmd}
+	if currentID != prevID {
 		var sdCmd tea.Cmd
-		a.scanDetail, sdCmd = a.scanDetail.Update(focusChangedMsg{ScanID: current})
-		return a, tea.Batch(slCmd, sdCmd)
+		a.scanDetail, sdCmd = a.scanDetail.Update(focusChangedMsg{ScanID: currentID})
+		cmds = append(cmds, sdCmd)
 	}
-	return a, slCmd
+	if currentID != prevID || currentStatus != prevStatus {
+		var lpCmd tea.Cmd
+		a.logsPanel, lpCmd = a.logsPanel.Update(a.currentLogsBinding())
+		cmds = append(cmds, lpCmd)
+	}
+	// Keep the open LogsViewer's cached scan status in sync with the
+	// scan list. If the viewer's scan has reached a terminal state, this
+	// lets the viewer's next tick observe isTerminal() and wind down its
+	// polling without waiting for the user to close it.
+	if a.logsViewer != nil {
+		if newStatus := a.scanList.StatusByID(a.logsViewer.scanID); newStatus != "" && newStatus != a.logsViewer.scanStatus {
+			a.logsViewer.SetScanStatus(newStatus)
+		}
+	}
+	return a, tea.Batch(cmds...)
 }
 
 func (a App) View() string {
@@ -307,6 +370,14 @@ func (a App) View() string {
 		body = lipgloss.Place(a.width, a.bodyHeight(), lipgloss.Center, lipgloss.Center, a.wizard.View())
 	case a.confirm != nil:
 		body = lipgloss.Place(a.width, a.bodyHeight(), lipgloss.Center, lipgloss.Center, a.confirm.View())
+	case a.logsViewer != nil:
+		// Viewer replaces the right pane; scan list stays.
+		body = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			a.scanList.View(),
+			a.logsViewer.View(),
+		)
+		body = lipgloss.Place(a.width, a.bodyHeight(), lipgloss.Left, lipgloss.Top, body)
 	default:
 		rightStack := lipgloss.JoinVertical(
 			lipgloss.Left,
@@ -358,19 +429,26 @@ func (a App) renderFooter() string {
 	case a.confirm != nil:
 		bindings = []key.Binding{Keys.Quit}
 		bindings = append(bindings, a.confirm.Help()...)
+	case a.logsViewer != nil:
+		bindings = []key.Binding{Keys.Quit}
+		bindings = append(bindings, a.logsViewer.Help()...)
 	case a.scanList.Filtering():
 		bindings = append(bindings, a.scanList.Help()...)
 	default:
 		switch a.focus {
 		case focusScans:
 			bindings = append(bindings, a.scanList.Help()...)
-			if a.scanList.SelectedID() != "" {
-				bindings = append(bindings, Keys.Logs, Keys.Report, Keys.Cancel, Keys.Delete)
-			}
 		case focusTasks:
 			bindings = append(bindings, a.scanDetail.Help()...)
 		case focusLogs:
-			// LogsPanel.Help() returns nil until Tier 3 implements it.
+			bindings = append(bindings, a.logsPanel.Help()...)
+		}
+		// Scan-scoped action hints visible in any focus state when a scan is
+		// selected. `l` (open logs viewer) is focus-independent; the other
+		// three are scan-scoped actions that don't require Scans-panel focus
+		// either, so they live with `l`.
+		if a.scanList.SelectedID() != "" {
+			bindings = append(bindings, Keys.Logs, Keys.Report, Keys.Cancel, Keys.Delete)
 		}
 	}
 	parts := make([]string, 0, len(bindings))

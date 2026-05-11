@@ -51,6 +51,37 @@ func (s ScanList) SelectedID() string {
 	return s.filtered[s.cursor].ScanID
 }
 
+// SelectedStatus returns the status of the currently-highlighted entry,
+// or "" when no entry is selected. Used by App to know whether the
+// Logs panel should keep polling the binding's task.
+func (s ScanList) SelectedStatus() g3lib.G3SCANSTATUS {
+	id := s.SelectedID()
+	if id == "" {
+		return ""
+	}
+	for _, e := range s.entries {
+		if e.ScanID == id {
+			return e.Status
+		}
+	}
+	return ""
+}
+
+// StatusByID returns the status of the entry with the given scan ID,
+// or "" if no such entry exists. Used by App to refresh the open
+// LogsViewer's cached scan status after a snapshot or WS push.
+func (s ScanList) StatusByID(id string) g3lib.G3SCANSTATUS {
+	if id == "" {
+		return ""
+	}
+	for _, e := range s.entries {
+		if e.ScanID == id {
+			return e.Status
+		}
+	}
+	return ""
+}
+
 // SetSize is called by the parent on layout resize.
 func (s *ScanList) SetSize(w, h int) {
 	s.width = w

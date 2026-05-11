@@ -29,6 +29,9 @@ var (
 	ListItemSelected = lipgloss.NewStyle().Bold(true).Background(lipgloss.Color("237"))
 	ListItemDimmed   = lipgloss.NewStyle().Faint(true)
 
+	LogTimestamp = lipgloss.NewStyle().Faint(true)
+	LogTool      = lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
+
 	StatusRunning    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	StatusWaiting    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	StatusFinished   = lipgloss.NewStyle().Foreground(lipgloss.Color("63"))

@@ -249,7 +249,7 @@ func (req *ReqReport) Decode(r *http.Request) error {
 
 type ReqQueryLog struct {
 	ScanID string               `json:"scanid"              validate:"uuid"`
-	TaskID string               `json:"taskid"              validate:"uuid"`
+	TaskID string               `json:"taskid"              validate:"omitempty,uuid"`
 }
 func (req *ReqQueryLog) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }

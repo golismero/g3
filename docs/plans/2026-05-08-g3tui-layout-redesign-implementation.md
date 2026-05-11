@@ -10,7 +10,7 @@
 
 **Source spec:** [`docs/plans/2026-05-08-g3tui-layout-redesign-design.md`](2026-05-08-g3tui-layout-redesign-design.md)
 
-**Status:** Detailed and ready to implement.
+**Status:** Implemented and tested 2026-05-08. See "Post-implementation refinements" near the bottom for the additional fixes settled during testing.
 
 **Tests are user-owned** (memory: `feedback_tests_are_user_owned.md`). The plan does not include test-writing or behavioral-testing tasks. **Agent verification per task is strictly `go build` (or `make bin`) + `golangci-lint run ./...`.** No `bin/g3tui` runs, no `docker compose` interactions.
 
@@ -1766,6 +1766,27 @@ If the user prefers, the entire plan can be a single commit: `g3tui: layout rede
 - **Movable panel boundaries + preference persistence**. Tracked as future iteration.
 - **Per-task cancel** action. Waits on server-side `/scan/task/stop` API (separate cross-component change).
 - **`bubbles/list` migration for the scan list**. Either viable; sticking with viewport-wrapping for this work to minimize churn against the existing custom rendering. Reconsider if list-specific features (sort, multi-select) become useful.
+
+---
+
+## Post-implementation refinements
+
+The original 6 tasks landed cleanly, but real-terminal testing surfaced a handful of edges that weren't covered by the original spec. These are documented here so the design ↔ code stays in sync; the design doc has been updated alongside.
+
+| Refinement | What | Why |
+|---|---|---|
+| Floor headers (per-column emoji-bearing abbreviations) | Added `hdrTaskIDFloor=ID📎`, `hdrStateFloor=▶`, `hdrToolFloor=⚙`, `hdrTimeFloor=⏰`, `hdrLastSeenFloor=👀`. The original Task 6 had `padRight("LAST SEEN", layout.lastSeenWidth)` — at floor (1 col) the text leaked into next column and wrapped to a 2nd row. | Same row-wrap propagation that pushed the title bar off-screen. Header text must collapse alongside column width. |
+| `headerForColumn(width, full, floor)` helper | Picks full vs floor header based on whether the column's allocated width is ≥ `lipgloss.Width(full)`. | Column widths can fall below the full-header text length even at "full" tier (e.g. `LAST SEEN` is 9 visual cols but `colLastSeenFull` was 8). |
+| `colLastSeenFull`: 8 → 10 | Bumped so it's ≥ visual width of `LAST SEEN` (9). Otherwise the header collapses prematurely. | Latent bug exposed by the new collapse rule. |
+| `colLastSeenFloor`: 1 → 2 (then header changed from `LAST👀` to just `👀`) | First testing pass had `LAST👀` at 6 cols floor; user feedback simplified to just the eyes emoji at 2 cols. | UX preference — single-emoji floor is cleaner for the "secondary" columns. |
+| `colStateFloor` / `colToolFloor` / `colTimeFloor`: 1 → 2 | All three emoji-only floors bumped to 2 cols to accommodate the wide emoji rendering on terminals where the glyph takes 2 visual cols. | Some terminals render `⏰` as 2 cols; 1-col floor would mis-align value padding. |
+| `padRight` switched from `len(s)` to `lipgloss.Width(s)` | Byte-length padding under-pads emoji content (4 bytes per glyph but 1–2 visual cols) and over-pads multibyte non-emoji content. | Correctness with emoji-bearing headers and any future multibyte content. |
+| `renderDetailTitle(scanID, status, maxWidth)` | Progressive collapse of the Detail pane title: full UUID → mid → min → floor → status only → "Detail" → rune-truncated. | The Detail title was wrapping to 2–3 visual rows on narrow panes, growing the pane past its allocated height (lipgloss `Height` is a min not max), propagating overflow upward, and pushing the top header bar off-screen. |
+| Scan-list UUID progressive collapse | `formatScanRow` now takes an `idWidth` and runs the UUID through `collapseID(scanID, idWidth)`. Same middle-ellipsis breakpoints (36 → 15 → 9 → 6) as the task table. | Original `Task 4` left UUIDs full-width even when the scan-list panel narrowed; on narrow terminals (panel = `width/2`) they wrapped or truncated unpredictably. |
+| Minimum-size guard | `App.View` short-circuits to a centered `⚠ terminal too small` (rendered with `BannerWarn`) when `width < 60` or `height < 14`. | Below those thresholds the per-panel content row counts exceed allocated heights regardless of column collapse. The overflow propagates and pushes the top bar off-screen. Drawing the line is cleaner than chasing more degradation tiers. |
+| Explicit `.Height(s.height-2)` on `ScanList.View` | Without it, the scan-list panel border was content-sized rather than allocation-sized — visibly shorter than the right-stack at most terminal sizes. | Bug only visible to keen-eyed reviewer: borders looked inconsistent. |
+
+All of these were caught by behavioral testing in real terminals, not by lint or build. None changed the public design contract — they're refinements to make the spec actually hold under non-trivial size variation.
 
 ---
 

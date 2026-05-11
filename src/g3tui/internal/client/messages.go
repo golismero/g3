@@ -36,9 +36,24 @@ type TaskStatusUpdate struct {
 	Err      error
 }
 
-// Per-task log payload from /scan/logs.
+// Per-task log payload from /scan/logs. ScanID and TaskID identify the
+// binding so a stale tick from a previous focus is dropped on receipt.
+// Err inline (not routed via ErrorMsg) so a transient HTTP blip can't
+// tear down the polling chain — the receiver re-arms regardless.
 type LogChunk struct {
-	Log g3lib.G3TaskLog
+	ScanID string
+	TaskID string
+	Log    g3lib.G3TaskLog
+	Err    error
+}
+
+// Per-scan log payload from /scan/logs (TaskID="" mode). Carries the raw
+// row list; the consumer (full-screen LogsViewer) walks the stream to
+// render and to build its taskID→tool map from [g3:dispatch] markers.
+type ScanLogChunk struct {
+	ScanID  string
+	Entries []g3lib.LogEntry
+	Err     error
 }
 
 // Successful one-shot fetch from /scan/report.
