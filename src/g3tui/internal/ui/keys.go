@@ -28,6 +28,7 @@ type KeyMap struct {
 	No         key.Binding
 	Retry      key.Binding
 	Submit     key.Binding
+	WrapToggle key.Binding
 }
 
 // Keys is the global key map. Sub-models consult only the bindings they
@@ -59,4 +60,5 @@ var Keys = KeyMap{
 	No:         key.NewBinding(key.WithKeys("n", "N", "esc"), key.WithHelp("n", "no")),
 	Retry:      key.NewBinding(key.WithKeys("r", "R"), key.WithHelp("r", "retry")),
 	Submit:     key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "submit")),
+	WrapToggle: key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "wrap")),
 }

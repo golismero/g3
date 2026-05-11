@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"golismero.com/g3lib"
 	"golismero.com/g3tui/internal/client"
 )
@@ -72,6 +73,7 @@ type LogsPanel struct {
 
 	lines    []g3lib.TaskLogLine
 	viewport viewport.Model
+	wrap     bool // off by default: preview pane prioritizes density
 
 	width   int
 	height  int
@@ -106,7 +108,7 @@ func (l LogsPanel) Help() []key.Binding {
 	if len(l.lines) == 0 {
 		return nil
 	}
-	return []key.Binding{Keys.Up, Keys.Down, Keys.GotoTop, Keys.GotoBottom}
+	return []key.Binding{Keys.Up, Keys.Down, Keys.GotoTop, Keys.GotoBottom, Keys.WrapToggle}
 }
 
 func (l LogsPanel) Update(msg tea.Msg) (LogsPanel, tea.Cmd) {
@@ -186,6 +188,13 @@ func (l LogsPanel) Update(msg tea.Msg) (LogsPanel, tea.Cmd) {
 			l.viewport.GotoTop()
 		case key.Matches(m, Keys.GotoBottom):
 			l.viewport.GotoBottom()
+		case key.Matches(m, Keys.WrapToggle):
+			wasAtBottom := l.viewport.AtBottom()
+			l.wrap = !l.wrap
+			l.applyContent()
+			if wasAtBottom {
+				l.viewport.GotoBottom()
+			}
 		}
 		return l, nil
 	}
@@ -237,7 +246,9 @@ func (l LogsPanel) renderTitle(maxWidth int) string {
 }
 
 // applyContent rebuilds the viewport's content from the current lines
-// slice, applying the per-line formatting and ANSI strip.
+// slice, applying the per-line formatting and ANSI strip. When wrap is
+// on, long bodies hard-wrap to the viewport width with a hanging indent
+// under the timestamp column.
 func (l *LogsPanel) applyContent() {
 	if l.scanID == "" || l.taskID == "" {
 		l.viewport.SetContent(ListItemDimmed.Render("(no task selected)"))
@@ -252,17 +263,43 @@ func (l *LogsPanel) applyContent() {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(formatLogLine(ln.Timestamp, ln.Text))
+		when := time.Unix(ln.Timestamp, 0).Format("15:04:05")
+		prefix := LogTimestamp.Render(when) + "  "
+		const prefixWidth = 10 // "HH:MM:SS" (8) + "  " (2)
+		body := g3lib.StripAnsi(ln.Text)
+		b.WriteString(wrapLogLine(prefix, prefixWidth, body, l.viewport.Width, l.wrap))
 	}
 	l.viewport.SetContent(b.String())
 }
 
-// formatLogLine renders one line as "HH:MM:SS  <stripped text>". Used
-// by both the inline panel and the full-screen viewer (the viewer wraps
-// the result with a [tool] prefix on top of this).
-func formatLogLine(ts int64, text string) string {
-	when := time.Unix(ts, 0).Format("15:04:05")
-	return LogTimestamp.Render(when) + "  " + g3lib.StripAnsi(text)
+// wrapLogLine emits one log row. When wrap is false the prefix and body
+// are concatenated as-is (the viewport clips overflow). When wrap is
+// true the body is hard-wrapped to the remaining column budget and
+// continuation rows are hanging-indented by prefixWidth blanks so the
+// body column stays aligned. Shared between LogsPanel and LogsViewer.
+func wrapLogLine(prefix string, prefixWidth int, body string, width int, wrap bool) string {
+	if !wrap {
+		return prefix + body
+	}
+	bodyWidth := width - prefixWidth
+	if bodyWidth < 1 {
+		bodyWidth = 1
+	}
+	wrapped := ansi.Hardwrap(body, bodyWidth, true)
+	rows := strings.Split(wrapped, "\n")
+	if len(rows) == 1 {
+		return prefix + rows[0]
+	}
+	pad := strings.Repeat(" ", prefixWidth)
+	var b strings.Builder
+	b.WriteString(prefix)
+	b.WriteString(rows[0])
+	for _, r := range rows[1:] {
+		b.WriteByte('\n')
+		b.WriteString(pad)
+		b.WriteString(r)
+	}
+	return b.String()
 }
 
 func (l LogsPanel) fetchNowCmd() tea.Cmd {

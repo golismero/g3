@@ -57,6 +57,7 @@ type LogsViewer struct {
 	toolWidth  int // cached visual width of the widest known [tool] prefix, capped at logsViewerToolCap
 
 	viewport viewport.Model
+	wrap     bool // on by default: full-screen viewer prioritizes readability
 
 	width  int
 	height int
@@ -74,6 +75,7 @@ func NewLogsViewer(cli *client.Client, scanID string, scanStatus g3lib.G3SCANSTA
 		toolByTask: map[string]string{},
 		toolWidth:  1,
 		viewport:   viewport.New(0, 0),
+		wrap:       true,
 	}
 	return v
 }
@@ -108,7 +110,7 @@ func (v LogsViewer) InitCmd() tea.Cmd {
 }
 
 func (v LogsViewer) Help() []key.Binding {
-	return []key.Binding{Keys.GotoTop, Keys.GotoBottom, Keys.Back}
+	return []key.Binding{Keys.GotoTop, Keys.GotoBottom, Keys.WrapToggle, Keys.Back}
 }
 
 func (v LogsViewer) Update(msg tea.Msg) (LogsViewer, tea.Cmd) {
@@ -161,6 +163,13 @@ func (v LogsViewer) Update(msg tea.Msg) (LogsViewer, tea.Cmd) {
 			v.viewport.GotoTop()
 		case key.Matches(m, Keys.GotoBottom):
 			v.viewport.GotoBottom()
+		case key.Matches(m, Keys.WrapToggle):
+			wasAtBottom := v.viewport.AtBottom()
+			v.wrap = !v.wrap
+			v.applyContent()
+			if wasAtBottom {
+				v.viewport.GotoBottom()
+			}
 		}
 		return v, nil
 	}
@@ -248,7 +257,9 @@ func parseDispatchTool(text string) string {
 
 // applyContent re-renders the viewport content from the current entries
 // slice and tool map. Each line is "HH:MM:SS [tool] <stripped text>"
-// where [tool] is end-ellipsised to toolWidth.
+// where [tool] is end-ellipsised to toolWidth. When wrap is on, long
+// bodies hard-wrap to the viewport width with a hanging indent under
+// the body column.
 func (v *LogsViewer) applyContent() {
 	if len(v.entries) == 0 {
 		v.viewport.SetContent(ListItemDimmed.Render("(no log lines yet)"))
@@ -259,7 +270,9 @@ func (v *LogsViewer) applyContent() {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(formatViewerLine(e.Timestamp, v.toolFor(e.TaskID), v.toolWidth, e.Text))
+		prefix, prefixWidth := viewerLinePrefix(e.Timestamp, v.toolFor(e.TaskID), v.toolWidth)
+		body := g3lib.StripAnsi(e.Text)
+		b.WriteString(wrapLogLine(prefix, prefixWidth, body, v.viewport.Width, v.wrap))
 	}
 	v.viewport.SetContent(b.String())
 }
@@ -271,10 +284,11 @@ func (v LogsViewer) toolFor(taskID string) string {
 	return "?"
 }
 
-// formatViewerLine renders one stream line. tool is the per-task name
-// from the map (or "?" for lines whose dispatch marker hasn't been
-// seen yet); width is the column the [tool] cell pads to.
-func formatViewerLine(ts int64, tool string, width int, text string) string {
+// viewerLinePrefix builds the styled "HH:MM:SS [tool]  " prefix for a
+// log row and returns its visible column width. The tool cell is
+// end-ellipsised to width; the returned prefixWidth accounts for the
+// padded cell so the body column aligns across rows.
+func viewerLinePrefix(ts int64, tool string, width int) (string, int) {
 	when := time.Unix(ts, 0).Format("15:04:05")
 	cell := tool
 	if lipgloss.Width(cell) > width {
@@ -290,7 +304,9 @@ func formatViewerLine(ts int64, tool string, width int, text string) string {
 		pad = 0
 	}
 	bracketed := "[" + LogTool.Render(cell) + "]" + strings.Repeat(" ", pad)
-	return LogTimestamp.Render(when) + " " + bracketed + "  " + g3lib.StripAnsi(text)
+	prefix := LogTimestamp.Render(when) + " " + bracketed + "  "
+	// 8 (timestamp) + 1 (space) + 1 ("[") + width (cell) + 1 ("]") + 2 ("  ")
+	return prefix, 13 + width
 }
 
 func (v LogsViewer) fetchNowCmd() tea.Cmd {
