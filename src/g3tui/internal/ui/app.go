@@ -479,19 +479,31 @@ func (a App) renderHeader() string {
 }
 
 func (a App) renderFooter() string {
+	textActive := a.wizard != nil ||
+		(a.reportPane != nil && a.reportPane.picker != nil) ||
+		(a.logsViewer != nil && a.logsViewer.picker != nil)
 	bindings := []key.Binding{Keys.Quit, Keys.New, Keys.Help, Keys.Tab}
 	switch {
 	case a.wizard != nil:
-		bindings = []key.Binding{Keys.Quit}
+		bindings = []key.Binding{}
+		if !textActive {
+			bindings = append(bindings, Keys.Quit)
+		}
 		bindings = append(bindings, a.wizard.Help()...)
 	case a.confirm != nil:
 		bindings = []key.Binding{Keys.Quit}
 		bindings = append(bindings, a.confirm.Help()...)
 	case a.reportPane != nil:
-		bindings = []key.Binding{Keys.Quit}
+		bindings = []key.Binding{}
+		if !textActive {
+			bindings = append(bindings, Keys.Quit)
+		}
 		bindings = append(bindings, a.reportPane.Help()...)
 	case a.logsViewer != nil:
-		bindings = []key.Binding{Keys.Quit}
+		bindings = []key.Binding{}
+		if !textActive {
+			bindings = append(bindings, Keys.Quit)
+		}
 		bindings = append(bindings, a.logsViewer.Help()...)
 	case a.scanList.Filtering():
 		bindings = append(bindings, a.scanList.Help()...)

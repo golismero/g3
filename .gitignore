@@ -1,2 +1,4 @@
 private/
 .remember/
+*-report.md
+*-export.json

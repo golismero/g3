@@ -2001,3 +2001,41 @@ Implementation details:
 Open-mode behavior (used by the wizard's imports flow) is unchanged — the redesign is gated on `mode == PickerSave`.
 
 picker.go: 411 → 357 lines (the more disciplined save-mode branch is leaner than the previous overloaded one).
+
+### Refinement D — Detect terminal background at startup (fix Glamour OSC 11 leak)
+
+**Files:** `src/g3tui/main.go`, `src/g3tui/internal/ui/app.go`, `src/g3tui/internal/ui/report.go`, `src/g3tui/go.mod`
+
+The user tested the redesigned picker and reported the filename textinput accumulating garbage like `]11;rgb:0c0c/0cc/0c0c\` interleaved with their typed input. The output doubled on a window resize.
+
+Diagnosis: this is an OSC 11 "query background color" terminal response that Glamour's `WithAutoStyle()` triggered. Glamour calls `termenv.HasDarkBackground()` which writes `ESC]11;?ESC\` to stdout and blocks on a stdin read. On Windows Terminal+WSL the response arrives asynchronously, AFTER the read times out. By that time Bubble Tea has taken over stdin and the response is dispatched as keystrokes to the focused component — the picker's filename textinput.
+
+Fix: detect the background ONCE in `main.go` BEFORE `tea.Program.Run()` takes over stdin, cache the result as a style name string ("dark" or "light"), and pass it through `ui.Config` → `App.cfg` → `NewReportPane(...)` → `ReportPane.glamourStyle`. `renderAndApply` now uses `glamour.WithStylePath(p.glamourStyle)` instead of `glamour.WithAutoStyle()`. Glamour never probes during the event loop.
+
+Resize handling is unaffected: `renderAndApply` still constructs a fresh renderer with `WithWordWrap(currentWidth)` on every resize. Only the style detection moved off the dynamic path.
+
+Concrete changes:
+- `main.go`: imported `github.com/muesli/termenv`; added a probe block (`termenv.NewOutput(os.Stdout).HasDarkBackground()`) before `context.WithCancel`; stored result as `"dark"`/`"light"` string; passed via the new `GlamourStyle` field of `ui.Config`.
+- `app.go`: added `GlamourStyle string` field to `Config`; passed `a.cfg.GlamourStyle` as the fourth argument to `NewReportPane`.
+- `report.go`: added `glamourStyle string` field to `ReportPane`; constructor signature changed to `NewReportPane(cli, scanID, scanStatus, glamourStyle)` with a fallback to `"dark"` on empty string; `renderAndApply` replaced `glamour.WithAutoStyle()` with `glamour.WithStylePath(p.glamourStyle)`.
+- `go.mod`: `github.com/muesli/termenv` promoted from indirect to direct dependency.
+
+Conceptual takeaway: terminal capabilities split into static (color depth, supports-OSC-8, dark/light background) and dynamic (size, focus state). Static properties get detected once and cached; dynamic properties are re-queried per frame. The original `WithAutoStyle` mistakenly put background on the dynamic path. The fix is architectural — moving background to where it belongs — not a workaround.
+
+### Refinement E — Picker too-small guard + bounded list height
+
+**File:** `src/g3tui/internal/ui/picker.go`
+
+The user reported that on a smaller terminal, the picker's top (title, `..` entry) was cut off — the picker's natural rendered height exceeded the terminal height, and `lipgloss.Place` pushed the top off-screen rather than scaling down.
+
+Diagnosis: the save-mode picker had a hardcoded `const visible = 10` for file list entries. Combined with the outer orange box's title/path/spacers, the Files sub-box's border+title, the Filename sub-box's border+title+content, and the footer, the picker's natural height was ~22-26 rows. Smaller terminals overflow.
+
+Fix:
+
+1. **Too-small guard** in `View()`'s save-mode branch: when `p.width < 60 || p.height < 20`, return `BannerWarn.Render("⚠  terminal too small for save picker")` directly, bypassing the outer orange box. Mirrors the dashboard's existing 60×14 minimum-size guard.
+
+2. **Bounded `visible`** in `renderSave`: replaced `const visible = 10` with a dynamic computation `visible := p.height - 17` (rough chrome row count), capped at 10 and floored at 3. The 3-row floor is defensive — the too-small guard would have already fired below the threshold; this just ensures the value is never silly.
+
+Effect: on a 22-row terminal the file list shows 5 entries instead of 10; the picker fits within the terminal; `lipgloss.Place` can center it properly. On a 30-row terminal the cap kicks in at 10 entries (existing behavior). Below 20 rows the user sees a clear warning rather than a broken layout.
+
+The picker thresholds (60×20) are higher than the dashboard's (60×14) because the save-mode picker has more internal chrome (two nested sub-boxes vs the dashboard's flat panels).

@@ -385,7 +385,15 @@ func (p FilePicker) View() string {
 		Width(inner)
 
 	if p.mode == PickerSave {
-		return box.Render(p.renderSave(inner - 4))
+		if p.width < 60 || p.height < 20 {
+			return BannerWarn.Render("⚠  terminal too small for save picker")
+		}
+		// Outer box: total width = inner; horizontal chrome = 2 (border) +
+		// 4 (padding) = 6 — so inner content area = inner - 6. Sub-boxes
+		// inside set their own Width(N) where N is the total rendered
+		// width, so passing inner-6 means the sub-box top border fits
+		// exactly without wrapping.
+		return box.Render(p.renderSave(inner - 6))
 	}
 
 	// Open-mode rendering (unchanged below).
@@ -461,7 +469,13 @@ func (p FilePicker) renderSave(innerWidth int) string {
 	}
 	filesTitle := AppTitle.Render(filesTitleText)
 
-	const visible = 10
+	visible := p.height - 17
+	if visible > 10 {
+		visible = 10
+	}
+	if visible < 3 {
+		visible = 3
+	}
 	start := 0
 	if p.cursor >= visible {
 		start = p.cursor - visible + 1
