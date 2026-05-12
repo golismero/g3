@@ -25,7 +25,8 @@ type focusChangedMsg struct {
 // its own /scan/tasks/status polling via tea.Tick chains. Polling pauses
 // when the underlying scan reaches a terminal state.
 type ScanDetail struct {
-	cli *client.Client
+	cli          *client.Client
+	pollInterval time.Duration
 
 	scanID     string
 	scanStatus g3lib.G3SCANSTATUS
@@ -38,8 +39,8 @@ type ScanDetail struct {
 	focused bool
 }
 
-func NewScanDetail(cli *client.Client) ScanDetail {
-	return ScanDetail{cli: cli, viewport: viewport.New(0, 0)}
+func NewScanDetail(cli *client.Client, pollInterval time.Duration) ScanDetail {
+	return ScanDetail{cli: cli, pollInterval: pollInterval, viewport: viewport.New(0, 0)}
 }
 
 func (sd *ScanDetail) SetSize(w, h int) {
@@ -92,7 +93,7 @@ func (sd ScanDetail) Update(msg tea.Msg) (ScanDetail, tea.Cmd) {
 			// cadence rather than letting it die. State is preserved
 			// (last successful poll's data stays visible). Per design's
 			// "HTTP polls fail silently in their pane" rule.
-			return sd, sd.fetchLaterCmd(2 * time.Second)
+			return sd, sd.fetchLaterCmd(sd.pollInterval)
 		}
 		// Preserve cursor across refreshes by task ID where possible.
 		var prevID string
@@ -122,7 +123,7 @@ func (sd ScanDetail) Update(msg tea.Msg) (ScanDetail, tea.Cmd) {
 		if isTerminal(sd.scanStatus) {
 			return sd, nil
 		}
-		return sd, sd.fetchLaterCmd(2 * time.Second)
+		return sd, sd.fetchLaterCmd(sd.pollInterval)
 
 	case tea.KeyMsg:
 		if len(sd.tasks) == 0 {

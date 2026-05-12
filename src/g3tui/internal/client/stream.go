@@ -108,7 +108,13 @@ func readLoop(ctx context.Context, conn *websocket.Conn, send func(tea.Msg)) {
 		select {
 		case <-closed:
 		default:
-			// caller-side close; drain the watcher goroutine
+			// caller-side close; drain the watcher goroutine.
+			// TODO: this default branch returns immediately without
+			// waiting for the watcher to exit, so on server-side
+			// disconnects the watcher goroutine leaks until ctx is
+			// cancelled (at TUI exit). Fix by blocking on <-closed
+			// unconditionally after calling conn.Close(); the watcher
+			// exits promptly once the connection is closed.
 		}
 	}()
 

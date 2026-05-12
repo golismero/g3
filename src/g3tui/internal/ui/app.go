@@ -20,6 +20,22 @@ type Config struct {
 	WSURL        string
 	Token        string
 	GlamourStyle string // "dark" or "light"; detected at startup before bubbletea takes stdin
+
+	// PollInterval applies uniformly to scan-progress (main.go's client.Poll),
+	// tasks-status (scandetail.fetchLaterCmd), and inline logs (logspanel
+	// tea.Tick). The 250ms cursor-debounce in logspanel is unrelated and not
+	// affected. Zero value disables polling-driven refresh; callers always
+	// pass a positive duration.
+	PollInterval time.Duration
+
+	// NoWS, when true, suppresses the WebSocket subscription goroutine in
+	// main.go. Polling fallback then runs continuously and the header
+	// connection-dot stays yellow (its existing "polling-only" state).
+	NoWS bool
+
+	// ReadOnly hides New/Cancel/Delete bindings from both dispatch and the
+	// footer hint string.
+	ReadOnly bool
 }
 
 // panelFocus identifies which of the three dashboard panels owns
@@ -89,8 +105,8 @@ func New(cfg Config, cli *client.Client, pipes []pipelines.Pipeline, plugins []c
 		pipes:       pipes,
 		plugins:     plugins,
 		scanList:    NewScanList(),
-		scanDetail:  NewScanDetail(cli),
-		logsPanel:   NewLogsPanel(cli),
+		scanDetail:  NewScanDetail(cli, cfg.PollInterval),
+		logsPanel:   NewLogsPanel(cli, cfg.PollInterval),
 		streamState: client.StreamConnecting,
 		focus:       focusScans,
 	}
@@ -182,11 +198,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(m, Keys.Quit):
 			return a, tea.Quit
 		case key.Matches(m, Keys.New):
+			if a.cfg.ReadOnly {
+				return a, nil
+			}
 			w := NewWizard(a.cfg, a.cli, a.pipes, a.plugins)
 			w.SetSize(a.width, a.bodyHeight())
 			a.wizard = &w
 			return a, nil
 		case key.Matches(m, Keys.Cancel):
+			if a.cfg.ReadOnly {
+				return a, nil
+			}
 			if id := a.scanList.SelectedID(); id != "" {
 				c := NewConfirm(
 					"Cancel scan?",
@@ -197,6 +219,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 		case key.Matches(m, Keys.Delete):
+			if a.cfg.ReadOnly {
+				return a, nil
+			}
 			if id := a.scanList.SelectedID(); id != "" {
 				c := NewConfirm(
 					"Delete scan?",
@@ -211,7 +236,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if sid == "" {
 				return a, nil
 			}
-			v := NewLogsViewer(a.cli, sid, a.scanList.SelectedStatus())
+			v := NewLogsViewer(a.cli, sid, a.scanList.SelectedStatus(), a.cfg.PollInterval)
 			v.SetSize(a.width, a.bodyHeight())
 			a.logsViewer = &v
 			a.prevFocus = a.focus
@@ -482,7 +507,11 @@ func (a App) renderFooter() string {
 	textActive := a.wizard != nil ||
 		(a.reportPane != nil && a.reportPane.picker != nil) ||
 		(a.logsViewer != nil && a.logsViewer.picker != nil)
-	bindings := []key.Binding{Keys.Quit, Keys.New, Keys.Help, Keys.Tab}
+	bindings := []key.Binding{Keys.Quit}
+	if !a.cfg.ReadOnly {
+		bindings = append(bindings, Keys.New)
+	}
+	bindings = append(bindings, Keys.Help, Keys.Tab)
 	switch {
 	case a.wizard != nil:
 		bindings = []key.Binding{}
@@ -525,7 +554,9 @@ func (a App) renderFooter() string {
 			if isTerminal(a.scanList.SelectedStatus()) {
 				bindings = append(bindings, Keys.Report)
 			}
-			bindings = append(bindings, Keys.Cancel, Keys.Delete)
+			if !a.cfg.ReadOnly {
+				bindings = append(bindings, Keys.Cancel, Keys.Delete)
+			}
 		}
 	}
 	parts := make([]string, 0, len(bindings))

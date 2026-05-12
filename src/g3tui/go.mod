@@ -7,6 +7,7 @@ replace golismero.com/g3lib => ../g3lib
 replace golismero.com/g3log => ../g3log
 
 require (
+	github.com/alecthomas/kong v1.15.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
@@ -14,6 +15,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/gorilla/websocket v1.5.3
 	github.com/muesli/termenv v0.16.0
+	github.com/willabides/kongplete v0.4.0
 	golismero.com/g3lib v0.0.0-00010101000000-000000000000
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
@@ -56,6 +58,8 @@ require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
@@ -75,9 +79,11 @@ require (
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/nakagami/chacha20 v0.1.0 // indirect
 	github.com/nakagami/firebirdsql v0.9.18 // indirect
+	github.com/posener/complete v1.2.3 // indirect
 	github.com/redis/go-redis/v9 v9.19.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/riywo/loginshell v0.0.0-20200815045211-7d26008be1ab // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/wcharczuk/go-chart v2.0.1+incompatible // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect

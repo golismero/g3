@@ -35,7 +35,7 @@ type logsDebounceFiredMsg struct {
 	TaskID     string
 }
 
-// logsTickMsg is the periodic 2 s re-poll for the current binding.
+// logsTickMsg is the periodic re-poll for the current binding (interval per Config.PollInterval).
 // Generation guards against late ticks after a binding change.
 type logsTickMsg struct {
 	Generation int
@@ -55,16 +55,14 @@ type logsChunkMsg struct {
 // (docs/plans/2026-05-08-g3tui-layout-redesign-design.md).
 const logsDebounceDelay = 250 * time.Millisecond
 
-// pollInterval matches the cadence used by ScanList and ScanDetail.
-const logsPollInterval = 2 * time.Second
-
 // LogsPanel is the dashboard's bottom-right panel. It renders a live
 // preview of log output for whichever task the Tasks-panel cursor is
 // on. Polling is governed by the App-emitted binding messages; the
 // panel never reaches into the client layer outside of the fetch
 // commands defined here.
 type LogsPanel struct {
-	cli *client.Client
+	cli          *client.Client
+	pollInterval time.Duration
 
 	scanID     string
 	taskID     string
@@ -80,8 +78,8 @@ type LogsPanel struct {
 	focused bool
 }
 
-func NewLogsPanel(cli *client.Client) LogsPanel {
-	return LogsPanel{cli: cli, viewport: viewport.New(0, 0)}
+func NewLogsPanel(cli *client.Client, pollInterval time.Duration) LogsPanel {
+	return LogsPanel{cli: cli, pollInterval: pollInterval, viewport: viewport.New(0, 0)}
 }
 
 func (l *LogsPanel) SetSize(w, h int) {
@@ -318,7 +316,7 @@ func (l LogsPanel) fetchNowCmd() tea.Cmd {
 func (l LogsPanel) scheduleNextTickCmd() tea.Cmd {
 	gen := l.generation
 	sid, tid := l.scanID, l.taskID
-	return tea.Tick(logsPollInterval, func(time.Time) tea.Msg {
+	return tea.Tick(l.pollInterval, func(time.Time) tea.Msg {
 		return logsTickMsg{Generation: gen, ScanID: sid, TaskID: tid}
 	})
 }

@@ -32,6 +32,8 @@ cd src && make ../bin/g3tui
 
 `g3tui` reads `.env` on startup via `g3lib.LoadDotEnvFile()`, so the same `.env` that works for `g3cli` works for `g3tui` with no additional setup.
 
+Every required env var has a flag-level override; see `g3tui --help` for the full list. Precedence is **flag > env var > .env > built-in default**.
+
 **Required:**
 
 | Variable | Purpose |
@@ -119,6 +121,66 @@ Save destinations are picked through a small file browser with a filename field 
 JSON export writes to a temporary file in the destination directory and atomically renames into place on success. A cancel (`esc`) or error removes the temp file cleanly — you never get a half-written JSON file at the target path.
 
 Save paths do not perform shell-style expansion: `~` and `$HOME` are taken literally. Use absolute paths or relative paths from the directory shown at the top of the picker.
+
+## Command-line options
+
+`g3tui` is a Kong-based CLI. With no arguments it launches the dashboard (the default `run` subcommand); subcommands provide non-interactive utilities.
+
+```text
+g3tui [GLOBAL FLAGS] [<subcommand> [SUBCOMMAND FLAGS]]
+```
+
+### Global flags
+
+| Flag | Effect |
+|---|---|
+| `--server <url>` | Override `G3_API_BASEURL`. |
+| `--ws <url>` | Override `G3_API_WSURL`. |
+| `--token-file <path>` | Read bearer token from file (overrides `G3_API_TOKEN`). |
+| `--pipelines-dir <dir>` | Override `G3_PIPELINES_DIR`. |
+| `--log-level <level>` | Override `G3_CMD_LOG_LEVEL` (CRITICAL/ERROR/WARN/INFO/DEBUG). |
+| `--version` | Print version and exit. |
+| `--help` | Show help. |
+
+There is intentionally no `--token` flag — bearer tokens leak via process listings. Use `--token-file` or the `G3_API_TOKEN` env var.
+
+### Subcommands
+
+| Subcommand | Alias | Purpose |
+|---|---|---|
+| `run` | `r` | Launch the dashboard (default). |
+| `doctor` | `d` | Diagnose environment and server reachability. |
+| `pipelines list` | `p l` | List resolved scan-type pipelines. |
+| `pipelines validate` | `p v` | Validate one or more pipeline files. |
+| `completions <shell>` | `c` | Emit shell completion registration snippet (`bash`, `zsh`, `fish`). |
+
+### `run` flags
+
+| Flag | Effect |
+|---|---|
+| `--no-ws` | Force HTTP polling; never open a WebSocket. |
+| `--poll-interval <dur>` | Poll cadence; default `3s`. Applies to scan-progress, tasks, and inline logs uniformly. |
+| `--read-only` | Disable destructive keys (`n`, `c`, `d`). The footer hints update accordingly. |
+| `--theme dark\|light\|auto` | Force theme; default `auto` (current OSC 11 probe behavior). |
+
+A `run`-scoped flag at the root level (e.g. `g3tui --no-ws` with no subcommand) produces a `did you mean: g3tui run --no-ws ?` suggestion and exits non-zero.
+
+### Shell completion
+
+Tab-completion is supported in `bash`, `zsh`, and `fish`. Install with:
+
+```bash
+# bash
+g3tui completions bash >> ~/.bashrc
+
+# zsh
+g3tui completions zsh >> ~/.zshrc
+
+# fish
+g3tui completions fish >> ~/.config/fish/completions/g3tui.fish
+```
+
+The snippet registers `g3tui` for completion by pointing the shell back at the binary itself — the actual completion logic is baked into `g3tui`.
 
 ## Coexisting with g3cli
 

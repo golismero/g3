@@ -1,5 +1,7 @@
 # Tier 0 — Auth Removal — Implementation Plan
 
+**Status:** Shipped 2026-04-24 in commit `1cd97e0` ("Removed half-baked multiuser support."). Landed as a single commit rather than the eight-commit split this plan proposed; the resulting code state matches the plan. Verified complete on 2026-05-12 by codebase inspection: `src/g3lib/jwt.go` deleted; zero callers of `ValidateJwt`/`IsUserAuthorized`/`Login`/`GenerateJwt`; `requireToken` middleware wraps 16 handler registrations in `g3api.go`; `G3_API_TOKEN` present in `.env` and `docker-compose.yml`; `G3_JWT_SECRET`/`G3_JWT_LIFETIME` absent from all config; `users` and `scans` permission tables absent from SQL; `/api/auth` location block absent from nginx config. All task checkboxes below have been flipped to reflect the shipped state.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Strip user/JWT/ACL infrastructure from `g3api`, `g3cli`, and `g3lib`. Replace with a single shared bearer token (`G3_API_TOKEN`) checked in one middleware. Add WebSocket handshake auth that was previously absent. Matches the design in `docs/plans/2026-04-24-api-extensions-for-web-gui.md` (Tier 0 section).
@@ -53,7 +55,7 @@
 
 **Rationale for this intermediate shape.** Isolates the new primitive as its own commit so a reviewer can look at it without any handler noise. The binary is still functional because nothing calls the middleware yet.
 
-- [ ] **Step 1: Add imports to `src/g3api/g3api.go`**
+- [x] **Step 1: Add imports to `src/g3api/g3api.go`**
 
 In the existing `import` block, add (if not already present):
 
@@ -62,7 +64,7 @@ In the existing `import` block, add (if not already present):
 "strings"
 ```
 
-- [ ] **Step 2: Add the middleware helper in `src/g3api/g3api.go`**
+- [x] **Step 2: Add the middleware helper in `src/g3api/g3api.go`**
 
 Place this near the top of the file (below imports, above `main`). If the file already has a top-level helpers area, add it there:
 
@@ -84,7 +86,7 @@ func requireToken(expected string, h http.HandlerFunc) http.HandlerFunc {
 }
 ```
 
-- [ ] **Step 3: Load `G3_API_TOKEN` at startup in `g3api`**
+- [x] **Step 3: Load `G3_API_TOKEN` at startup in `g3api`**
 
 Find where other env vars are loaded in `main` (grep for `G3_JWT_SECRET` and add alongside). Add:
 
@@ -98,7 +100,7 @@ if apiToken == "" {
 
 Use the existing logger (`log.Critical` or equivalent — match style of adjacent env-required error). Keep `apiToken` in scope for the `http.HandleFunc` registrations that will consume it in Task 2.
 
-- [ ] **Step 4: Load `G3_API_TOKEN` at startup in `g3cli`**
+- [x] **Step 4: Load `G3_API_TOKEN` at startup in `g3cli`**
 
 In `src/g3cli/g3cli.go`, in the CLI entry point (where `cmdctx` or equivalent is constructed — grep for `os.Getenv` to find the existing env-read area), add:
 
@@ -112,7 +114,7 @@ if apiToken == "" {
 
 Store it on `cmdctx` (or the equivalent struct) alongside `BaseURL`. It is not yet consumed — Task 2 wires it into `MakeApiRequest` and the WS dialer.
 
-- [ ] **Step 5: Verify build passes**
+- [x] **Step 5: Verify build passes**
 
 ```
 cd src && make ../bin/g3api && make ../bin/g3cli
@@ -134,7 +136,7 @@ After this commit, a JWT-carrying client cannot authenticate and a bearer-carryi
 
 **Scope note.** The `Token` field remains *declared* in the request structs in `src/g3lib/api.go` — those are deleted in Task 3. This intermediate state is fine: the Go structs tolerate missing JSON fields on both ends.
 
-- [ ] **Step 1: Wrap every non-auth `http.HandleFunc` registration**
+- [x] **Step 1: Wrap every non-auth `http.HandleFunc` registration**
 
 In `src/g3api/g3api.go`, locate every `http.HandleFunc(apiPath + "/...", func(...){...})` call *except* the three `/auth/*` handlers (those get deleted in Task 3; leave them alone for this commit — their bodies will be stripped but the registrations stay until Task 3).
 
@@ -156,7 +158,7 @@ http.HandleFunc(apiPath + "/scan/stop", requireToken(apiToken, func(w http.Respo
 
 This is mechanical. If the file has 15 such calls, you make 15 edits with the same pattern.
 
-- [ ] **Step 2: Strip auth calls from handler bodies**
+- [x] **Step 2: Strip auth calls from handler bodies**
 
 Inside each now-wrapped handler body, delete the auth preamble. The existing pattern is one of two forms.
 
@@ -209,7 +211,7 @@ Find the code that parses the `auth` form field (around the existing `ParseMulti
 
 Delete any JWT validation inside the WS handler body. It's now gated at the middleware. The handler keeps its upgrade call and its message loop; per-message `Token` handling inside the loop stays for this commit (Task 3 strips the field from the envelope struct).
 
-- [ ] **Step 3: Update `g3cli`'s `MakeApiRequest` to send bearer header**
+- [x] **Step 3: Update `g3cli`'s `MakeApiRequest` to send bearer header**
 
 In `src/g3cli/g3cli.go`, the existing request code uses `g3lib.MakeApiRequest(ctx, cmdctx.BaseURL, path, request)`. That helper lives in `g3lib`. We have two compatible paths:
 
@@ -233,7 +235,7 @@ Update every call site in `src/g3cli/g3cli.go` to pass `cmdctx.ApiToken` (or whi
 
 **Path B (fallback if `MakeApiRequest` is also used somewhere else in a way that makes a signature change messy):** Drop to `http.NewRequest` inline in `g3cli` and set the header there. Prefer Path A if feasible.
 
-- [ ] **Step 4: Remove the login / refresh round-trip from `g3cli`**
+- [x] **Step 4: Remove the login / refresh round-trip from `g3cli`**
 
 Delete the login block at `src/g3cli/g3cli.go:182-194` (the `ReqLogin` / `MakeApiRequest("/auth/login", …)` sequence and the `token, ok := loginResp.Data.(string)` assertion that follows).
 
@@ -241,7 +243,7 @@ Remove any refresh code in the CLI. Grep `g3cli.go` for `/auth/refresh` and `/au
 
 Remove the `Username` and `Password` CLI flags — grep `Kong`/`CLI struct` / `--username` / `--password` to find them.
 
-- [ ] **Step 5: Update `/file/upload` sender in `g3cli`**
+- [x] **Step 5: Update `/file/upload` sender in `g3cli`**
 
 Around `src/g3cli/g3cli.go:252-356` (upload helper), find the multipart form construction. Delete the `writer.CreateFormField("auth")` line (circa line 278) and the subsequent write of the JWT string into that field. The multipart request now relies on the HTTP-level `Authorization` header set via `http.Request.Header.Set("Authorization", "Bearer "+apiToken)` at the call-site before `http.DefaultClient.Do`.
 
@@ -251,7 +253,7 @@ Add the header explicitly since this upload path likely builds its own `http.Req
 req.Header.Set("Authorization", "Bearer " + cmdctx.ApiToken)
 ```
 
-- [ ] **Step 6: Update the WS dialer in `g3cli`**
+- [x] **Step 6: Update the WS dialer in `g3cli`**
 
 Grep `g3cli.go` for `DialContext(` or `websocket.Dialer`. Find where the JWT-bearing `http.Header` is assembled. Replace it with:
 
@@ -263,7 +265,7 @@ conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, headers)
 
 If the handshake previously carried a JWT in some other way, mirror the same replacement.
 
-- [ ] **Step 7: Verify build passes on both binaries**
+- [x] **Step 7: Verify build passes on both binaries**
 
 ```
 cd src && make ../bin/g3api && make ../bin/g3cli
@@ -281,15 +283,15 @@ Expected: both build clean. Any remaining `undefined: userid` or `unused: err` i
 - Modify: `src/g3api/g3api.go`
 - Modify: `src/g3lib/api.go`
 
-- [ ] **Step 1: Delete `/auth/*` handler registrations in `src/g3api/g3api.go`**
+- [x] **Step 1: Delete `/auth/*` handler registrations in `src/g3api/g3api.go`**
 
 Delete the three blocks registering `/auth/login` (around line 254), `/auth/refresh` (around line 295), and `/auth/ticket` (around line 320). Delete their whole `http.HandleFunc(...)` invocation, including the closing paren and semicolon.
 
-- [ ] **Step 2: Delete `/file/download`, `/file/ls`, `/file/rm` handler registrations**
+- [x] **Step 2: Delete `/file/download`, `/file/ls`, `/file/rm` handler registrations**
 
 Grep `src/g3api/g3api.go` for `/file/download`, `/file/ls`, and `/file/rm`. Delete each matching `http.HandleFunc(...)` block in full.
 
-- [ ] **Step 3: Delete corresponding request/response types in `src/g3lib/api.go`**
+- [x] **Step 3: Delete corresponding request/response types in `src/g3lib/api.go`**
 
 Delete these type declarations:
 - `ReqLogin`, `RespLogin` (or the shape used for `/auth/login`)
@@ -299,11 +301,11 @@ Delete these type declarations:
 
 Grep the repo for each type name first to confirm no other caller exists. The compiler is the second check.
 
-- [ ] **Step 4: Remove `Token` field from remaining `Req*` structs**
+- [x] **Step 4: Remove `Token` field from remaining `Req*` structs**
 
 In `src/g3lib/api.go`, grep for `Token` struct fields. Every remaining `Req*` (those not deleted above) carries a `Token string` field — remove it. Also remove it from the WS message envelope struct (grep for `WsMessage`, `WsReq`, or similar — match the existing naming).
 
-- [ ] **Step 5: Verify build passes**
+- [x] **Step 5: Verify build passes**
 
 ```
 cd src && make ../bin/g3api && make ../bin/g3cli
@@ -311,7 +313,7 @@ cd src && make ../bin/g3api && make ../bin/g3cli
 
 Expected: both build. If `undefined: ReqLogin` appears, it means a caller wasn't fully removed in Task 2 — return and finish.
 
-- [ ] **Step 6: Verify nothing else references the deleted endpoints**
+- [x] **Step 6: Verify nothing else references the deleted endpoints**
 
 ```
 cd /home/crapula/code/g3 && grep -rn "auth/login\|auth/refresh\|auth/ticket\|file/download\|file/ls\|file/rm" src/ scripts/ tests/ docs/ 2>/dev/null
@@ -328,7 +330,7 @@ Expected: no hits in `src/`. Any hit in `docs/` is a documentation cleanup that 
 **Files:**
 - Modify: `src/g3api/g3api.go`
 
-- [ ] **Step 1: Update `/file/upload` handler**
+- [x] **Step 1: Update `/file/upload` handler**
 
 Find the upload handler in `src/g3api/g3api.go`. Locate the `os.MkdirAll` call that creates `/tmp/{userid}` and the `fmt.Sprintf("/tmp/%d/%s.bin", userid, uuid)` (or equivalent) path construction.
 
@@ -342,7 +344,7 @@ inputfile := fmt.Sprintf("/tmp/%s.bin", fileUUID)
 
 Delete the `os.MkdirAll` call entirely. `/tmp` already exists; the UUID namespace is flat.
 
-- [ ] **Step 2: Update `/scan/start` handler**
+- [x] **Step 2: Update `/scan/start` handler**
 
 The `/scan/start` handler reads the uploaded file (around the `g3api.go:437-489` area referenced in the design). Find the line constructing:
 
@@ -356,7 +358,7 @@ Replace with:
 inputfile := fmt.Sprintf("/tmp/%s.bin", parsedImport.Path)
 ```
 
-- [ ] **Step 3: Verify build passes**
+- [x] **Step 3: Verify build passes**
 
 ```
 cd src && make ../bin/g3api
@@ -374,7 +376,7 @@ Expected: clean build.
 - Delete: `src/g3lib/jwt.go`
 - Modify: `src/g3lib/sql.go`
 
-- [ ] **Step 1: Confirm `g3lib/jwt.go` has no remaining callers**
+- [x] **Step 1: Confirm `g3lib/jwt.go` has no remaining callers**
 
 ```
 cd /home/crapula/code/g3 && grep -rn "ValidateJwt\|GenerateJwt\|GenerateTemporaryJwt" src/ 2>/dev/null
@@ -382,13 +384,13 @@ cd /home/crapula/code/g3 && grep -rn "ValidateJwt\|GenerateJwt\|GenerateTemporar
 
 Expected: no hits outside `src/g3lib/jwt.go` itself. If any hit, return to Task 2 or Task 3 and finish the removal there — do not proceed.
 
-- [ ] **Step 2: Delete `src/g3lib/jwt.go`**
+- [x] **Step 2: Delete `src/g3lib/jwt.go`**
 
 ```
 git rm src/g3lib/jwt.go
 ```
 
-- [ ] **Step 3: Confirm no remaining callers of user/ACL helpers**
+- [x] **Step 3: Confirm no remaining callers of user/ACL helpers**
 
 ```
 cd /home/crapula/code/g3 && grep -rn "IsUserAuthorized\|AddUserToScan\|RemoveUserFromScan\|GetScansForUser\|\\bLogin\\b\|GetUserID" src/ 2>/dev/null
@@ -396,7 +398,7 @@ cd /home/crapula/code/g3 && grep -rn "IsUserAuthorized\|AddUserToScan\|RemoveUse
 
 Expected: no hits outside `src/g3lib/sql.go` (where the functions are defined and about to be deleted). `\bLogin\b` avoids matching substrings like `loginResp`.
 
-- [ ] **Step 4: Delete the six functions in `src/g3lib/sql.go`**
+- [x] **Step 4: Delete the six functions in `src/g3lib/sql.go`**
 
 Remove these function declarations (and only these — leave other helpers untouched):
 - `IsUserAuthorized`
@@ -408,7 +410,7 @@ Remove these function declarations (and only these — leave other helpers untou
 
 If any of these functions share a private helper that is now unused (grep after deletion), remove the helper too.
 
-- [ ] **Step 5: Verify build passes**
+- [x] **Step 5: Verify build passes**
 
 ```
 cd src && make all
@@ -416,7 +418,7 @@ cd src && make all
 
 Expected: every binary builds. `make all` is used here specifically to catch any downstream binary that imports `g3lib` and referenced a removed function.
 
-- [ ] **Step 6: Run linter**
+- [x] **Step 6: Run linter**
 
 ```
 cd /home/crapula/code/g3 && golangci-lint run ./src/...
@@ -433,7 +435,7 @@ Expected: clean, except for lint issues that existed before this work. Any new `
 **Files:**
 - Modify: `volumes/mariadb/initdb.d/create_tables.sql`
 
-- [ ] **Step 1: Rewrite `create_tables.sql`**
+- [x] **Step 1: Rewrite `create_tables.sql`**
 
 Replace the entire file content with:
 
@@ -460,7 +462,7 @@ CREATE TABLE `golismero`.`progress` (
 ) ENGINE = InnoDB;
 ```
 
-- [ ] **Step 2: Confirm no other schema artifacts reference `users` or `scans` (permissions)**
+- [x] **Step 2: Confirm no other schema artifacts reference `users` or `scans` (permissions)**
 
 ```
 cd /home/crapula/code/g3 && grep -rn "users\b\|\\bscans\b" volumes/mariadb/ 2>/dev/null
@@ -479,7 +481,7 @@ Expected: only the edited file. If any `.sql` seed or migration file references 
 - Modify: `docker-compose.yml`
 - Modify: `volumes/nginx/app.conf`
 
-- [ ] **Step 1: Update `.env`**
+- [x] **Step 1: Update `.env`**
 
 Remove the two lines:
 
@@ -499,7 +501,7 @@ G3_API_TOKEN=changeme
 
 Keep the new lines within the `G3_API_*` grouping (before `G3_WS_ADDR`).
 
-- [ ] **Step 2: Update `docker-compose.yml`**
+- [x] **Step 2: Update `docker-compose.yml`**
 
 Open `docker-compose.yml` and locate lines 219-220 (under the `g3api` service's `environment:` block):
 
@@ -516,7 +518,7 @@ Replace those two lines with:
 
 The bare-key form picks up the value from `.env` — matching how `REDIS_PORT`, `REDIS_PASSWORD`, `G3_WS_BUFFER`, etc. are passed through in this file.
 
-- [ ] **Step 3: Delete the `/api/auth` location block in `volumes/nginx/app.conf`**
+- [x] **Step 3: Delete the `/api/auth` location block in `volumes/nginx/app.conf`**
 
 Open the file and delete lines 16-21:
 
@@ -533,7 +535,7 @@ Leave the blank line separating it from `/api/file` for readability (or close up
 
 Leave `/api/file`, `/api/scan`, `/api/plugin`, and `/api/ws` blocks intact.
 
-- [ ] **Step 4: Grep for any remaining `JWT` or `admin:admin` references**
+- [x] **Step 4: Grep for any remaining `JWT` or `admin:admin` references**
 
 ```
 cd /home/crapula/code/g3 && grep -rn "JWT_SECRET\|JWT_LIFETIME\|admin:admin\|user:user" --exclude-dir=.git 2>/dev/null

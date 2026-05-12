@@ -21,7 +21,7 @@ import (
 // opened for the same scanID.
 var logsViewerGenCounter int
 
-// logsViewerTickMsg is the periodic 2 s re-poll for the viewer. The
+// logsViewerTickMsg is the periodic re-poll for the viewer (interval per Config.PollInterval). The
 // Generation and ScanID fields together identify which open instance
 // the tick belongs to, so a stale tick from a just-closed viewer is
 // not misrouted to a freshly-opened one for the same scanID.
@@ -50,12 +50,13 @@ type logsViewerClosedMsg struct{}
 type LogsViewer struct {
 	cli *client.Client
 
-	scanID     string
-	scanStatus g3lib.G3SCANSTATUS
-	generation int
-	entries    []g3lib.LogEntry
-	toolByTask map[string]string
-	toolWidth  int // cached visual width of the widest known [tool] prefix, capped at logsViewerToolCap
+	scanID       string
+	scanStatus   g3lib.G3SCANSTATUS
+	generation   int
+	entries      []g3lib.LogEntry
+	toolByTask   map[string]string
+	toolWidth    int          // cached visual width of the widest known [tool] prefix, capped at logsViewerToolCap
+	pollInterval time.Duration
 
 	viewport viewport.Model
 	wrap     bool // on by default: full-screen viewer prioritizes readability
@@ -71,17 +72,18 @@ type LogsViewer struct {
 
 const logsViewerToolCap = 12
 
-func NewLogsViewer(cli *client.Client, scanID string, scanStatus g3lib.G3SCANSTATUS) LogsViewer {
+func NewLogsViewer(cli *client.Client, scanID string, scanStatus g3lib.G3SCANSTATUS, pollInterval time.Duration) LogsViewer {
 	logsViewerGenCounter++
 	v := LogsViewer{
-		cli:        cli,
-		scanID:     scanID,
-		scanStatus: scanStatus,
-		generation: logsViewerGenCounter,
-		toolByTask: map[string]string{},
-		toolWidth:  1,
-		viewport:   viewport.New(0, 0),
-		wrap:       true,
+		cli:          cli,
+		scanID:       scanID,
+		scanStatus:   scanStatus,
+		generation:   logsViewerGenCounter,
+		toolByTask:   map[string]string{},
+		toolWidth:    1,
+		viewport:     viewport.New(0, 0),
+		wrap:         true,
+		pollInterval: pollInterval,
 	}
 	return v
 }
@@ -109,7 +111,7 @@ func (v *LogsViewer) SetScanStatus(status g3lib.G3SCANSTATUS) {
 }
 
 // InitCmd kicks off the first fetch and (for non-terminal scans)
-// schedules the 2 s tick implicitly via the chunk handler. Called
+// schedules the next tick implicitly via the chunk handler. Called
 // once by App immediately after constructing the viewer.
 func (v LogsViewer) InitCmd() tea.Cmd {
 	return v.fetchNowCmd()
@@ -421,7 +423,7 @@ func (v LogsViewer) fetchNowCmd() tea.Cmd {
 func (v LogsViewer) scheduleNextTickCmd() tea.Cmd {
 	sid := v.scanID
 	gen := v.generation
-	return tea.Tick(logsPollInterval, func(time.Time) tea.Msg {
+	return tea.Tick(v.pollInterval, func(time.Time) tea.Msg {
 		return logsViewerTickMsg{Generation: gen, ScanID: sid}
 	})
 }

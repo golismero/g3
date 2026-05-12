@@ -102,3 +102,11 @@ func validate(content string) error {
 	_, err := g3lib.ParseScript(nil, wrapped)
 	return err
 }
+
+// Validate is the exported wrapper around validate. It is used by g3tui's
+// `pipelines validate` subcommand to check user files without launching the
+// TUI. The accepted content is pipeline-only (no synthetic mode/target
+// lines); Validate wraps it internally before parsing.
+func Validate(content string) error {
+	return validate(content)
+}
