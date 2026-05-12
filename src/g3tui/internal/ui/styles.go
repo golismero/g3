@@ -52,4 +52,8 @@ var (
 			Foreground(lipgloss.Color("232")).
 			Background(lipgloss.Color("214")).
 			Padding(0, 1)
+	BannerSuccess = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("232")).
+			Background(lipgloss.Color("42")).
+			Padding(0, 1)
 )

@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -59,6 +60,11 @@ type LogsViewer struct {
 	viewport viewport.Model
 	wrap     bool // on by default: full-screen viewer prioritizes readability
 
+	picker        *FilePicker
+	banner        string
+	bannerStyle   lipgloss.Style
+	bannerExpires time.Time
+
 	width  int
 	height int
 }
@@ -110,7 +116,7 @@ func (v LogsViewer) InitCmd() tea.Cmd {
 }
 
 func (v LogsViewer) Help() []key.Binding {
-	return []key.Binding{Keys.GotoTop, Keys.GotoBottom, Keys.WrapToggle, Keys.Back}
+	return []key.Binding{Keys.Save, Keys.GotoTop, Keys.GotoBottom, Keys.WrapToggle, Keys.Back}
 }
 
 func (v LogsViewer) Update(msg tea.Msg) (LogsViewer, tea.Cmd) {
@@ -148,6 +154,11 @@ func (v LogsViewer) Update(msg tea.Msg) (LogsViewer, tea.Cmd) {
 		return v, v.scheduleNextTickCmd()
 
 	case tea.KeyMsg:
+		if v.picker != nil {
+			np, cmd := v.picker.Update(m)
+			v.picker = &np
+			return v, cmd
+		}
 		switch {
 		case key.Matches(m, Keys.Back):
 			return v, func() tea.Msg { return logsViewerClosedMsg{} }
@@ -170,6 +181,35 @@ func (v LogsViewer) Update(msg tea.Msg) (LogsViewer, tea.Cmd) {
 			if wasAtBottom {
 				v.viewport.GotoBottom()
 			}
+		case key.Matches(m, Keys.Save):
+			return v.openSavePicker()
+		}
+		return v, nil
+
+	case pickerSaveConfirmedMsg:
+		if v.picker == nil {
+			return v, nil
+		}
+		path := m.Path
+		v.picker = nil
+		return v.writeLogs(path)
+
+	case pickerCanceledMsg:
+		v.picker = nil
+		return v, nil
+
+	case logsViewerSavedMsg:
+		v.setBanner(BannerSuccess, fmt.Sprintf("Saved to %s", m.Path))
+		return v, v.expireBannerCmd()
+
+	case logsViewerSaveErrorMsg:
+		v.setBanner(BannerError, fmt.Sprintf("Save failed: %v", m.Err))
+		return v, v.expireBannerCmd()
+
+	case logsViewerBannerExpireMsg:
+		if !v.bannerExpires.IsZero() && time.Now().After(v.bannerExpires) {
+			v.banner = ""
+			v.bannerExpires = time.Time{}
 		}
 		return v, nil
 	}
@@ -179,9 +219,25 @@ func (v LogsViewer) Update(msg tea.Msg) (LogsViewer, tea.Cmd) {
 func (v LogsViewer) View() string {
 	title := AppTitle.Render(v.renderTitle(v.width - 4))
 	body := v.viewport.View()
-	return PaneBorderFocused.Width(v.width - 2).Height(v.height - 2).Render(
-		lipgloss.JoinVertical(lipgloss.Left, title, "", body),
+
+	parts := []string{title, ""}
+	if v.banner != "" {
+		parts = append(parts, v.bannerStyle.Width(v.width-4).Render(v.banner))
+	}
+	parts = append(parts, body)
+
+	rendered := PaneBorderFocused.Width(v.width - 2).Height(v.height - 2).Render(
+		lipgloss.JoinVertical(lipgloss.Left, parts...),
 	)
+
+	if v.picker != nil {
+		return lipgloss.Place(
+			v.width, v.height,
+			lipgloss.Center, lipgloss.Center,
+			v.picker.View(),
+		)
+	}
+	return rendered
 }
 
 func (v LogsViewer) renderTitle(maxWidth int) string {
@@ -284,6 +340,46 @@ func (v LogsViewer) toolFor(taskID string) string {
 	return "?"
 }
 
+// renderForSave returns the viewer's current entries formatted as
+// plain text for [S] save. Same line shape as applyContent (timestamp,
+// tool, body) but with no Lipgloss styling, no ANSI in the body, no
+// hanging-indent line wrapping. Used by the [S] save handler.
+func (v LogsViewer) renderForSave() string {
+	if len(v.entries) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, e := range v.entries {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		when := time.Unix(e.Timestamp, 0).Format("15:04:05")
+		tool := v.toolFor(e.TaskID)
+		cell := tool
+		width := v.toolWidth
+		if lipgloss.Width(cell) > width {
+			runes := []rune(cell)
+			if width <= 1 {
+				cell = "…"
+			} else {
+				cell = string(runes[:width-1]) + "…"
+			}
+		}
+		pad := width - lipgloss.Width(cell)
+		if pad < 0 {
+			pad = 0
+		}
+		b.WriteString(when)
+		b.WriteString(" [")
+		b.WriteString(cell)
+		b.WriteString("]")
+		b.WriteString(strings.Repeat(" ", pad))
+		b.WriteString("  ")
+		b.WriteString(g3lib.StripAnsi(e.Text))
+	}
+	return b.String()
+}
+
 // viewerLinePrefix builds the styled "HH:MM:SS [tool]  " prefix for a
 // log row and returns its visible column width. The tool cell is
 // end-ellipsised to width; the returned prefixWidth accounts for the
@@ -328,4 +424,48 @@ func (v LogsViewer) scheduleNextTickCmd() tea.Cmd {
 	return tea.Tick(logsPollInterval, func(time.Time) tea.Msg {
 		return logsViewerTickMsg{Generation: gen, ScanID: sid}
 	})
+}
+
+// logsViewerSavedMsg / logsViewerSaveErrorMsg / logsViewerBannerExpireMsg
+// are local to this file because they are not part of the client
+// transport — they are internal UI events emitted by the save handler
+// running as a tea.Cmd.
+type logsViewerSavedMsg struct{ Path string }
+type logsViewerSaveErrorMsg struct{ Err error }
+type logsViewerBannerExpireMsg struct{}
+
+func (v LogsViewer) openSavePicker() (LogsViewer, tea.Cmd) {
+	cwd, _ := os.Getwd()
+	if cwd == "" {
+		cwd = "."
+	}
+	short := v.scanID
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	pk := NewSaveFilePicker(cwd, fmt.Sprintf("%s-logs.log", short), "Save scan logs")
+	pk.SetSize(v.width, v.height)
+	cmd := pk.InitCmd()
+	v.picker = &pk
+	return v, cmd
+}
+
+func (v LogsViewer) writeLogs(path string) (LogsViewer, tea.Cmd) {
+	body := []byte(v.renderForSave())
+	return v, func() tea.Msg {
+		if err := os.WriteFile(path, body, 0o644); err != nil {
+			return logsViewerSaveErrorMsg{Err: err}
+		}
+		return logsViewerSavedMsg{Path: path}
+	}
+}
+
+func (v *LogsViewer) setBanner(style lipgloss.Style, text string) {
+	v.banner = text
+	v.bannerStyle = style
+	v.bannerExpires = time.Now().Add(5 * time.Second)
+}
+
+func (v LogsViewer) expireBannerCmd() tea.Cmd {
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg { return logsViewerBannerExpireMsg{} })
 }

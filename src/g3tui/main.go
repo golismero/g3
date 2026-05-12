@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/termenv"
 	"golismero.com/g3lib"
 	log "golismero.com/g3log"
 	"golismero.com/g3tui/internal/client"
@@ -69,11 +70,28 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Probe the terminal background ONCE here, before bubbletea takes over
+	// stdin. Glamour's WithAutoStyle does the same OSC 11 probe internally,
+	// but if called during the bubbletea event loop the asynchronous
+	// response leaks into the input stream as garbage keystrokes (visible
+	// in the save-mode FilePicker as `]11;rgb:...\` in the filename field).
+	// By detecting at startup and passing the resolved style through, we
+	// keep Glamour off the dynamic path entirely.
+	glamourStyle := "dark"
+	if !termenv.NewOutput(os.Stdout).HasDarkBackground() {
+		glamourStyle = "light"
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cli := client.New(cfg.BaseURL, cfg.WSURL, cfg.Token)
-	uiCfg := ui.Config{BaseURL: cfg.BaseURL, WSURL: cfg.WSURL, Token: cfg.Token}
+	uiCfg := ui.Config{
+		BaseURL:      cfg.BaseURL,
+		WSURL:        cfg.WSURL,
+		Token:        cfg.Token,
+		GlamourStyle: glamourStyle,
+	}
 
 	// Seed the plugin list once at startup. On failure, fall through to
 	// the RetryScreen — a small tea.Program that lets the user retry or

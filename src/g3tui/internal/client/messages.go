@@ -101,3 +101,30 @@ type ErrorMsg struct {
 	Op  string // human label like "/scan/start"
 	Err error
 }
+
+// ReportSaved is emitted on a successful [S] in the report viewer.
+// Path is the absolute path the report was written to.
+type ReportSaved struct {
+	Path string
+}
+
+// ReportSaveError is emitted when [S] in the report viewer fails to
+// write the file (permission denied, no space, etc.).
+type ReportSaveError struct {
+	Err error
+}
+
+// ExportDone is emitted when the JSON export goroutine finishes a
+// successful temp+rename. Path is the final destination.
+type ExportDone struct {
+	Path  string
+	Count int
+}
+
+// ExportError is emitted when the export goroutine fails (network,
+// disk full, cancellation). The temp file has been removed; Path is
+// the original target the user picked, useful for the error banner.
+type ExportError struct {
+	Path string
+	Err  error
+}

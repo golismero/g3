@@ -107,6 +107,28 @@ func (c *Client) GetReport(ctx context.Context, scanID string) (string, string, 
 	return raw.Report, raw.Errors, nil
 }
 
+// GetScanDataList → /scan/datalist. Returns all data object IDs for the
+// scan. Used by [E] export to enumerate IDs before batch-fetching the
+// objects themselves.
+func (c *Client) GetScanDataList(ctx context.Context, scanID string) ([]string, error) {
+	var out []string
+	if err := c.call(ctx, "/scan/datalist", g3lib.ReqGetScanDataIDs{ScanID: scanID}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetScanData → /scan/data. Fetches the data objects for the given IDs
+// in one batch. The server caps each call at 100 IDs; callers must
+// batch larger sets. We follow g3cli's batch size of 20 for export.
+// Returns the raw objects as []map[string]any so the caller can
+// re-marshal each one with the desired indentation for output.
+func (c *Client) GetScanData(ctx context.Context, scanID string, dataIDs []string) ([]map[string]any, error) {
+	var out []map[string]any
+	err := c.call(ctx, "/scan/data", g3lib.ReqLoadData{ScanID: scanID, DataIDs: dataIDs}, &out)
+	return out, err
+}
+
 // StartScan → /scan/start. Returns the new scan ID.
 func (c *Client) StartScan(ctx context.Context, script string) (string, error) {
 	var out string

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"golismero.com/g3tui/internal/client"
@@ -15,9 +16,10 @@ import (
 )
 
 type Config struct {
-	BaseURL string
-	WSURL   string
-	Token   string
+	BaseURL      string
+	WSURL        string
+	Token        string
+	GlamourStyle string // "dark" or "light"; detected at startup before bubbletea takes stdin
 }
 
 // panelFocus identifies which of the three dashboard panels owns
@@ -68,6 +70,7 @@ type App struct {
 	scanDetail  ScanDetail
 	logsPanel   LogsPanel
 	logsViewer  *LogsViewer
+	reportPane  *ReportPane
 	confirm     *Confirm
 	wizard      *Wizard
 	banner      string
@@ -114,11 +117,26 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.wizard.SetSize(a.width, a.bodyHeight())
 		}
 		if a.logsViewer != nil {
-			a.logsViewer.SetSize(a.rightPaneWidth(), a.bodyHeight())
+			a.logsViewer.SetSize(a.width, a.bodyHeight())
+		}
+		if a.reportPane != nil {
+			a.reportPane.SetSize(a.width, a.bodyHeight())
 		}
 		return a, nil
 
 	case tea.KeyMsg:
+		// Global Quit fires from anywhere except inside a text-accepting
+		// overlay. Wizard always absorbs (multiple textareas/inputs); a
+		// viewer absorbs only when its filename picker is open.
+		if key.Matches(m, Keys.Quit) {
+			textActive := a.wizard != nil ||
+				(a.reportPane != nil && a.reportPane.picker != nil) ||
+				(a.logsViewer != nil && a.logsViewer.picker != nil)
+			if !textActive {
+				return a, tea.Quit
+			}
+		}
+
 		// Modals own all keystrokes when active.
 		if a.wizard != nil {
 			w, cmd := a.wizard.Update(m)
@@ -128,6 +146,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.confirm != nil {
 			c, cmd := a.confirm.Update(m)
 			a.confirm = &c
+			return a, cmd
+		}
+		if a.reportPane != nil {
+			p, cmd := a.reportPane.Update(m)
+			a.reportPane = &p
 			return a, cmd
 		}
 		if a.logsViewer != nil {
@@ -189,10 +212,20 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			v := NewLogsViewer(a.cli, sid, a.scanList.SelectedStatus())
-			v.SetSize(a.rightPaneWidth(), a.bodyHeight())
+			v.SetSize(a.width, a.bodyHeight())
 			a.logsViewer = &v
 			a.prevFocus = a.focus
 			return a, v.InitCmd()
+		case key.Matches(m, Keys.Report):
+			sid := a.scanList.SelectedID()
+			if sid == "" || !isTerminal(a.scanList.SelectedStatus()) {
+				return a, nil
+			}
+			p := NewReportPane(a.cli, sid, a.scanList.SelectedStatus(), a.cfg.GlamourStyle)
+			p.SetSize(a.width, a.bodyHeight())
+			a.reportPane = &p
+			a.prevFocus = a.focus
+			return a, p.InitCmd()
 		}
 		// Routing per focused panel.
 		switch a.focus {
@@ -256,6 +289,18 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.applyFocus()
 		return a, nil
 
+	case reportFetchedMsg, spinner.TickMsg:
+		if a.reportPane == nil {
+			return a, nil
+		}
+		p, cmd := a.reportPane.Update(m)
+		a.reportPane = &p
+		return a, cmd
+
+	case reportPaneClosedMsg:
+		a.reportPane = nil
+		return a, nil
+
 	case client.StreamStateChanged:
 		a.streamState = m.State
 		return a, nil
@@ -288,12 +333,24 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.banner = ""
 		return a, nil
 	}
-	// Anything App didn't claim — forward to the wizard if active.
-	// This keeps wizard-internal messages (submit results, banner
-	// expiry) flowing through without an exhaustive type-switch here.
+	// Anything App didn't claim — forward to the active overlay so
+	// its internal messages (picker confirms/cancels, save/export
+	// results, banner expiries) flow through without an exhaustive
+	// type-switch here. The overlays are mutually exclusive in
+	// practice; the priority order mirrors the tea.KeyMsg block.
 	if a.wizard != nil {
 		w, cmd := a.wizard.Update(msg)
 		a.wizard = &w
+		return a, cmd
+	}
+	if a.reportPane != nil {
+		p, cmd := a.reportPane.Update(msg)
+		a.reportPane = &p
+		return a, cmd
+	}
+	if a.logsViewer != nil {
+		v, cmd := a.logsViewer.Update(msg)
+		a.logsViewer = &v
 		return a, cmd
 	}
 	return a, nil
@@ -348,6 +405,11 @@ func (a App) dispatchToScanList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.logsViewer.SetScanStatus(newStatus)
 		}
 	}
+	if a.reportPane != nil {
+		if newStatus := a.scanList.StatusByID(a.reportPane.scanID); newStatus != "" && newStatus != a.reportPane.scanStatus {
+			a.reportPane.SetScanStatus(newStatus)
+		}
+	}
 	return a, tea.Batch(cmds...)
 }
 
@@ -370,14 +432,10 @@ func (a App) View() string {
 		body = lipgloss.Place(a.width, a.bodyHeight(), lipgloss.Center, lipgloss.Center, a.wizard.View())
 	case a.confirm != nil:
 		body = lipgloss.Place(a.width, a.bodyHeight(), lipgloss.Center, lipgloss.Center, a.confirm.View())
+	case a.reportPane != nil:
+		body = a.reportPane.View()
 	case a.logsViewer != nil:
-		// Viewer replaces the right pane; scan list stays.
-		body = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			a.scanList.View(),
-			a.logsViewer.View(),
-		)
-		body = lipgloss.Place(a.width, a.bodyHeight(), lipgloss.Left, lipgloss.Top, body)
+		body = a.logsViewer.View()
 	default:
 		rightStack := lipgloss.JoinVertical(
 			lipgloss.Left,
@@ -429,6 +487,9 @@ func (a App) renderFooter() string {
 	case a.confirm != nil:
 		bindings = []key.Binding{Keys.Quit}
 		bindings = append(bindings, a.confirm.Help()...)
+	case a.reportPane != nil:
+		bindings = []key.Binding{Keys.Quit}
+		bindings = append(bindings, a.reportPane.Help()...)
 	case a.logsViewer != nil:
 		bindings = []key.Binding{Keys.Quit}
 		bindings = append(bindings, a.logsViewer.Help()...)

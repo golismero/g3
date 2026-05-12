@@ -24,6 +24,8 @@ type KeyMap struct {
 	New        key.Binding
 	Logs       key.Binding
 	Report     key.Binding
+	Save       key.Binding
+	Export     key.Binding
 	Yes        key.Binding
 	No         key.Binding
 	Retry      key.Binding
@@ -56,6 +58,8 @@ var Keys = KeyMap{
 	New:        key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new")),
 	Logs:       key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "logs")),
 	Report:     key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "report")),
+	Save:       key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "save")),
+	Export:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export")),
 	Yes:        key.NewBinding(key.WithKeys("y", "Y"), key.WithHelp("y", "yes")),
 	No:         key.NewBinding(key.WithKeys("n", "N", "esc"), key.WithHelp("n", "no")),
 	Retry:      key.NewBinding(key.WithKeys("r", "R"), key.WithHelp("r", "retry")),
