@@ -115,7 +115,7 @@ func ParsePluginTemplates(i18npath string) (g3lib.G3PluginTemplates, error) {
 			pluginTemplates["affects"] = "{{range .affects}}* {{.}}\n{{end}}"
 		}
 		if _, ok := pluginTemplates["references"]; !ok {
-			pluginTemplates["references"] = "{{range .references}}* [{{.}}[({{.}})\n{{end}}"
+			pluginTemplates["references"] = "{{range .references}}* [{{.}}]({{.}})\n{{end}}"
 		}
 		if _, ok := pluginTemplates["summary"]; !ok {
 			if value, ok := pluginTemplates["description"]; !ok {
