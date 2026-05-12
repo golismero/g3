@@ -65,7 +65,8 @@ type ReportPane struct {
 	viewport viewport.Model
 	spinner  spinner.Model
 
-	picker *FilePicker
+	picker        *FilePicker
+	exportPending bool // set true by openExportPicker; consumed by pickerSaveConfirmedMsg
 
 	banner        string
 	bannerStyle   lipgloss.Style
@@ -227,13 +228,15 @@ func (p ReportPane) Update(msg tea.Msg) (ReportPane, tea.Cmd) {
 		}
 		path := m.Path
 		p.picker = nil
-		if p.state == reportLoaded {
-			return p.writeMarkdown(path)
+		if p.exportPending {
+			p.exportPending = false
+			return p.startExport(path)
 		}
-		return p.startExport(path)
+		return p.writeMarkdown(path)
 
 	case pickerCanceledMsg:
 		p.picker = nil
+		p.exportPending = false
 		return p, nil
 
 	case client.ReportSaved:
@@ -408,6 +411,7 @@ func firstLine(s string) string {
 type bannerExpireMsg struct{}
 
 func (p ReportPane) openSavePicker() (ReportPane, tea.Cmd) {
+	p.exportPending = false
 	cwd, _ := os.Getwd()
 	if cwd == "" {
 		cwd = "."
@@ -424,6 +428,7 @@ func (p ReportPane) openSavePicker() (ReportPane, tea.Cmd) {
 }
 
 func (p ReportPane) openExportPicker() (ReportPane, tea.Cmd) {
+	p.exportPending = true
 	cwd, _ := os.Getwd()
 	if cwd == "" {
 		cwd = "."

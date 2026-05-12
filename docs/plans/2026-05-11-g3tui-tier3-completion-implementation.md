@@ -2039,3 +2039,19 @@ Fix:
 Effect: on a 22-row terminal the file list shows 5 entries instead of 10; the picker fits within the terminal; `lipgloss.Place` can center it properly. On a 30-row terminal the cap kicks in at 10 entries (existing behavior). Below 20 rows the user sees a clear warning rather than a broken layout.
 
 The picker thresholds (60×20) are higher than the dashboard's (60×14) because the save-mode picker has more internal chrome (two nested sub-boxes vs the dashboard's flat panels).
+
+### Refinement F — `[E]` export writes JSON, not Markdown (intent flag)
+
+**File:** `src/g3tui/internal/ui/report.go`
+
+The user tested `[E]` and got a `.json` file containing the Markdown report. Root cause: the `pickerSaveConfirmedMsg` handler dispatched based on `p.state == reportLoaded` to choose between `writeMarkdown` and `startExport`. But the picker can only be opened FROM `reportLoaded`, and state doesn't transition until inside `writeMarkdown` or `startExport`. So the condition was always true at confirm time, and `startExport` was unreachable — both `[S]` and `[E]` flowed into `writeMarkdown`. The filename suffix from `openExportPicker` (`.json`) was preserved, but the bytes written were the Markdown report.
+
+Fix: replaced the state-based dispatch with an explicit intent flag.
+
+- Added `exportPending bool` field to `ReportPane`.
+- `openExportPicker` sets `p.exportPending = true` before constructing the picker.
+- `openSavePicker` sets `p.exportPending = false` (defensive — clears any leftover state from a canceled export).
+- `pickerSaveConfirmedMsg` checks `p.exportPending`: when true, clears the flag and calls `startExport`; otherwise calls `writeMarkdown`.
+- `pickerCanceledMsg` clears the flag so a canceled export doesn't bleed intent into a subsequent save.
+
+Lesson: this is a state-machine bug both reviewers missed because each reviewed an individual path (writeMarkdown OK; startExport OK) without asking the meta-question "can both branches actually fire?" The original spec conflated "where am I now" (state) with "what was I about to do" (intent) — two different concepts that need separate variables. Behavioral testing (the user actually running `[E]` and opening the produced file) caught what neither static review did.
