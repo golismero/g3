@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -352,6 +353,27 @@ func (p ReportPane) renderTitle(maxWidth int) string {
 	return "Report"
 }
 
+// htmlImgWithPRe and htmlImgRe rewrite HTML <img> tags in the report
+// markdown to "*[Image: <alt>]*" text before Glamour sees them.
+// Glamour configures goldmark without WithUnsafe(), so raw HTML blocks
+// like the pie-chart <p><img src='data:image/png;base64,…'/></p> emitted
+// by the server's report template are dropped entirely at render time —
+// taking the alt-text inside the <img> with them. Preprocessing here is
+// contained to g3tui; the server's markdown is unchanged for the web GUI
+// and g3cli report consumers.
+//
+// More architecturally correct alternative: register a custom goldmark
+// renderer with WithUnsafe() that intercepts HTMLBlock/HTMLSpan nodes
+// containing <img> and rewrites them to ImageElement nodes (or emits the
+// same text fallback). Not adopted because Glamour does not expose its
+// internal goldmark instance — adopting it would require either forking
+// Glamour or building a parallel rendering pipeline, both
+// disproportionate complexity for the same user-visible output.
+var (
+	htmlImgWithPRe = regexp.MustCompile(`(?i)<p[^>]*>\s*<img\s+[^>]*\balt=['"]([^'"]*)['"][^>]*/?>\s*</p>`)
+	htmlImgRe      = regexp.MustCompile(`(?i)<img\s+[^>]*\balt=['"]([^'"]*)['"][^>]*/?>`)
+)
+
 // renderAndApply re-renders the cached markdown through Glamour at the
 // current viewport width and pushes the result into the viewport.
 // Called on initial load and on every resize.
@@ -371,7 +393,9 @@ func (p *ReportPane) renderAndApply() {
 		p.viewport.SetContent(p.rendered)
 		return
 	}
-	out, err := r.Render(p.markdown)
+	md := htmlImgWithPRe.ReplaceAllString(p.markdown, "*[Image: $1]*")
+	md = htmlImgRe.ReplaceAllString(md, "*[Image: $1]*")
+	out, err := r.Render(md)
 	if err != nil {
 		p.rendered = p.markdown
 		p.viewport.SetContent(p.rendered)

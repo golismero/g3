@@ -10,7 +10,7 @@
 
 **Source spec:** [`docs/plans/2026-05-11-g3tui-tier3-completion-design.md`](2026-05-11-g3tui-tier3-completion-design.md)
 
-**Status:** Ready to implement.
+**Status:** Implemented and tested 2026-05-12. All seven tasks shipped via `e095126` (initial impl through Refinement C); `a1ea2d6` (Refinements D + E + the `q`-in-viewers fix); `fab3f68` (Refinement F — `[E]` JSON export routing). The user's behavioral testing surfaced six refinements (A-F) plus the global-Quit guard, all documented in **Post-implementation refinements** below. Two follow-ups remain deferred — see the section at the bottom.
 
 **Tests are user-owned** (memory: `feedback_tests_are_user_owned.md`). The plan does not include test-writing or behavioral-testing tasks. **Agent verification per task is strictly `go build ./...` (or `make bin`) + `golangci-lint run ./...`.** No `bin/g3tui` runs, no `docker compose` interactions, no live API calls.
 
@@ -2055,3 +2055,31 @@ Fix: replaced the state-based dispatch with an explicit intent flag.
 - `pickerCanceledMsg` clears the flag so a canceled export doesn't bleed intent into a subsequent save.
 
 Lesson: this is a state-machine bug both reviewers missed because each reviewed an individual path (writeMarkdown OK; startExport OK) without asking the meta-question "can both branches actually fire?" The original spec conflated "where am I now" (state) with "what was I about to do" (intent) — two different concepts that need separate variables. Behavioral testing (the user actually running `[E]` and opening the produced file) caught what neither static review did.
+
+## Deferred follow-ups
+
+These were surfaced during behavioral testing of the Tier 3 work but explicitly deferred — they require additional research or live outside the Tier 3 scope.
+
+### Markdown image placeholders in Glamour-rendered reports
+
+The user added pie-chart alt text at the report-generation layer (commit `cbc8480`, touches `i18n/en.json`). Confirmed afterwards that Glamour still does not produce a visible placeholder in the rendered output even when alt text is present in the source Markdown — the image element seems to be silently dropped or rendered without the alt text being preserved.
+
+Investigation needed before a fix can be specified:
+
+- Does Glamour's renderer support image element rendering at all in its current version, or does it strip them?
+- If it strips them, can a Glamour `StyleConfig` override the `Image` rule to render alt text? Or is preprocessing the Markdown (replacing `![alt](url)` with `[Image: alt — url]` text before passing to `glamour.Render`) the simpler path?
+- The server's report generator currently embeds an image; should it be changed to emit a text fallback alongside the image for terminal renderers, controlled by a request flag?
+
+Not blocking. The report still renders correctly otherwise; just the image is invisible.
+
+### Hyperlink behavior (OSC 8) in Glamour-rendered reports
+
+User observed during testing: some hyperlinks in rendered reports show in custom styling, others render as raw `[text](url)` Markdown source — but strangely *are* clickable in the latter form. The first form's clickability is unclear.
+
+Investigation needed before a fix can be specified:
+
+- Why does Glamour render some links one way and others another? Is it a function of the link target (relative vs absolute, scheme), the surrounding context (heading vs paragraph vs list item), or a bug in the current Glamour version pinned in `go.mod`?
+- For the cases that render as raw `[text](url)` — what's making them clickable? Modern terminals (Windows Terminal, iTerm2) auto-detect URLs in plain text and make them clickable; that explains the raw-form behavior. The custom-styled form must be emitting OSC 8 or be relying on auto-detection of the styled text — needs tracing.
+- Should we standardize on Glamour emitting OSC 8 for all links, or rely on terminal auto-detection of URLs? OSC 8 is more reliable cross-terminal but Glamour's defaults don't emit it.
+
+Not blocking. Links are usable today; the inconsistency is cosmetic.
