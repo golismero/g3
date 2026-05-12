@@ -23,6 +23,10 @@ import (
 	log "golismero.com/g3log"
 )
 
+// Version is overwritten at link time by release builds via
+// -ldflags "-X main.Version=...". Stays "dev" for local builds.
+var Version = "dev"
+
 const G3_API_BASEURL = "G3_API_BASEURL"
 const G3_API_WSURL = "G3_API_WSURL"
 const G3_API_TOKEN = "G3_API_TOKEN"
@@ -92,7 +96,8 @@ type RmCmd struct {
 }
 
 var CLI struct {
-	Quiet    bool   `short:"q" default:"false" help:"Quiet mode."`
+	Quiet   bool             `short:"q" default:"false" help:"Quiet mode."`
+	Version kong.VersionFlag `                          help:"Show version and exit."`
 
 	Scan     ScanCmd     `cmd:"" aliases:"s" help:"Start a new scan or re-start an existing stopped scan."`
 	Progress ProgressCmd `cmd:"" aliases:"w" help:"Show the progress of each running scan in real time."`
@@ -115,6 +120,7 @@ func main() {
 		kong.Description("Golismero3 - The Pentesting Swiss Army Knife"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
+		kong.Vars{"version": Version},
 	)
 
 	// Load the environment variables.

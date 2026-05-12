@@ -10,7 +10,7 @@
 
 **Source spec:** [`docs/plans/2026-05-11-g3tui-tier3-completion-design.md`](2026-05-11-g3tui-tier3-completion-design.md)
 
-**Status:** Implemented and tested 2026-05-12. All seven tasks shipped via `e095126` (initial impl through Refinement C); `a1ea2d6` (Refinements D + E + the `q`-in-viewers fix); `fab3f68` (Refinement F — `[E]` JSON export routing). The user's behavioral testing surfaced six refinements (A-F) plus the global-Quit guard, all documented in **Post-implementation refinements** below. Two follow-ups remain deferred — see the section at the bottom.
+**Status:** Implemented and tested 2026-05-12. All seven tasks shipped via `e095126` (initial impl through Refinement C); `a1ea2d6` (Refinements D + E + the `q`-in-viewers fix); `fab3f68` (Refinement F — `[E]` JSON export routing). The user's behavioral testing surfaced six refinements (A-F) plus the global-Quit guard, all documented in **Post-implementation refinements** below. Both previously-deferred follow-ups (Markdown image placeholders in Glamour, hyperlink inconsistency) were resolved on 2026-05-12 — see **Refinement G** and **Resolved follow-ups** at the bottom.
 
 **Tests are user-owned** (memory: `feedback_tests_are_user_owned.md`). The plan does not include test-writing or behavioral-testing tasks. **Agent verification per task is strictly `go build ./...` (or `make bin`) + `golangci-lint run ./...`.** No `bin/g3tui` runs, no `docker compose` interactions, no live API calls.
 
@@ -2056,30 +2056,58 @@ Fix: replaced the state-based dispatch with an explicit intent flag.
 
 Lesson: this is a state-machine bug both reviewers missed because each reviewed an individual path (writeMarkdown OK; startExport OK) without asking the meta-question "can both branches actually fire?" The original spec conflated "where am I now" (state) with "what was I about to do" (intent) — two different concepts that need separate variables. Behavioral testing (the user actually running `[E]` and opening the produced file) caught what neither static review did.
 
-## Deferred follow-ups
+### Refinement G — HTML `<img>` text fallback for Glamour-rendered reports
 
-These were surfaced during behavioral testing of the Tier 3 work but explicitly deferred — they require additional research or live outside the Tier 3 scope.
+**File:** `src/g3tui/internal/ui/report.go`
 
-### Markdown image placeholders in Glamour-rendered reports
+Closes the first of the two previously-deferred follow-ups (Markdown image placeholders).
 
-The user added pie-chart alt text at the report-generation layer (commit `cbc8480`, touches `i18n/en.json`). Confirmed afterwards that Glamour still does not produce a visible placeholder in the rendered output even when alt text is present in the source Markdown — the image element seems to be silently dropped or rendered without the alt text being preserved.
+Investigation established that Glamour v1.0.0 configures goldmark **without** `WithUnsafe()`. Raw HTML blocks are silently dropped at render time — including the server's pie-chart `<p style='text-align: center;'><img alt='...' src='data:image/png;base64,...'/></p>`. Goldmark strips the entire `<p>` block, taking the alt text inside the `<img>` attribute with it. The alt text the user added in `cbc8480` was correctly placed, but Glamour's pipeline never saw it.
 
-Investigation needed before a fix can be specified:
+Glamour does render native Markdown `![alt](url)` via its `ImageElement`, but for a `data:image/png;base64,...` URL it would print the multi-megabyte base64 string after the alt text — worse UX than the current invisible-image state.
 
-- Does Glamour's renderer support image element rendering at all in its current version, or does it strip them?
-- If it strips them, can a Glamour `StyleConfig` override the `Image` rule to render alt text? Or is preprocessing the Markdown (replacing `![alt](url)` with `[Image: alt — url]` text before passing to `glamour.Render`) the simpler path?
-- The server's report generator currently embeds an image; should it be changed to emit a text fallback alongside the image for terminal renderers, controlled by a request flag?
+Fix: regex-preprocess the markdown in `renderAndApply` before handing it to Glamour. Two passes:
 
-Not blocking. The report still renders correctly otherwise; just the image is invisible.
+1. `(?i)<p[^>]*>\s*<img\s+[^>]*\balt=['"]([^'"]*)['"][^>]*/?>\s*</p>` → `*[Image: $1]*`
+2. `(?i)<img\s+[^>]*\balt=['"]([^'"]*)['"][^>]*/?>` → `*[Image: $1]*`
 
-### Hyperlink behavior (OSC 8) in Glamour-rendered reports
+The first pass handles the server's current wrapped-in-`<p>` emission. The second is a fallback for any future bare `<img>` tag. Without the first pass, leaving the `<p>` wrapper in place would still trigger goldmark's HTML-block stripping and drop the substituted text along with everything else inside the block.
 
-User observed during testing: some hyperlinks in rendered reports show in custom styling, others render as raw `[text](url)` Markdown source — but strangely *are* clickable in the latter form. The first form's clickability is unclear.
+Architecturally cleaner alternative — register a custom goldmark renderer with `WithUnsafe()` that intercepts `HTMLBlock`/`HTMLSpan` nodes containing `<img>` and rewrites them to `ImageElement` nodes — is not adopted because Glamour does not expose its internal goldmark instance. Adopting it would require either forking Glamour or building a parallel rendering pipeline, disproportionate complexity for the same user-visible output. Documented as a comment above the regex declarations in `report.go` so a future maintainer has the breadcrumb if/when the simple preprocessing stops covering the cases.
 
-Investigation needed before a fix can be specified:
+The web GUI (issue #2 magenta reports) and `g3cli report` are unaffected — the preprocessing is contained to g3tui's Glamour call site and does not change what the server emits.
 
-- Why does Glamour render some links one way and others another? Is it a function of the link target (relative vs absolute, scheme), the surrounding context (heading vs paragraph vs list item), or a bug in the current Glamour version pinned in `go.mod`?
-- For the cases that render as raw `[text](url)` — what's making them clickable? Modern terminals (Windows Terminal, iTerm2) auto-detect URLs in plain text and make them clickable; that explains the raw-form behavior. The custom-styled form must be emitting OSC 8 or be relying on auto-detection of the styled text — needs tracing.
-- Should we standardize on Glamour emitting OSC 8 for all links, or rely on terminal auto-detection of URLs? OSC 8 is more reliable cross-terminal but Glamour's defaults don't emit it.
+## Resolved follow-ups
 
-Not blocking. Links are usable today; the inconsistency is cosmetic.
+These were surfaced during behavioral testing of the Tier 3 work and originally deferred pending investigation. Both were resolved on 2026-05-12.
+
+### Markdown image placeholders in Glamour-rendered reports — RESOLVED
+
+**Resolution:** Refinement G above. Client-side regex preprocessing in `renderAndApply` rewrites `<img>` tags to `*[Image: <alt>]*` markdown italic text before Glamour sees them.
+
+**Original deferred questions (answered during investigation):**
+
+- *Does Glamour's renderer support image element rendering at all?* Yes for Markdown `![alt](url)` (via `ImageElement`); no for HTML `<img>` tags (dropped by goldmark in default safe mode).
+- *Can a `StyleConfig` override fix it?* No — `HTMLBlock`/`HTMLSpan` style entries only apply when raw HTML is permitted through, which Glamour blocks by not passing `WithUnsafe()` to goldmark.
+- *Preprocessing `![alt](url)` → text?* Not applicable: the server emits HTML `<img>` with embedded base64 data URLs, not Markdown image syntax.
+- *Should the server emit a text fallback alongside the image?* Considered (option 2), not adopted. Client-side preprocessing keeps the fix contained to the consumer that needs it; the web GUI continues to receive the real `<img>`.
+
+### Hyperlink behavior in Glamour-rendered reports — RESOLVED
+
+**Resolution:** Traced to a **server-side typo** in [`src/g3config/g3config.go:118`](../../src/g3config/g3config.go#L118). Fixed by a single-character correction. Not a g3tui or Glamour issue.
+
+The default fallback template for the `references` section in `ParsePluginTemplates` was:
+
+```go
+pluginTemplates["references"] = "{{range .references}}* [{{.}}[({{.}})\n{{end}}"
+```
+
+The `[{{.}}[(` was a typo for `[{{.}}](` — a single `]` mis-typed as `[`. Every plugin that does not define its own `references` template (which is all current ones — testssl, nmap, etc.) fell through to this default and produced malformed markdown like `* [URL[(URL)`.
+
+**Why the inconsistent rendering observation was a red herring:**
+
+- The CVE/CWE taxonomy section ([`report.go:464`](../../src/g3lib/report.go#L464)) and the tools table ([`report.go:181`](../../src/g3lib/report.go#L181)) format their links with `fmt.Sprintf("[%s](%s)", ...)` — correct Markdown. Glamour parses them as links and styles them with its `Link` style.
+- The malformed `[URL[(URL)` pattern is not recognized by goldmark as a link; it falls through as plain text. Modern terminals (Windows Terminal, iTerm2, WezTerm) auto-detect raw `https://` substrings and make them clickable independent of any escape sequences — which is why the broken pattern was still functional but unstyled.
+- Glamour v1.0.0 does not emit OSC 8 hyperlink escapes for any link; the clickability of well-formed links also comes from terminal URL auto-detection, just over Glamour's styled output. There was never an OSC 8 question to answer — the visible difference was purely Glamour's link styling on well-formed links vs no styling on plain text.
+
+Existing reports stored in Redis/Mongo retain the bug until rebuilt; new scans produce well-formed reference links.

@@ -16,6 +16,10 @@ import (
 	"golismero.com/g3tui/internal/ui"
 )
 
+// Version is overwritten at link time by release builds via
+// -ldflags "-X main.Version=...". Stays "dev" for local builds.
+var Version = "dev"
+
 const (
 	G3_API_BASEURL   = "G3_API_BASEURL"
 	G3_API_WSURL     = "G3_API_WSURL"

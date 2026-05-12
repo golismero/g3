@@ -1,0 +1,150 @@
+name: Release Binaries
+
+# Cross-compiles g3tui and g3cli for the six release targets and attaches
+# them to the GitHub Release matching the pushed tag. Triggered only by
+# tag pushes that look like a version (v1.2.3, v0.1.0-rc1, etc.) — main
+# branch CI is handled separately by CI.yml.
+#
+# Both binaries are pure Go (no cgo), so the entire 6-platform matrix runs
+# on a single ubuntu-latest image via GOOS/GOARCH env vars. No QEMU, no
+# per-OS runners needed.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+
+  cross-compile:
+    name: Build (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # `target` is the user-facing platform label embedded in the zip
+        # filename. `goos`/`goarch` are the Go toolchain values (e.g. amd64,
+        # not x86_64). `ext` is appended to each binary name — empty on
+        # Unix-like systems, `.exe` on Windows.
+        include:
+          - target: linux-x86_64
+            goos: linux
+            goarch: amd64
+            ext: ""
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+            ext: ""
+          - target: windows-x86_64
+            goos: windows
+            goarch: amd64
+            ext: ".exe"
+          - target: windows-arm64
+            goos: windows
+            goarch: arm64
+            ext: ".exe"
+          - target: macos-x86_64
+            goos: darwin
+            goarch: amd64
+            ext: ""
+          - target: macos-arm64
+            goos: darwin
+            goarch: arm64
+            ext: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      # go.mod is the authoritative source for the Go toolchain version
+      # (matches the convention used throughout CI.yml). Either binary's
+      # go.mod works — they're kept in lockstep — so we read from g3tui.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/g3tui/go.mod
+
+      # All template expressions are routed through env: so the values are
+      # exposed as plain bash variables. Inlining `${{ ... }}` directly into
+      # `run:` blocks is a known workflow-injection vector — even when the
+      # source looks safe (tag names, matrix values), env routing keeps the
+      # value out of the shell parser.
+      - name: Build g3tui and g3cli
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          VERSION: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -e
+          mkdir -p "dist/${TARGET}"
+          for bin in g3tui g3cli; do
+            ( cd "src/${bin}" && \
+              go build \
+                -trimpath \
+                -ldflags="-s -w -X main.Version=${VERSION}" \
+                -o "../../dist/${TARGET}/${bin}${EXT}" \
+                . )
+          done
+
+      # Flat zip — `cd` into the per-target dir so the archive contains the
+      # binaries at the root (no embedded "dist/linux-x86_64/" prefix). Users
+      # who download the zip get `g3tui` and `g3cli` directly on extract.
+      - name: Create zip
+        env:
+          VERSION: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -e
+          cd "dist/${TARGET}"
+          zip "../../g3-${VERSION}-${TARGET}.zip" *
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g3-${{ matrix.target }}
+          path: g3-${{ github.ref_name }}-${{ matrix.target }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Attach to Release
+    needs: [cross-compile]
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to create the release (if it doesn't exist yet) and upload
+      # assets. Scoped to this job only — the matrix job above stays
+      # contents: read.
+      contents: write
+    steps:
+      # `merge-multiple: true` flattens all six matrix artifacts into one
+      # directory, so the subsequent glob picks up every zip without
+      # walking nested per-artifact dirs.
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Produces one `<zip>.sha256` per zip in canonical `sha256sum` format
+      # (hash, two spaces, filename). Generating from inside `dist/` records
+      # bare filenames, so `sha256sum -c g3-...-linux-x86_64.zip.sha256`
+      # verifies correctly from wherever the user extracts.
+      - name: Generate SHA-256 checksums
+        working-directory: dist
+        run: |
+          set -e
+          for f in *.zip; do
+            sha256sum "$f" > "${f}.sha256"
+          done
+
+      # softprops/action-gh-release creates the release if it doesn't exist
+      # and appends assets if it does — safe to re-run on the same tag.
+      # `fail_on_unmatched_files` ensures the workflow fails loudly if the
+      # download step produced nothing instead of silently publishing an
+      # empty release.
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.zip.sha256
+          fail_on_unmatched_files: true
