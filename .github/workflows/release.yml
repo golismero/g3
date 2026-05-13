@@ -1,13 +1,24 @@
 name: Release Binaries
 
-# Cross-compiles g3tui and g3cli for the six release targets and attaches
-# them to the GitHub Release matching the pushed tag. Triggered only by
-# tag pushes that look like a version (v1.2.3, v0.1.0-rc1, etc.) — main
-# branch CI is handled separately by CI.yml.
+# Cross-compiles the release binaries and attaches them to the GitHub
+# Release matching the pushed tag. Triggered only by tag pushes that look
+# like a version (v1.2.3, v0.1.0-rc1, etc.) — main branch CI is handled
+# separately by CI.yml.
 #
-# Both binaries are pure Go (no cgo), so the entire 6-platform matrix runs
-# on a single ubuntu-latest image via GOOS/GOARCH env vars. No QEMU, no
-# per-OS runners needed.
+# Two parallel artifacts are produced per platform:
+#   - g3-${VERSION}-${TARGET}.zip       : g3cli + g3tui (six targets,
+#                                         linux/macos/windows × amd64/arm64)
+#   - g3-local-${VERSION}-${TARGET}.zip : g3 + config/ (four targets,
+#                                         linux/macos × amd64/arm64)
+#
+# g3 is omitted from windows targets because it shells out to `docker run`
+# with Unix-style relative paths and host-path mounts that don't translate
+# cleanly under Docker Desktop for Windows. WSL users on Windows can run
+# the linux-x86_64 local zip instead.
+#
+# All binaries are pure Go (no cgo), so every target builds on a single
+# ubuntu-latest image via GOOS/GOARCH env vars. No QEMU, no per-OS runners
+# needed.
 
 on:
   push:
@@ -107,9 +118,103 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  cross-compile-local:
+    name: Build local (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            goos: linux
+            goarch: amd64
+          - target: linux-arm64
+            goos: linux
+            goarch: arm64
+          - target: macos-x86_64
+            goos: darwin
+            goarch: amd64
+          - target: macos-arm64
+            goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      # All four cross-compile modules share the same Go toolchain version,
+      # so reading from any module's go.mod works. g3's go.mod is the
+      # natural pick for this job.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/g3/go.mod
+
+      # g3config builds natively (no GOOS/GOARCH override — it only runs on
+      # the runner) and emits the platform-agnostic plugin registry JSONs
+      # under config/. Each matrix target regenerates independently rather
+      # than sharing a prep-job artifact: the work is a few seconds and the
+      # artifact wiring would be more code than the duplication saves.
+      - name: Generate plugin registry
+        run: |
+          set -e
+          ( cd src/g3config && go build -trimpath -o ../../bin/g3config . )
+          ./bin/g3config -q
+
+      # GOOS/GOARCH apply only to this cross-compile step. CGO_ENABLED=0
+      # produces a static binary identical in shape to the g3cli/g3tui
+      # outputs — same -trimpath, same -ldflags, same Version injection.
+      - name: Build g3
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          VERSION: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -e
+          mkdir -p "dist/${TARGET}"
+          ( cd src/g3 && \
+            go build \
+              -trimpath \
+              -ldflags="-s -w -X main.Version=${VERSION}" \
+              -o "../../dist/${TARGET}/g3" \
+              . )
+
+      # config/ is shipped alongside the binary so a freshly extracted zip
+      # is immediately runnable — g3 resolves its registry path relative
+      # to the binary's parent dir, so the flat zip layout Just Works.
+      # The .gitignore inside config/ exists only to keep generated JSONs
+      # out of source control; it has no meaning at runtime and is
+      # explicitly dropped from the release artifact.
+      - name: Stage plugin registry
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -e
+          cp -r config "dist/${TARGET}/config"
+          rm -f "dist/${TARGET}/config/.gitignore"
+
+      # Flat zip — `cd` into the per-target dir so the archive contains
+      # `g3` and `config/` at the root with no embedded path prefix.
+      - name: Create zip
+        env:
+          VERSION: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -e
+          cd "dist/${TARGET}"
+          zip -r "../../g3-local-${VERSION}-${TARGET}.zip" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g3-local-${{ matrix.target }}
+          path: g3-local-${{ github.ref_name }}-${{ matrix.target }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Attach to Release
-    needs: [cross-compile]
+    needs: [cross-compile, cross-compile-local]
     runs-on: ubuntu-latest
     permissions:
       # Required to create the release (if it doesn't exist yet) and upload
