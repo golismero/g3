@@ -23,12 +23,44 @@ name: Release Binaries
 on:
   push:
     tags:
-      - 'v*'
+      # Strict vX.Y.Z (three integer segments). Minimatch `+` means "one or
+      # more of the preceding character", so [0-9]+ requires at least one
+      # digit per segment. Anchored at both ends, so vendor-foo, v1.2,
+      # v1.2.3.4, v1.2.3-rc1, etc. are all rejected.
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
 
 jobs:
 
+  # Reject workflow_dispatch runs that selected a branch instead of a tag.
+  # Tag pushes skip the guarded step (github.ref starts with refs/tags/),
+  # so this is a no-op for the normal release flow. Manual dispatches that
+  # pick a branch fail loudly here instead of producing orphan binaries
+  # with `main` baked in as the version string and a release upload that
+  # errors out anyway.
+  guard:
+    name: Guard - require version tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Bash regex because GitHub Actions expressions can't anchor character
+      # classes — we want exactly vX.Y.Z, same shape as the trigger glob.
+      # Skipped on tag push (the trigger filter already enforced the shape).
+      - name: Reject non-version refs on workflow_dispatch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            exit 0
+          fi
+          echo "::error::release.yml must be dispatched against a vX.Y.Z tag. Got: $REF"
+          exit 1
+
   cross-compile:
     name: Build (${{ matrix.target }})
+    needs: [guard]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,6 +152,7 @@ jobs:
 
   cross-compile-local:
     name: Build local (${{ matrix.target }})
+    needs: [guard]
     runs-on: ubuntu-latest
     permissions:
       contents: read
