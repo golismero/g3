@@ -19,6 +19,10 @@ import (
 	log "golismero.com/g3log"
 )
 
+// Version is overwritten at link time by release builds via
+// -ldflags "-X main.Version=...". Stays "dev" for local builds.
+var Version = "dev"
+
 type InputCmd struct {
 	Input string `short:"i" type:"existingfile" default:"-" help:"Input file."`
 }
@@ -99,6 +103,8 @@ func (c *CompletionsCmd) Run() error {
 }
 
 var CLI struct {
+	Version kong.VersionFlag `                   help:"Show version and exit."`
+
 	Scan        ScanCmd        `cmd:"" aliases:"s" help:"Run a scan script."`
 	Target      TargetCmd      `cmd:"" aliases:"t" help:"Prepare a list of targets."`
 	Tools       ToolsCmd       `cmd:"" aliases:"p" help:"List the available tools."`
@@ -127,6 +133,7 @@ func main() {
 		kong.Description("Golismero3 - The Pentesting Swiss Army Knife"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
+		kong.Vars{"version": Version},
 	)
 	// Short-circuits and exits when the shell invokes us with COMP_LINE set.
 	// No-op in normal invocation.
