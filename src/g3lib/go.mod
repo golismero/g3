@@ -20,7 +20,7 @@ require (
 	github.com/nakagami/firebirdsql v0.9.18
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/wcharczuk/go-chart v2.0.1+incompatible
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.136.0
+	github.com/ydb-platform/ydb-go-sdk/v3 v3.136.2
 	go.mongodb.org/mongo-driver v1.17.9
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )

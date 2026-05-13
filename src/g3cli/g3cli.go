@@ -18,6 +18,7 @@ import (
 	"github.com/alexeyco/simpletable"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/websocket"
+	"github.com/willabides/kongplete"
 
 	"golismero.com/g3lib"
 	log "golismero.com/g3log"
@@ -95,6 +96,14 @@ type RmCmd struct {
 	ScanIDs []string `arg:""    required:""                         help:"Scan IDs."`
 }
 
+type CompletionsCmd struct {
+	Shell string `arg:"" enum:"bash,zsh,fish" help:"Target shell (bash, zsh, or fish)."`
+}
+
+func (c *CompletionsCmd) Run() error {
+	return g3lib.EmitShellCompletion(c.Shell, "g3cli", os.Stdout)
+}
+
 var CLI struct {
 	Quiet   bool             `short:"q" default:"false" help:"Quiet mode."`
 	Version kong.VersionFlag `                          help:"Show version and exit."`
@@ -107,21 +116,36 @@ var CLI struct {
 	Cancel   CancelCmd   `cmd:"" aliases:"c" help:"Cancel a running scan."`
 	Report   ReportCmd   `cmd:"" aliases:"o" help:"Produce a Markdown report for a completed scan."`
 	Export   ExportCmd   `cmd:"" aliases:"x" help:"Export the JSON data for a scan."`
-	Tools    ToolsCmd    `cmd:"" aliases:"p" help:"Show the list of tools supported by the server."`
-	Rm       RmCmd       `cmd:"" aliases:"d" help:"Delete all information of a scan."`
+	Tools       ToolsCmd       `cmd:"" aliases:"p" help:"Show the list of tools supported by the server."`
+	Rm          RmCmd          `cmd:"" aliases:"d" help:"Delete all information of a scan."`
+	Completions CompletionsCmd `cmd:"" help:"Emit shell completion registration snippet."`
 }
 
 func main() {
 	var err error
 
-	// Parse the command line options.
-	parser := kong.Parse(&CLI,
+	// Build the parser (without parsing) so kongplete can hook in for Tab
+	// completion before os.Args is consumed.
+	parser := kong.Must(&CLI,
 		kong.Name("g3cli"),
 		kong.Description("Golismero3 - The Pentesting Swiss Army Knife"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
 		kong.Vars{"version": Version},
 	)
+	// Short-circuits and exits when the shell invokes us with COMP_LINE set.
+	// No-op in normal invocation.
+	kongplete.Complete(parser)
+	kctx, err := parser.Parse(os.Args[1:])
+	parser.FatalIfErrorf(err)
+
+	// `g3cli completions <shell>` must work without G3_API_* env vars set
+	// — the user is setting up their shell, not making API calls. Short-
+	// circuit before the env-var checks below.
+	if strings.HasPrefix(kctx.Command(), "completions ") {
+		parser.FatalIfErrorf(kctx.Run())
+		return
+	}
 
 	// Load the environment variables.
 	g3lib.LoadDotEnvFile()
@@ -149,7 +173,7 @@ func main() {
 
 	// Get the API websocket URL.
 	cmdctx.WebSocketURL = os.Getenv(G3_API_WSURL)
-	if cmdctx.BaseURL == "" {
+	if cmdctx.WebSocketURL == "" {
 		log.Critical("Missing environment variable: " + G3_API_WSURL)
 		os.Exit(1)
 	}
@@ -191,7 +215,7 @@ func main() {
 	}()
 
 	// Process the command.
-	err = parser.Run(cmdctx)
+	err = kctx.Run(cmdctx)
 	parser.FatalIfErrorf(err)
 }
 

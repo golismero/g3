@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strings"
 
 	"github.com/alecthomas/kong"
 	"github.com/go-playground/validator/v10"
+	"github.com/willabides/kongplete"
 
 	"golismero.com/g3lib"
 	log "golismero.com/g3log"
@@ -88,16 +90,25 @@ type ReportCmd struct {
 	FlagCmd
 }
 
+type CompletionsCmd struct {
+	Shell string `arg:"" enum:"bash,zsh,fish" help:"Target shell (bash, zsh, or fish)."`
+}
+
+func (c *CompletionsCmd) Run() error {
+	return g3lib.EmitShellCompletion(c.Shell, "g3", os.Stdout)
+}
+
 var CLI struct {
-	Scan   ScanCmd   `cmd:"" aliases:"s" help:"Run a scan script."`
-	Target TargetCmd `cmd:"" aliases:"t" help:"Prepare a list of targets."`
-	Tools  ToolsCmd  `cmd:"" aliases:"p" help:"List the available tools."`
-	Import ImportCmd `cmd:"" aliases:"i" help:"Load the output of a tool."`
-	Run    RunCmd    `cmd:"" aliases:"r" help:"Run a tool."`
-	Merge  MergeCmd  `cmd:"" aliases:"m" help:"Launch issue merger plugins."`
-	Join   JoinCmd   `cmd:"" aliases:"j" help:"Join multiple G3 output files into one."`
-	Filter FilterCmd `cmd:"" aliases:"f" help:"Filter the input using a logical condition."`
-	Report ReportCmd `cmd:"" aliases:"o" help:"Produce a Markdown vulnerability report."`
+	Scan        ScanCmd        `cmd:"" aliases:"s" help:"Run a scan script."`
+	Target      TargetCmd      `cmd:"" aliases:"t" help:"Prepare a list of targets."`
+	Tools       ToolsCmd       `cmd:"" aliases:"p" help:"List the available tools."`
+	Import      ImportCmd      `cmd:"" aliases:"i" help:"Load the output of a tool."`
+	Run         RunCmd         `cmd:"" aliases:"r" help:"Run a tool."`
+	Merge       MergeCmd       `cmd:"" aliases:"m" help:"Launch issue merger plugins."`
+	Join        JoinCmd        `cmd:"" aliases:"j" help:"Join multiple G3 output files into one."`
+	Filter      FilterCmd      `cmd:"" aliases:"f" help:"Filter the input using a logical condition."`
+	Report      ReportCmd      `cmd:"" aliases:"o" help:"Produce a Markdown vulnerability report."`
+	Completions CompletionsCmd `cmd:"" aliases:"c" help:"Emit shell completion registration snippet."`
 }
 
 type CmdContext struct {
@@ -109,13 +120,27 @@ type CmdContext struct {
 func main() {
 	var err error
 
-	// Parse the command line options.
-	parser := kong.Parse(&CLI,
+	// Build the parser (without parsing) so kongplete can hook in for Tab
+	// completion before os.Args is consumed.
+	parser := kong.Must(&CLI,
 		kong.Name("g3"),
 		kong.Description("Golismero3 - The Pentesting Swiss Army Knife"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
 	)
+	// Short-circuits and exits when the shell invokes us with COMP_LINE set.
+	// No-op in normal invocation.
+	kongplete.Complete(parser)
+	kctx, err := parser.Parse(os.Args[1:])
+	parser.FatalIfErrorf(err)
+
+	// `<bin> completions <shell>` must work without plugins or .env present
+	// — the user is setting up their shell, not running a scan. Short-circuit
+	// before the expensive setup below.
+	if strings.HasPrefix(kctx.Command(), "completions ") {
+		parser.FatalIfErrorf(kctx.Run())
+		return
+	}
 
 	// Load the environment variables.
 	g3lib.LoadDotEnvFile()
@@ -162,7 +187,7 @@ func main() {
 	cmdctx.Ctx = ctx
 	cmdctx.Cancelled = &cancelled
 	cmdctx.Plugins = plugins
-	err = parser.Run(cmdctx)
+	err = kctx.Run(cmdctx)
 	parser.FatalIfErrorf(err)
 }
 

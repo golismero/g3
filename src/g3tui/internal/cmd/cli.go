@@ -1,7 +1,8 @@
 // Package cmd defines g3tui's Kong-based command-line surface. It exposes
-// Execute, which main.go calls. Subcommand implementations live in sibling
-// files (run.go, doctor.go, pipelines.go, completions.go); shared config
-// loading lives in config.go (added in a later task).
+// Execute, which main.go calls. Most subcommand implementations live in
+// sibling files (run.go, doctor.go, pipelines.go); the smaller completions
+// subcommand is at the bottom of this file. Shared config loading lives in
+// config.go.
 package cmd
 
 import (
@@ -12,6 +13,8 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/willabides/kongplete"
+
+	"golismero.com/g3lib"
 )
 
 // Version is set by Execute (which receives it from main.go's ldflags-stamped
@@ -137,4 +140,15 @@ func runOnlyFlagAtRoot(args []string) string {
 		}
 	}
 	return ""
+}
+
+// CompletionsCmd implements the `completions <shell>` subcommand. The actual
+// snippet templates live in g3lib so g3 and g3cli can share them.
+type CompletionsCmd struct {
+	Shell string `arg:"" enum:"bash,zsh,fish" help:"Target shell (bash, zsh, or fish)."`
+}
+
+func (c *CompletionsCmd) Run(kctx *kong.Context) error {
+	_ = kctx
+	return g3lib.EmitShellCompletion(c.Shell, "g3tui", os.Stdout)
 }

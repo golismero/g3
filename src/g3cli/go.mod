@@ -11,6 +11,7 @@ require (
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/go-playground/validator/v10 v10.30.2
 	github.com/gorilla/websocket v1.5.3
+	github.com/willabides/kongplete v0.4.0
 	golismero.com/g3lib v0.0.0-00010101000000-000000000000
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
@@ -40,6 +41,8 @@ require (
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
@@ -52,15 +55,17 @@ require (
 	github.com/montanaflynn/stats v0.9.0 // indirect
 	github.com/nakagami/chacha20 v0.1.0 // indirect
 	github.com/nakagami/firebirdsql v0.9.18 // indirect
+	github.com/posener/complete v1.2.3 // indirect
 	github.com/redis/go-redis/v9 v9.19.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/riywo/loginshell v0.0.0-20200815045211-7d26008be1ab // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/wcharczuk/go-chart v2.0.1+incompatible // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260428144813-1c07baab7f7b // indirect
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.136.0 // indirect
+	github.com/ydb-platform/ydb-go-sdk/v3 v3.136.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect
