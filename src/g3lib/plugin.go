@@ -438,8 +438,11 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 			}
 			data["_fp"] = fpiarr
 		}
-		if _, ok := data["_cmd"]; !ok {
+		if existing, ok := data["_cmd"]; !ok {
 			data["_cmd"] = shellquote.Join(parsed.Command...)
+		} else if _, isString := existing.(string); !isString {
+			log.Debugf("Plugin %s returned _cmd as %T, expected string; coercing", plugin.Name, existing)
+			data["_cmd"] = coerceCmdString(existing)
 		}
 		if _, ok := data["_start"]; !ok {
 			data["_start"] = startTime
@@ -451,4 +454,22 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 
 	// Return the parsed output and error condition if any.
 	return outputArray, err
+}
+
+// coerceCmdString normalizes a non-string _cmd (e.g. a plugin that emitted a
+// token array instead of a command string) into the string shape the data
+// model documents.
+func coerceCmdString(value interface{}) string {
+	if list, ok := value.([]interface{}); ok {
+		parts := make([]string, 0, len(list))
+		for _, item := range list {
+			if s, ok := item.(string); ok {
+				parts = append(parts, s)
+			} else {
+				parts = append(parts, fmt.Sprintf("%v", item))
+			}
+		}
+		return shellquote.Join(parts...)
+	}
+	return fmt.Sprintf("%v", value)
 }

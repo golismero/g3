@@ -44,11 +44,11 @@ def import_hydra_textfile(fd, is_internal):
             cmdline = shlex.split(cmdline)
             if "-o" in cmdline:
                 i = cmdline.index("-o")
-                cmdline = cmdline[:i-1] + cmdline[i+1:]
+                cmdline = cmdline[:i] + cmdline[i+2:]
             current = {
                 "_type": "issue",
                 "_tool": "hydra",
-                "_cmd": cmdline,
+                "_cmd": shlex.join(cmdline),
                 "_fp": ["hydra " + hostname],
                 "_start": start_time,
                 "_end": now if is_internal else 0,
