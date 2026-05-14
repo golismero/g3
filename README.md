@@ -1,6 +1,8 @@
 # DEPRECATION NOTE:
 This tool is something I (@MarioVilas) have been working on some years ago in private, but sadly had to abandon due to lack of time to develop it. I'm releasing it now in case it's interesting to anyone, but I won't be providing support, and I'm not sure when (or if) I'll be able to continue development on it in the future.
 
+EDIT: turns out I got tempted back :D but it's still far from ready...
+
 # Golismero3 -- The Pentesting Swiss Army Knife
 ![Golismero3 Logo](misc/logo_transparent_small.png "Golismero3 Logo")
 
