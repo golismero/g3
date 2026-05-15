@@ -325,6 +325,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./resources:/app/resources
+      - ./volumes/artifacts:/app/artifacts
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - G3HOME=/app
@@ -340,6 +341,8 @@ services:
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
       - G3_DOCKER_NETWORK
+      - G3_ARTIFACTS_ROOT=/app/artifacts
+      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
 
   # The following workers are all identical and run all plugins *except* the ones above.
   g3worker1:
@@ -364,6 +367,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./resources:/app/resources
+      - ./volumes/artifacts:/app/artifacts
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - G3HOME=/app
@@ -376,9 +380,11 @@ services:
       - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker1
       - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
-      - G3_HOLD_CANCE
+      - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
       - G3_DOCKER_NETWORK
+      - G3_ARTIFACTS_ROOT=/app/artifacts
+      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - VIRUSTOTAL_API_KEY
       - VULNERS_API_KEY
       - VULNERS_PROXY_HOST=vulners-proxy
@@ -406,6 +412,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./resources:/app/resources
+      - ./volumes/artifacts:/app/artifacts
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - G3HOME=/app
@@ -418,9 +425,11 @@ services:
       - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker2
       - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
-      - G3_HOLD_CANCE
+      - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
       - G3_DOCKER_NETWORK
+      - G3_ARTIFACTS_ROOT=/app/artifacts
+      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - VIRUSTOTAL_API_KEY
       - VULNERS_API_KEY
       - VULNERS_PROXY_HOST=vulners-proxy
@@ -448,6 +457,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./resources:/app/resources
+      - ./volumes/artifacts:/app/artifacts
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - G3HOME=/app
@@ -463,6 +473,8 @@ services:
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
       - G3_DOCKER_NETWORK
+      - G3_ARTIFACTS_ROOT=/app/artifacts
+      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - VIRUSTOTAL_API_KEY
       - VULNERS_API_KEY
       - VULNERS_PROXY_HOST=vulners-proxy
@@ -490,6 +502,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./resources:/app/resources
+      - ./volumes/artifacts:/app/artifacts
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - G3HOME=/app
@@ -505,6 +518,8 @@ services:
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
       - G3_DOCKER_NETWORK
+      - G3_ARTIFACTS_ROOT=/app/artifacts
+      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - VIRUSTOTAL_API_KEY
       - VULNERS_API_KEY
       - VULNERS_PROXY_HOST=vulners-proxy

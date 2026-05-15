@@ -287,6 +287,30 @@ func main() {
 	}
 	log.Debug("Holding on to cancellation request messages for " + holdCancel.String())
 
+	// Resolve the shared artifacts root and verify it is writable. Plugins
+	// write raw tool outputs into per-task subdirectories here; a worker that
+	// cannot write artifacts is broken, so fail fast rather than run with a
+	// silently disabled subsystem.
+	artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
+	if artifactsRoot == "" {
+		artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
+	}
+	artifactsHostRoot := os.Getenv(g3lib.G3_ARTIFACTS_HOST_ROOT)
+	if artifactsHostRoot == "" {
+		artifactsHostRoot = artifactsRoot
+	}
+	if err := os.MkdirAll(artifactsRoot, 0o755); err != nil {
+		log.Critical("Cannot create artifacts root " + artifactsRoot + ": " + err.Error())
+		os.Exit(1)
+	}
+	probeFile := filepath.Join(artifactsRoot, ".g3-write-test")
+	if err := os.WriteFile(probeFile, []byte{}, 0o644); err != nil {
+		log.Critical("Artifacts root " + artifactsRoot + " is not writable: " + err.Error())
+		os.Exit(1)
+	}
+	os.Remove(probeFile) //nolint:errcheck
+	log.Debug("Artifacts root: " + artifactsRoot + " (host view: " + artifactsHostRoot + ")")
+
 	// Cancellation tracker for the worker.
 	cancelTracker := NewCancelTracker(workerid, holdCancel)
 	cancelTracker.LoadState()
@@ -645,8 +669,46 @@ func main() {
 				}
 			}
 		}()
+		// Materialize this task's artifact slot and bind-mount it into the
+		// plugin container as /artifacts. The plugin sees only its own slot —
+		// the scanid/taskid layout above it is invisible and unreachable.
+		slotDir := filepath.Join(artifactsRoot, task.ScanID, task.TaskID)
+		if err := os.MkdirAll(slotDir, 0o755); err != nil {
+			log.Error("Cannot create artifact slot " + slotDir + ": " + err.Error())
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+				log.Error(err.Error())
+			}
+			return
+		}
+		hostSlotDir := filepath.Join(artifactsHostRoot, task.ScanID, task.TaskID)
+		parsed.DockerOpt = append(append([]string{}, parsed.DockerOpt...),
+			"-v", hostSlotDir+":/artifacts:rw")
+
 		log.Info("Running plugin: " + task.Tool)
+		pluginStartTS := time.Now().Unix()
 		outputArray, err := g3lib.RunPluginCommand(ctx, plugin, parsed, data, w)
+
+		// Write the per-task manifest: a record of what ran and which files the
+		// plugin left in its slot. Written for every outcome (success, error,
+		// cancel) so every task that reached execution has a manifest.
+		manifestTool, manifestCmd := g3lib.ManifestProvenance(outputArray, plugin, parsed)
+		manifestStatus := "success"
+		if err != nil {
+			manifestStatus = err.Error()
+		}
+		if e := g3lib.WriteTaskManifest(slotDir, g3lib.G3Manifest{
+			ScanID:     task.ScanID,
+			TaskID:     task.TaskID,
+			Plugin:     plugin.Name,
+			Tool:       manifestTool,
+			Cmd:        manifestCmd,
+			ExitStatus: manifestStatus,
+			StartedAt:  pluginStartTS,
+			EndedAt:    time.Now().Unix(),
+		}); e != nil {
+			log.Error("Cannot write task manifest for " + task.TaskID + ": " + e.Error())
+		}
 
 		// Remove the cancel context.
 		cancelTracker.ForgetTask(task.TaskID)

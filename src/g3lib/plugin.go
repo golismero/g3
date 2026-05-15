@@ -21,6 +21,16 @@ import (
 
 const G3_DOCKER_NETWORK = "G3_DOCKER_NETWORK"
 
+// Environment variables for the shared artifacts volume.
+//   G3_ARTIFACTS_ROOT      — path the worker process itself reads/writes (mkdir, manifest).
+//   G3_ARTIFACTS_HOST_ROOT — path passed to `docker run -v` (the host daemon's view).
+// They hold the same value when the artifacts root is mounted at an identical
+// absolute path on the host and inside the worker container; G3_ARTIFACTS_HOST_ROOT
+// is the escape hatch for deployments that cannot achieve that parity.
+const G3_ARTIFACTS_ROOT = "G3_ARTIFACTS_ROOT"
+const G3_ARTIFACTS_HOST_ROOT = "G3_ARTIFACTS_HOST_ROOT"
+const G3_ARTIFACTS_ROOT_DEFAULT = "/app/artifacts"
+
 type G3ToolCommand struct {
 	Condition   string              `json:"condition"           validate:"required"`        // Execution condition for a tool.
 	Fingerprint []string            `json:"fingerprint"         validate:"required"`        // Fingerprint for the command.
