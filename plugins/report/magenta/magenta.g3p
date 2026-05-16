@@ -1,0 +1,7 @@
+{
+    url: "https://github.com/golismero/magenta",
+    description: {
+        en: "Magenta Reporter takes the output files from commonly used penetration testing tools and generates a ready to use report in Markdown format.",
+    },
+    reporter: {},
+}
