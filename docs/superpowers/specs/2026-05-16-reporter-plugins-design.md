@@ -92,8 +92,11 @@ client ──POST /scan/reporter──▶ g3api ──MQTT report/<tool>──�
                               ▼
                   RunPluginReporter()  ──docker run──▶  reporter container
                               │                                  │
-                              │                ┌─── reads /input:ro
-                              │                │     (scan tree + data.json)
+                              │                ┌─── reads stdin
+                              │                │     (JSONL: G3Report + issues + data)
+                              │                │
+                              │                ├─── reads /input:ro
+                              │                │     (artifact tree, never written)
                               │                │
                               │                └─── writes /output:rw
                               │                      (this task's slot)
@@ -191,7 +194,7 @@ A reporter container runs once per `/scan/reporter` request and sees:
 
 | Path | Mode | Host path | Purpose |
 | --- | --- | --- | --- |
-| `/input` | `ro` | `<G3_ARTIFACTS_HOST_ROOT>/<scanid>/` | The scan's full artifact tree — every other task's slot, every `manifest.json`, all raw tool outputs, plus the two scan-wide files the worker writes just before starting the container (see below). |
+| `/input` | `ro` | `<G3_ARTIFACTS_HOST_ROOT>/<scanid>/` | The scan's full artifact tree — every other task's slot, every `manifest.json`, all raw tool outputs. Read-only; nothing the reporter pipeline writes lands here. |
 | `/output` | `rw` | `<G3_ARTIFACTS_HOST_ROOT>/<scanid>/<reportertaskid>/` | The reporter's own slot — same shape as any other task's slot, co-located with tool tasks. |
 | `/resources` | `ro` | `./resources` | Same as the existing tool/importer/merger plugin contract. |
 
@@ -200,38 +203,45 @@ A reporter container runs once per `/scan/reporter` request and sees:
 Default `/usr/bin/g3r`. Overridable via `dockeropt: ["--entrypoint", "..."]`,
 the same way `g3i` / `g3m` are overridable today for importer/merger phases.
 
-### No stdin envelope
+### Stdin: JSONL stream
 
-The reporter contract is purely filesystem-driven. The preset choice is
-already encoded in the container's command-line arguments (the worker
-materializes the selected command from `commands[].command` via
-`BuildReporterCommand`); the data lives on disk in `/input`; there is
-nothing else the container needs from the caller at runtime. Stdin is not
-read.
+The structured scan data is delivered to the reporter container as a JSON
+Lines stream on stdin. Three sections in strict order, each line a single
+JSON object:
+
+```
+Line 1:        G3Report                          (header — contains the deduped issue ID list)
+Lines 2..K:    the G3Data issue objects          (resolved from G3Report.Issues, in the same order)
+Lines K+1..N:  everything else                   (hosts, services, undeduped data — anything not in G3Report.Issues)
+EOF
+```
+
+This ordering is deliberate: a reporter that only wants the deduplicated
+issues reads `1 + len(G3Report.Issues)` lines and then closes stdin.
+The worker detects the closed pipe (EPIPE on the next `Encode`) and stops
+streaming, so the MongoDB cost paid is exactly what the reporter actually
+consumed. A reporter that wants everything reads through EOF.
+
+The contract is "consume or close." A reporter that needs nothing
+structured (e.g. magenta, which walks `/input` directly and synthesizes
+its own report) closes stdin immediately — the worker pays only the
+constant cost of writing the G3Report header before EPIPE stops the
+stream.
+
+Stdin streaming replaces the earlier disk-driven design (per-scan
+`data.json` / `report.json` files at the scan root): no shared-filesystem
+writes means no race condition between concurrent reporter tasks on the
+same scan, and the worker never materializes the full data array in
+memory.
+
+### Stdout / stderr / exit code
 
 Stdout/stderr are treated as task log lines and captured into the SQL log
-table identically to any worker task. Exit code 0 = success, non-zero =
-failure. No structured-output expectation — the slot is the output channel.
+table identically to any worker task. No structured-output expectation —
+the slot is the output channel.
 
-### Disk inputs in `/input`
-
-The worker writes two scan-wide files into `<scanid>/` (the root of the
-container's `/input` mount) immediately before invoking the reporter:
-
-| File | Source | Contents |
-| --- | --- | --- |
-| `data.json` | streamed from MongoDB via `WriteScanDataToFile(mdb, scanID, path)` | JSON array of every G3Data object the scan produced — the raw, undeduplicated record. |
-| `report.json` | `LoadReportInfo(rdb, scanID)` → marshaled to disk | The existing `G3Report` struct (ScanID + deduplicated issue IDs). Reporters that want post-dedup issue lists read this; reporters doing their own dedup ignore it and read `data.json`. |
-
-Both files are scan-wide and live at the root of `/input` (sibling to the
-per-task subdirs) so the filename convention "task-specific files live in
-`<taskid>/`; scan-wide aggregates live at the scan root" is unambiguous.
-
-Both writes are idempotent and content-deterministic for a given scan state:
-concurrent reporter tasks against the same scan race benignly on these
-files. Both writes are streaming where possible — `data.json` uses a
-MongoDB cursor → JSON encoder → file pipeline so the worker never
-materializes the full data array in memory.
+Exit code 0 = success, non-zero = failure → task marked ERROR, slot kept
+for diagnostics.
 
 ### Output discovery
 
@@ -306,22 +316,27 @@ on G3ReportTask:
     // 1. Materialize the reporter task's output slot.
     outSlot := <artifactsRoot>/<scanID>/<reportertaskID>/        // worker-side path
     hostOut := <artifactsHostRoot>/<scanID>/<reportertaskID>/    // for docker -v
-    hostIn  := <artifactsHostRoot>/<scanID>/                     // for docker -v
+    hostIn  := <artifactsHostRoot>/<scanID>/                     // for docker -v (read-only artifact tree)
     mkdir(outSlot)
 
-    // 2. Stream scan-wide inputs into <scanID>/ for the reporter to consume.
-    //    Both writes are idempotent and content-deterministic; concurrent
-    //    reporter tasks against the same scan race benignly.
-    WriteScanDataToFile(mdb, scanID,
-                       <artifactsRoot>/<scanID>/data.json)         // streams via cursor
-    report := LoadReportInfo(rdb, scanID)
-    writeJSON(<artifactsRoot>/<scanID>/report.json, report)
+    // 2. Build the JSONL stdin stream. No disk writes for scan data — the
+    //    stream is composed in a goroutine that writes to an io.Pipe,
+    //    which the container reads as stdin.
+    //
+    //    Stream contents in order:
+    //      line 1:       G3Report (header with deduped issue ID list)
+    //      lines 2..K:   the issue G3Data objects (LoadData by IDs)
+    //      lines K+1..N: everything else (cursor with _id $nin issue IDs)
+    //
+    //    All writes EPIPE-aware: if the reporter closes stdin early, the
+    //    goroutine exits and remaining MongoDB work is skipped.
+    stdinReader := ReporterStdinStream(mdb, rdb, scanID)
+    defer stdinReader.Close()
 
-    // 3. Dispatch the container. No stdin envelope — preset is encoded in
-    //    the command-line args; data is on disk.
+    // 3. Dispatch the container. Preset encoded in command-line args.
     parsed := BuildReporterCommand(plugin, preset)
     err    := RunPluginReporter(ctx, plugin, parsed,
-                                hostIn, hostOut, stderr)
+                                hostIn, hostOut, stdinReader, stderr)
 
     // 4. Write manifest, same path as today's tool tasks.
     files := EnumerateSlot(outSlot)
@@ -342,14 +357,23 @@ on G3ReportTask:
 | Existing | Added |
 | --- | --- |
 | `BuildToolCommand` / `BuildImporterCommand` / `BuildMergerCommand` | `BuildReporterCommand(plugin, presetName)` |
-| `RunPluginCommand` / `RunPluginImporter` / `RunPluginMerger` | `RunPluginReporter(ctx, plugin, parsed, hostInDir, hostOutDir, stderr)` |
-| — | `WriteScanDataToFile(mdb, scanID, path) error` (streams via MongoDB cursor) |
+| `RunPluginCommand` / `RunPluginImporter` / `RunPluginMerger` | `RunPluginReporter(ctx, plugin, parsed, hostInDir, hostOutDir, stdin io.Reader, stderr)` |
+| — | `ReporterStdinStream(mdb, rdb, scanID) io.ReadCloser` — composes the JSONL stream from Component 2 |
 | — | `BundleTaskSlot(slotDir, tool, taskID, w io.Writer) (filename, contentType string, err error)` (streams output into `w`) |
 
 `RunPluginReporter` is a small variant of `runPluginInternal`: it builds two
-`-v` mounts instead of one, it does not write stdin (the contract has no
-envelope), and it does **not** parse stdout as G3Data — the slot enumeration
-is the output channel.
+`-v` mounts instead of one, it pipes the caller-supplied `stdin` reader to
+the container's stdin (a JSONL stream — see Component 2), and it does **not**
+parse stdout as G3Data — the slot enumeration is the output channel.
+
+`ReporterStdinStream` returns an `io.ReadCloser` backed by an `io.Pipe`.
+A goroutine writes — in order — the G3Report header, then the deduped
+issue G3Data objects (one batch `LoadData` call by ID), then a MongoDB
+cursor's worth of `_id $nin issueIDs` results. Every write checks for
+`io.ErrClosedPipe` and exits the goroutine early on detection, so a
+reporter that closes stdin gets backpressure routed into "stop streaming"
+rather than wasted MongoDB work. The function is testable in isolation:
+the returned reader is just bytes a test can decode line-by-line.
 
 `BundleTaskSlot` streams: for the single-file case it copies the slot file
 into `w`; for the multi-file case it constructs a zip directly on `w` via
@@ -464,8 +488,11 @@ flag is the long-term answer for slow reports.
 ### Edge cases
 
 - **Concurrent reports for the same scan** — each call gets its own
-  reporter task ID, its own slot, its own row. No serialization. They share
-  `<scanid>/data.json` writes; content is deterministic, race is benign.
+  reporter task ID, its own slot, its own row, its own stdin stream
+  (independent pipe per worker). No shared writes anywhere on the
+  artifacts volume, so concurrent reporter tasks on the same scan are
+  fully isolated regardless of the underlying filesystem (local, NFS,
+  shared cluster FS).
 - **Scan deleted mid-report** — scan-delete sends `G3CancelTask` for any
   in-flight reporter tasks on that scan. Falls out of the existing
   cancellation machinery, no new code path needed.
@@ -525,9 +552,9 @@ detailed.
 | [src/g3lib/plugin.go](../../../src/g3lib/plugin.go) | Add `G3ReporterCommand`, `G3ReporterPhase`; extend `G3Plugin.Reporter`; add `BuildReporterCommand`, `RunPluginReporter` (no stdin envelope). |
 | [src/g3config/g3config.go](../../../src/g3config/g3config.go) | Validate the reporter phase (unique names, `default` references an existing name, no condition/fingerprint/returns). |
 | [src/g3lib/task.go](../../../src/g3lib/task.go) | Add `MSG_REPORT` constant, `G3ReportTask` struct (Tool + Preset only), `ReportTaskHandler` type, `SubscribeAsReporter` and `SendReportTask` helpers. |
-| [src/g3worker/g3worker.go](../../../src/g3worker/g3worker.go) | Subscribe to `report/<name>` for selected plugins with a non-nil `Reporter`; new handler that streams `data.json` from MongoDB, materializes `report.json` from Redis, invokes `RunPluginReporter`, writes `manifest.json`, marks terminal. |
+| [src/g3worker/g3worker.go](../../../src/g3worker/g3worker.go) | Subscribe to `report/<name>` for selected plugins with a non-nil `Reporter`; new handler that opens the JSONL stdin stream via `ReporterStdinStream`, invokes `RunPluginReporter`, writes `manifest.json`, marks terminal. No scan-data disk writes. |
 | [src/g3lib/manifest.go](../../../src/g3lib/manifest.go) | Add `BundleTaskSlot(slotDir, tool, taskID, w)` (streams to writer) next to the existing `EnumerateSlot`. |
-| [src/g3lib/datastore.go](../../../src/g3lib/datastore.go) (or wherever scan-scoped MongoDB reads live) | Add `WriteScanDataToFile(mdb, scanID, path)` — cursor-driven streaming write. |
+| [src/g3lib/datastore.go](../../../src/g3lib/datastore.go) (or wherever scan-scoped reads live) | Add `ReporterStdinStream(mdb, rdb, scanID) io.ReadCloser` — pipe-backed goroutine that streams G3Report + deduped issues + remaining data as JSONL, EPIPE-aware. |
 | [src/g3api/g3api.go](../../../src/g3api/g3api.go) | New `POST /scan/reporter` handler with the dispatch flow, `X-G3-Task-ID` header on every response. The existing `/scan/report` endpoint is untouched. |
 | [plugins/report/magenta/g3r.sh](../../../plugins/report/magenta/g3r.sh) | Replace placeholder with a real wrapper. Exact magenta CLI flags are out of scope for this design — to be determined against the magenta repo at implementation time. |
 | [plugins/report/magenta/magenta.g3p](../../../plugins/report/magenta/magenta.g3p) | Keep as `reporter: {}` unless magenta exposes CLI-level presets. |
@@ -598,25 +625,18 @@ No new task table columns required.
   data, `/output` for the slot, manifest as the result protocol) doesn't
   constrain whether the reporter is a fixed pipeline or a more dynamic
   system.
-- **Per-task data export filtering.** The worker dumps the entire scan's
-  G3Data into `data.json`. For very large scans this is wasteful; a
-  future optimization could let the reporter declare an interest filter
-  (e.g. "only issues at severity ≥ HIGH") to scope the dump.
-
-- **Per-command access flags.** Today the worker unconditionally writes
-  both `data.json` and `report.json` before invoking the container.
-  A future schema extension could add `artifacts: bool`, `issues: bool`,
-  `data: bool` flags on `G3ReporterCommand`, all defaulting to true, so a
-  reporter that only needs deduped issues (`issues: true`, others false)
-  avoids paying for the full data export. Default-true keeps this purely
-  additive — existing plugins don't need to change when the flags land.
-  Deferred for scope reasons; the default-true semantics mean introducing
-  the flags later is a no-migration change.
+- **JSONL stdin streaming for other plugin phases.** The reporter
+  contract introduces a precedent: the worker streams G3Data as JSONL on
+  a pipe to the container, with EPIPE-driven backpressure. The same
+  pattern could clean up the importer/merger phases (which today
+  serialize full arrays into stdin buffers) and would benefit similarly
+  on shared-filesystem deployments. When that lands as its own design,
+  it can reuse the `ReporterStdinStream`-style helpers from this work.
 
 - **Expanding `G3Report`.** The struct has commented-out fields
   (`Title`, `Author`, `Client`) hinting at planned scan-level metadata.
   Expanding `G3Report` to carry richer information that reporters can
-  consume from `/input/report.json` is a separate concern with its own
+  consume from the stdin header line is a separate concern with its own
   callers (the in-process `MarkdownReporter` hardcodes some of this
   today, which is unfinished work in its own right). A future plan
   should treat that as its own scope.
