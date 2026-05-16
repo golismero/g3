@@ -191,6 +191,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./volumes/tmp:/tmp
+      - ./volumes/artifacts:/app/artifacts
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - G3HOME=/app
@@ -208,6 +209,8 @@ services:
       - G3_WS_PATH=
       - G3_WS_BUFFER
       - G3_FILE_UPLOAD_MAX
+      - G3_ARTIFACTS_ROOT=/app/artifacts
+      - G3_UPLOAD_TTL
       - G3_LOG_LEVEL
 
   # In this example we only run two scans at a time, so there are only two scanners.
@@ -369,7 +372,6 @@ services:
       - G3_DOCKER_NETWORK
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
-      - VIRUSTOTAL_API_KEY
 
   g3worker2:
     image: ghcr.io/golismero/g3:latest
@@ -409,7 +411,6 @@ services:
       - G3_DOCKER_NETWORK
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
-      - VIRUSTOTAL_API_KEY
 
   g3worker3:
     image: ghcr.io/golismero/g3:latest
@@ -449,7 +450,6 @@ services:
       - G3_DOCKER_NETWORK
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
-      - VIRUSTOTAL_API_KEY
   
   g3worker4:
     image: ghcr.io/golismero/g3:latest
@@ -489,5 +489,5 @@ services:
       - G3_DOCKER_NETWORK
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
-      - VIRUSTOTAL_API_KEY
+  
   ############################################################################

@@ -5,15 +5,16 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/asaskevich/govalidator"
 	"github.com/go-playground/validator/v10"
@@ -30,6 +31,7 @@ const G3_WS_ADDR = "G3_WS_ADDR"                 // Address to bind to for the HT
 const G3_WS_PORT = "G3_WS_PORT"                 // Port to bind to for the HTTP server.
 const G3_WS_PATH = "G3_WS_PATH"                 // Path to route the API.
 const G3_FILE_UPLOAD_MAX = "G3_FILE_UPLOAD_MAX" // Maximum file size for uploads.
+const G3_UPLOAD_TTL = "G3_UPLOAD_TTL"           // time.ParseDuration string. 0 (default) disables the _uploads/ orphan sweep.
 const G3_WS_BUFFER = "G3_WS_BUFFER"             // Buffer size for the websocket.
 
 // requireToken wraps an http.HandlerFunc with a bearer-token check.
@@ -99,6 +101,38 @@ func (tracker *NotifyTracker) RemoveChannel(ticket string) bool {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// sweepOrphanUploads removes files in uploadsDir whose mtime is older than ttl.
+// Used to garbage-collect uploads that were POSTed but never referenced by a
+// scan-creation request. Subdirectories are skipped; if uploadsDir does not
+// exist (no upload has happened yet) the call is a silent no-op.
+func sweepOrphanUploads(uploadsDir string, ttl time.Duration) {
+	entries, err := os.ReadDir(uploadsDir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Error("Upload sweep: ReadDir failed: " + err.Error())
+		}
+		return
+	}
+	threshold := time.Now().Add(-ttl)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(threshold) {
+			path := filepath.Join(uploadsDir, entry.Name())
+			if err := os.Remove(path); err != nil {
+				log.Error("Upload sweep: remove " + path + " failed: " + err.Error())
+			} else {
+				log.Debug("Upload sweep: removed " + path)
+			}
+		}
+	}
+}
+
 func Main() int {
 	var wg sync.WaitGroup
 	var err error
@@ -114,6 +148,42 @@ func Main() int {
 	if apiToken == "" {
 		log.Critical("Missing environment variable: " + G3_API_TOKEN)
 		return 1
+	}
+
+	// Resolve the shared artifacts root and verify it is writable. g3api writes
+	// uploaded files into <root>/_uploads/, relocates them into <root>/<scanid>/imports/
+	// when a scan is created, and removes <root>/<scanid>/ on scan delete. A
+	// missing/unwritable root is infrastructure misconfiguration — fail fast.
+	artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
+	if artifactsRoot == "" {
+		artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
+	}
+	if err := os.MkdirAll(artifactsRoot, 0o755); err != nil {
+		log.Critical("Cannot create artifacts root " + artifactsRoot + ": " + err.Error())
+		return 1
+	}
+	probeFile := filepath.Join(artifactsRoot, ".g3-write-test")
+	if err := os.WriteFile(probeFile, []byte{}, 0o644); err != nil {
+		log.Critical("Artifacts root " + artifactsRoot + " is not writable: " + err.Error())
+		return 1
+	}
+	os.Remove(probeFile) //nolint:errcheck
+	log.Debug("Artifacts root: " + artifactsRoot)
+
+	// Parse G3_UPLOAD_TTL: empty or "0" disables the orphan sweep; anything else
+	// must parse as a non-negative time.Duration. Invalid → fail fast (no fake fallbacks).
+	uploadTTL := time.Duration(0)
+	if s := os.Getenv(G3_UPLOAD_TTL); s != "" {
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			log.Critical("Invalid " + G3_UPLOAD_TTL + " (" + s + "): " + err.Error())
+			return 1
+		}
+		if d < 0 {
+			log.Critical(G3_UPLOAD_TTL + " cannot be negative: " + s)
+			return 1
+		}
+		uploadTTL = d
 	}
 
 	// Load the plugins.
@@ -171,6 +241,33 @@ func Main() int {
 		<-signalChan // second signal, hard exit
 		os.Exit(1)
 	}()
+
+	// Launch the _uploads/ orphan-sweep goroutine when enabled (G3_UPLOAD_TTL > 0).
+	// Sweeps once on startup, then every TTL/2 (with a 1m floor so very short TTLs
+	// don't busy-loop). The goroutine exits cleanly when ctx is cancelled.
+	if uploadTTL > 0 {
+		uploadsDir := filepath.Join(artifactsRoot, "_uploads")
+		sweepInterval := uploadTTL / 2
+		if sweepInterval < time.Minute {
+			sweepInterval = time.Minute
+		}
+		log.Debug("Upload orphan sweep enabled: TTL=" + uploadTTL.String() + ", interval=" + sweepInterval.String())
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ticker := time.NewTicker(sweepInterval)
+			defer ticker.Stop()
+			sweepOrphanUploads(uploadsDir, uploadTTL)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					sweepOrphanUploads(uploadsDir, uploadTTL)
+				}
+			}
+		}()
+	}
 
 	// Connect to the Mosquitto broker.
 	mq_client, err := g3lib.ConnectToBroker(os.Getenv(G3_API_ID))
@@ -338,29 +435,48 @@ func Main() int {
 				}
 			}
 
-			// Import the files into the database.
-			for _, parsedImport := range parsed.Imports {
+			// Import the files into the database. Each import runs in its own
+			// closure so the `defer stdin.Close()` fires per-iteration rather
+			// than accumulating open file descriptors until the handler returns.
+			importOne := func(parsedImport g3lib.ParsedImport) bool {
 
 				// Get the requested importer plugin.
 				plugin, ok := plugins[parsedImport.Tool]
 				if !ok || plugin.Importer == nil {
 					log.Error("Tool not found: " + parsedImport.Tool)
 					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, tool not found.")
-					return
+					return false
 				}
 
 				// Pipe the input file.
 				if ! govalidator.IsUUIDv4(parsedImport.Path) {
 					log.Error("Invalid file ID: " + parsedImport.Path)
 					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, imported file not found.")
-					return
+					return false
 				}
-				inputfile := fmt.Sprintf("/tmp/%s.bin", parsedImport.Path)
+				importsDir := filepath.Join(artifactsRoot, request.ScanID, "imports")
+				if err := os.MkdirAll(importsDir, 0o755); err != nil {
+					log.Error("Cannot create imports dir " + importsDir + ": " + err.Error())
+					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+					return false
+				}
+				srcBin := filepath.Join(artifactsRoot, "_uploads", parsedImport.Path+".bin")
+				srcTxt := filepath.Join(artifactsRoot, "_uploads", parsedImport.Path+".txt")
+				inputfile := filepath.Join(importsDir, parsedImport.Path+".bin")
+				dstTxt := filepath.Join(importsDir, parsedImport.Path+".txt")
+				if err := os.Rename(srcBin, inputfile); err != nil {
+					log.Error("Cannot relocate upload " + parsedImport.Path + ": " + err.Error())
+					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, imported file not found.")
+					return false
+				}
+				if err := os.Rename(srcTxt, dstTxt); err != nil {
+					log.Error("Cannot relocate upload metadata " + parsedImport.Path + ": " + err.Error())
+				}
 				stdin, err := os.Open(inputfile)
 				if err != nil {
 					log.Critical("Cannot open file " + inputfile + ": " + err.Error())
 					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, imported file not found.")
-					return
+					return false
 				}
 				defer stdin.Close()
 
@@ -373,7 +489,7 @@ func Main() int {
 						log.Error(" - " + err.Error())
 					}
 					g3lib.SendApiError(w, http.StatusInternalServerError, "Error while running importer: " + plugin.Name)
-					return
+					return false
 				}
 				ctx := context.Background() // FIXME this may have to be run as a task after all...
 				stderr := os.Stderr         // FIXME send this log to the database
@@ -381,7 +497,7 @@ func Main() int {
 				if err != nil {
 					log.Error("Error executing importer " + plugin.Name + ": " + err.Error())
 					g3lib.SendApiError(w, http.StatusInternalServerError, "Error while running importer: " + plugin.Name)
-					return
+					return false
 				}
 
 				// Save the imported data into the database.
@@ -389,9 +505,15 @@ func Main() int {
 				if err != nil {
 					log.Error(err)
 					g3lib.SendApiError(w, http.StatusInternalServerError, "Error while running importer: " + plugin.Name)
-					return
+					return false
 				}
 				log.Debug("Imported file: " + parsedImport.Path)
+				return true
+			}
+			for _, parsedImport := range parsed.Imports {
+				if !importOne(parsedImport) {
+					return
+				}
 			}
 
 			// Send the new scan message.
@@ -688,6 +810,13 @@ func Main() int {
 			} else {
 				log.Debug("Cleared scan progress.")
 			}
+			err = os.RemoveAll(filepath.Join(artifactsRoot, scanid))
+			if err != nil {
+				log.Critical("Error removing scan artifacts: " + err.Error())
+				reterr = reterr + "Error removing scan artifacts: " + err.Error() + "\n"
+			} else {
+				log.Debug("Removed scan artifacts.")
+			}
 
 			// If we logged any errors, return with an error condition.
 			// Otherwise, we succeeded.
@@ -925,8 +1054,14 @@ func Main() int {
 			// Save the uploaded contents into a file with a random name.
 			// This way we don't need to trust and/or sanitize user input.
 			filename := uuid.NewString()
-			binPath := "/tmp/" + filename + ".bin"
-			txtPath := "/tmp/" + filename + ".txt"
+			uploadsDir := filepath.Join(artifactsRoot, "_uploads")
+			if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
+				log.Error("Cannot create uploads dir " + uploadsDir + ": " + err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				return
+			}
+			binPath := filepath.Join(uploadsDir, filename+".bin")
+			txtPath := filepath.Join(uploadsDir, filename+".txt")
 			fd, err := os.OpenFile(binPath, os.O_WRONLY | os.O_CREATE, 0600)
 			if err != nil {
 				log.Error("Error creating upload file: " + err.Error())

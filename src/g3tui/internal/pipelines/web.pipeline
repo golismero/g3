@@ -1,5 +1,5 @@
 nmap-fast | testssl
 dig | nmap-fast | testssl
-sublist3r | dig | nmap-fast | testssl
+subfinder | dig | nmap-fast | testssl
 nikto
 wafw00f

@@ -8,5 +8,4 @@ dig | nmap | testssl
 
 nikto
 subfinder
-sublist3r
 testssl

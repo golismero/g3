@@ -88,8 +88,6 @@ jobs:
             prep: iana-descriptions
           - image: subfinder
             context: plugins/recon/subfinder
-          - image: sublist3r
-            context: plugins/recon/sublist3r
           - image: testssl
             context: plugins/recon/testssl
           - image: wafw00f

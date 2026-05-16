@@ -1,11 +1,10 @@
-.PHONY: all pull nmap subfinder sublist3r testssl wafw00f
+.PHONY: all pull nmap subfinder testssl wafw00f
 
-all: nmap subfinder sublist3r testssl wafw00f
+all: nmap subfinder testssl wafw00f
 
 pull:
 	cd nmap && $(MAKE) pull
 	cd subfinder && $(MAKE) pull
-	cd sublist3r && $(MAKE) pull
 	cd testssl && $(MAKE) pull
 	cd wafw00f && $(MAKE) pull
 
@@ -14,9 +13,6 @@ nmap:
 
 subfinder:
 	cd subfinder && $(MAKE) all
-
-sublist3r:
-	cd sublist3r && $(MAKE) all
 
 testssl:
 	cd testssl && $(MAKE) all

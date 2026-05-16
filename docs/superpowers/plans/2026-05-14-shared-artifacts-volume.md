@@ -28,9 +28,7 @@ These override the writing-plans skill's TDD/commit defaults, per this repositor
 
 - **Tier 1 — Worker-side ✅ COMPLETED 2026-05-15.** Env config + startup writability check, per-task artifact slot creation, `/artifacts` bind-mount, `manifest.json` writing, and docker-compose/`.env` wiring for the worker services. Delivered: plugins can write artifacts; every executed task gets a manifest. Smoke-tested by the maintainer.
 - **Tier 1b — Manifest model refactor ✅ COMPLETED 2026-05-16.** Smoke-testing surfaced a design gap: the flat manifest assumes one command per task, but a plugin entrypoint script can run multiple sub-commands (testssl-per-port, vulners-per-CPE, etc.). Tier 1b reshapes the manifest to a per-command `work[]` array, introduces `G3Data._artifacts` for plugins to claim their files, makes the slot's actual file enumeration authoritative (`files[]` at root), and treats claimed-but-missing or malformed claims as loud task errors. Delivered: the manifest faithfully records multi-command plugin runs and surfaces plugin bugs as ERROR-state tasks.
-- **Tier 2 — g3api-side (detailed below).** `G3_UPLOAD_TTL`, relocating uploads from `/tmp` into `<root>/_uploads/`, moving them into `<root>/<scanid>/imports/` at import time, `/scan/delete` artifact cleanup, the `_uploads/` orphan-sweep goroutine, and docker-compose/`.env` wiring for g3api.
-
-Between Tier 1b and Tier 2, artifacts accumulate with no cleanup (cleanup lands in Tier 2's `/scan/delete` change). This is expected for the tiered rollout.
+- **Tier 2 — g3api-side ✅ COMPLETED 2026-05-16.** `G3_UPLOAD_TTL`, relocating uploads from `/tmp` into `<root>/_uploads/`, moving them into `<root>/<scanid>/imports/` at import time, `/scan/delete` artifact cleanup, the `_uploads/` orphan-sweep goroutine, and docker-compose/`.env` wiring for g3api. Delivered: g3api fully participates in the artifacts lifecycle; uploads die with their scans; orphan uploads are swept (default 24h in the demo).
 
 ---
 
@@ -939,6 +937,12 @@ Tier 1b is complete. Hand back to the maintainer to:
 5. Optionally proceed to Tier 2 (detailed below).
 
 ---
+
+## Tier 2 — g3api-side ✅ COMPLETED 2026-05-16
+
+> All six tasks landed and verified clean across g3lib / g3worker / g3api (`go build` + `golangci-lint run` → 0 issues in each module). Implemented via subagent-driven development (one implementer + spec reviewer + quality reviewer per task). Checkboxes below preserved for the historical record.
+>
+> Reviewer also surfaced one pre-existing concern outside this tier's scope: `defer stdin.Close()` inside the import loop accumulates file descriptors across multi-import requests. That pattern was inherited verbatim from `dcc3991` and is the subject of a separate follow-up fix (extract the per-import body into a helper so `defer` fires at the right scope).
 
 ### File structure
 
