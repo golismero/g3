@@ -4,7 +4,6 @@ import os
 import sys
 import json
 import socket
-import tempfile
 import subprocess
 
 # Supported protocols. There are special cases for http, ldap, smtp.

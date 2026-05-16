@@ -8,8 +8,9 @@ RUN apk add --update --no-cache git
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
 RUN git clone https://github.com/golismero/magenta.git && \
-    cd magenta && \
-    for r in $(find . -name requirements.txt); do python3 -m pip install -r requirements.txt; done
+    find magenta -name requirements.txt -exec python3 -m pip install \
+        --no-cache-dir --root-user-action=ignore --break-system-packages \
+        -r {} \;
 
 # Add the Golismero3 wrapper.
 COPY --chmod=0755 g3r.sh /usr/bin/g3r
