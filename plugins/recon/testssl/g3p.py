@@ -1,11 +1,25 @@
 #!/usr/bin/python3
 
 import os
+import os.path
 import sys
 import json
+import shutil
 import socket
 import tempfile
 import subprocess
+
+
+# Slug an IP for safe use in artifact filenames: dots/colons become dashes;
+# anything outside [0-9a-fA-F-] returns None (defense against malformed upstream data).
+_IP_SLUG_ALLOWED = set("0123456789abcdefABCDEF-")
+
+def ip_slug(ip):
+    slug = ip.replace(":", "-").replace(".", "-")
+    if not slug or not all(c in _IP_SLUG_ALLOWED for c in slug):
+        return None
+    return slug
+
 
 # Base arguments for testssl.
 # TODO some of this could come from environment variables
@@ -26,13 +40,26 @@ if "url" in input_data:
         with os.fdopen(fd, 'r') as tmpfd:
             args = list(base_args)
             args.extend(["-oJ", tmp, "--overwrite", "--", url])
-            subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
+            # Run testssl, tee'ing combined stdout/stderr to both stderr (live) and the artifacts log.
+            with open("/artifacts/testssl.txt", "wb") as logfile:
+                proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                for line in proc.stdout:
+                    sys.stderr.buffer.write(line)
+                    sys.stderr.buffer.flush()
+                    logfile.write(line)
+                proc.wait()
             process = subprocess.Popen(["/usr/bin/g3i", tmp], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
             stdout, stderr = process.communicate()
             if stderr:
                 sys.stderr.write(stderr)
             if stdout:
                 output_data.extend( json.loads(stdout) )
+                for g3d in output_data:
+                    g3d["_artifacts"] = ["testssl.txt", "testssl.json"]
+
+        # Copy the temporary file to the artifacts folder.
+        shutil.copy(tmp, "/artifacts/testssl.json")
+
     finally:
         os.unlink(tmp)
 
@@ -41,6 +68,10 @@ if "url" in input_data:
 else:
     for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "")):
         if not ip: continue
+        slug = ip_slug(ip)
+        if slug is None:
+            sys.stderr.write("Warning: skipping testssl for malformed IP value %r\n" % ip)
+            continue
         host = input_data
 
         # This code assumes only the first hostname is the "good" one.
@@ -87,36 +118,44 @@ else:
             else:
                 continue    # not an SSL port
 
-            # Create a temporary file for the JSON output from testssl.sh.
-            fd, tmp = tempfile.mkstemp()
-            try:
-                with os.fdopen(fd, 'r') as tmpfd:
+            # Per-target artifact filenames so multiple (ip, port) tuples don't clobber.
+            txt_path = "/artifacts/testssl.%s.%d.txt" % (slug, port)
+            json_path = "/artifacts/testssl.%s.%d.json" % (slug, port)
 
-                    # Add the output filename and target host and port.
-                    args.extend(["--ip", ip, "-oJ", tmp, "--overwrite"])
-                    args.append("--")
-                    args.append("%s:%d" % (hostname, port))
+            # Add the output filename and target host and port.
+            args.extend(["--ip", ip, "-oJ", json_path, "--overwrite"])
+            args.append("--")
+            args.append("%s:%d" % (hostname, port))
 
-                    # Run testssl.sh, piping stdout and stderr directly to our stderr.
-                    # This will send all of the text output into the G3 logs.
-                    # On error an exception is raised.
-                    subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
+            # Run testssl.sh, tee'ing combined stdout/stderr to both stderr (live)
+            # and the artifacts log. This will send all of the text output into the G3 logs.
+            with open(txt_path, "wb") as logfile:
+                proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                for line in proc.stdout:
+                    sys.stderr.buffer.write(line)
+                    sys.stderr.buffer.flush()
+                    logfile.write(line)
+                proc.wait()
 
-                    # Call the importer on the output file.
-                    # Capture stdout so we can parse it later.
-                    process = subprocess.Popen(["/usr/bin/g3i", tmp], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-                    stdout, stderr = process.communicate()
-                    if stderr:
-                        sys.stderr.write(stderr)
-                    if not stdout:
-                        continue
+            # Call the importer on the output file.
+            # Capture stdout so we can parse it later.
+            process = subprocess.Popen(["/usr/bin/g3i", json_path], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            if stderr:
+                sys.stderr.write(stderr)
+            if not stdout:
+                continue
 
-                    # Parse the output file as JSON.
-                    output_data.extend( json.loads(stdout) )
-
-            # Make sure to delete the temporary file on exit.
-            finally:
-                os.unlink(tmp)
+            # Parse the output file as JSON.
+            artifacts = []
+            if os.path.exists(txt_path):
+                artifacts.append(txt_path)
+            if os.path.exists(json_path):
+                artifacts.append(json_path)
+            new_data = json.loads(stdout)
+            for g3d in new_data:
+                g3d["_artifacts"] = artifacts
+            output_data.extend(new_data)
 
 # Send the JSON output array over stdout.
 json.dump(output_data, sys.stdout)

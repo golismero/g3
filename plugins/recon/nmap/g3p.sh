@@ -1,7 +1,6 @@
 #!/bin/sh
-jsonfile=`cat` || exit 1
-xmlfile=`mktemp` || exit 1
-nmap -oX "$xmlfile" "$@" 1>&2
-cat "$xmlfile" | /usr/bin/g3i "$jsonfile"
-rm "$xmlfile"
+set -e
+jsonfile=`cat`
+nmap -oX /artifacts/nmap.xml "$@" | tee /artifacts/nmap.txt 1>&2
+cat /artifacts/nmap.xml | /usr/bin/g3i "$jsonfile"
 exit 0

@@ -8,6 +8,12 @@ import shlex
 # This will contain the output array.
 output = []
 
+# Flag that indicates this is the result of a run, not an import.
+if len(sys.argv) == 2 and sys.argv[1] == "r":
+    ARTIFACTS = ["dig.txt"]
+else:
+    ARTIFACTS = []
+
 # Parse the input data.
 input = jc.parse("dig", sys.stdin.read())
 assert input
@@ -22,7 +28,7 @@ for response in input:
     domain = domain[:-1]
     server = response["server"]
     p = server.find("(")
-    q = server.rfind(")")
+    q = server.find(")", p)
     assert p >= 0, (p,q)
     assert q >= 0, (p,q)
     assert p < q, (p,q)
@@ -33,6 +39,7 @@ for response in input:
         "_type": "domain",
         "_cmd": cmd,
         "_fp": fp,
+        "_artifacts": ARTIFACTS,
         "domain": domain,
         "records": response["answer"],
     })
@@ -44,6 +51,7 @@ for response in input:
                 "_type": "host",
                 "_cmd": cmd,
                 "_fp": fp,
+                "_artifacts": ARTIFACTS,
                 "ipv4": answer["data"],
                 "hostnames": [answer["name"][:-1]],
             })
@@ -52,6 +60,7 @@ for response in input:
                 "_type": "host",
                 "_cmd": cmd,
                 "_fp": fp,
+                "_artifacts": ARTIFACTS,
                 "ipv6": answer["data"],
                 "hostnames": [answer["name"][:-1]],
             })

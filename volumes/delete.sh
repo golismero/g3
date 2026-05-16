@@ -8,4 +8,3 @@ rm -fr ${SCRIPT_DIR}/mosquitto/data
 rm -fr ${SCRIPT_DIR}/mosquitto/log
 rm -fr ${SCRIPT_DIR}/redis
 rm -fr ${SCRIPT_DIR}/tmp/*/
-rm -fr ${SCRIPT_DIR}/vulners-proxy

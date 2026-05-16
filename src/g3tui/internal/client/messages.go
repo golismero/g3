@@ -79,8 +79,17 @@ type ScanCancelRequested struct {
 	ScanID string
 }
 
-// Outcome of POST /scan/delete.
+// Outcome of POST /scan/delete (this client's own delete request).
 type ScanDeleted struct {
+	ScanID string
+}
+
+// ScanRemoved is pushed via the WS "scanremoved" channel when any
+// client successfully deletes a scan. Receivers should drop the entry
+// from their local list rather than wait for the next periodic
+// /scan/progress snapshot to reveal the absence. Carries only the scan
+// id — any further state about the scan is by definition gone.
+type ScanRemoved struct {
 	ScanID string
 }
 

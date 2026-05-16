@@ -10,6 +10,7 @@ ARG nmap_ver=7.99
 # Install dependencies
 RUN apk add --update --no-cache \
             ca-certificates \
+            coreutils \
             libpcap \
             libgcc libstdc++ \
             libssl3 \

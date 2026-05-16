@@ -1,7 +1,6 @@
 #!/bin/sh
-textfile=`mktemp` || exit 1
-"$@" > "$textfile"
-cat "$textfile" 1>&2
-cat "$textfile" | /usr/bin/g3i
-rm "$textfile"
+set -e
+"$@" > /artifacts/dig.txt
+cat /artifacts/dig.txt 1>&2
+cat /artifacts/dig.txt | /usr/bin/g3i r
 exit 0

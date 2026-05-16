@@ -281,7 +281,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.wizard = nil
 		return a, nil
 
-	case client.ScanListSnapshot, client.ScanProgressUpdate:
+	case client.ScanListSnapshot, client.ScanProgressUpdate, client.ScanRemoved:
 		return a.dispatchToScanList(m)
 
 	case focusChangedMsg, client.TaskStatusUpdate:

@@ -454,7 +454,15 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 							"--------------------------------------------------------------------------------\n",
 							int(((currentScanStep - 1) * 100) / totalScanSteps), currentScanStep - 1, totalScanSteps,
 							plugin.Name, plugin.Description["en"], plugin.URL)
-						resultData, err := g3lib.RunPluginCommand(ctx, plugin, parsed, data, stderr)
+						slot, slotErr := g3lib.CreateEphemeralArtifactSlot()
+						if slotErr != nil {
+							log.Warningf("Cannot create ephemeral artifact slot, plugin will run without /artifacts: %s", slotErr.Error())
+							slot = ""
+						}
+						resultData, err := g3lib.RunPluginCommand(ctx, plugin, parsed, data, slot, stderr)
+						if slot != "" {
+							os.RemoveAll(slot) //nolint:errcheck
+						}
 						if err != nil {
 							log.Critical("Error executing tool " + plugin.Name + ": " + err.Error())
 							return err
@@ -642,7 +650,15 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 					"--- " + plugin.Description["en"] + "\n" +
 					"--- " + plugin.URL + "\n" +
 					"--------------------------------------------------------------------------------\n")
-				outputArray, err := g3lib.RunPluginCommand(ctx.Ctx, plugin, parsed, data, stderr)
+				slot, slotErr := g3lib.CreateEphemeralArtifactSlot()
+				if slotErr != nil {
+					log.Warningf("Cannot create ephemeral artifact slot, plugin will run without /artifacts: %s", slotErr.Error())
+					slot = ""
+				}
+				outputArray, err := g3lib.RunPluginCommand(ctx.Ctx, plugin, parsed, data, slot, stderr)
+				if slot != "" {
+					os.RemoveAll(slot) //nolint:errcheck
+				}
 				if err != nil {
 					log.Critical("Error executing tool " + plugin.Name + ": " + err.Error())
 					return err

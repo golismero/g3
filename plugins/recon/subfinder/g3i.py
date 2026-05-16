@@ -4,6 +4,12 @@ import sys
 import json
 import shlex
 
+# Flag that indicates this is the result of a run, not an import.
+if len(sys.argv) == 2 and sys.argv[1] == "r":
+    ARTIFACTS = ["subfinder.txt", "subfinder.json"]
+else:
+    ARTIFACTS = []
+
 # We have four possible output formats: JSON or text, and with or without collecting all sources.
 # The -active flag does affect the output contents but not the format.
 input = sys.stdin.readlines()
@@ -76,6 +82,7 @@ for host in results:
     output.append({
         "_cmd": cmd,
         "_fp": fp,
+        "_artifacts": ARTIFACTS,
         "domain": host,
     })
 

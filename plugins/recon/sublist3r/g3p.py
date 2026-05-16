@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import shlex
+import shutil
 import tempfile
 import subprocess
 
@@ -34,9 +35,15 @@ try:
                 args = ["./sublist3r.py", "-d", domain, "-o", tmp, "-v"]
                 cmd = "python3 sublist3r.py -d " + shlex.quote(domain) + " -v"
 
-        # Run the tool.
+        # Run the tool, tee'ing combined stdout/stderr to both stderr (live) and the artifacts log.
         #sys.stderr.write(repr(args) + "\n")
-        result = subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
+        with open("/artifacts/sublist3r.txt", "wb") as logfile:
+            proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            for line in proc.stdout:
+                sys.stderr.buffer.write(line)
+                sys.stderr.buffer.flush()
+                logfile.write(line)
+            proc.wait()
 
         # Parse the output of the tool and generate G3 objects.
         # The output from Sublist3r is simply a text file with a domain name in each line.
@@ -48,8 +55,12 @@ try:
                 seen.add(domain)
                 output.append({
                     "_cmd": cmd,
+                    "_artifacts": ["sublist3r.txt", "sublist3r.json"],
                     "domain": domain,
                 })
+
+    # Copy the temporary file to the artifacts folder.
+    shutil.copy(tmp, "/artifacts/sublist3r.json")
 
 # Delete the temporary file when we're done.
 finally:

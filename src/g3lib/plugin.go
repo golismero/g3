@@ -297,8 +297,10 @@ func BuildPluginFingerprint(fingerprintTemplate []string, data G3Data) ([]string
 	return fingerprint, errorArray
 }
 
-// Run the command on the plugin's container.
-func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, data G3Data, stderr io.Writer) ([]G3Data, error) {
+// Run the command on the plugin's container. artifactsHostDir, if non-empty,
+// is bind-mounted into the plugin container as /artifacts:rw — the per-task
+// slot the plugin may write into. Pass "" if no artifact slot is wanted.
+func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, data G3Data, artifactsHostDir string, stderr io.Writer) ([]G3Data, error) {
 
 	// Convert the input data to JSON format.
 	jsonData, err := json.Marshal(data)
@@ -311,15 +313,17 @@ func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginC
 	stdin.Write(jsonData)
 
 	// Run the command on the plugin's container.
-	return runPluginInternal(ctx, plugin, parsed, &stdin, stderr)
+	return runPluginInternal(ctx, plugin, parsed, &stdin, artifactsHostDir, stderr)
 }
 
-// Run an importer, passing the input file as a reader.
+// Run an importer, passing the input file as a reader. Importers do not write
+// artifact files; the /artifacts mount is intentionally not provided.
 func RunPluginImporter(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, stderr io.Writer) ([]G3Data, error) {
-	return runPluginInternal(ctx, plugin, parsed, stdin, stderr)
+	return runPluginInternal(ctx, plugin, parsed, stdin, "", stderr)
 }
 
-// Run a merger, passing a list of issues as input.
+// Run a merger, passing a list of issues as input. Mergers do not write
+// artifact files; the /artifacts mount is intentionally not provided.
 func RunPluginMerger(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, issues []G3Data, stderr io.Writer) ([]G3Data, error) {
 
 	// Convert the input data to JSON format.
@@ -333,11 +337,11 @@ func RunPluginMerger(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCo
 	stdin.Write(jsonData)
 
 	// Run the command on the plugin's container.
-	return runPluginInternal(ctx, plugin, parsed, &stdin, stderr)
+	return runPluginInternal(ctx, plugin, parsed, &stdin, "", stderr)
 }
 
 // Run a plugin but take the input from a reader.
-func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, stderr io.Writer) ([]G3Data, error) {
+func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, artifactsHostDir string, stderr io.Writer) ([]G3Data, error) {
 	var outputArray []G3Data
 	var stdout bytes.Buffer
 
@@ -354,6 +358,14 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 
 	// Prepare the full command line to execute.
 	commandLine := []string{"docker", "run", "-q", "--cidfile", tempfile.Name(), "-v", "./resources:/resources:ro"}
+
+	// Mount the caller-supplied artifact slot as /artifacts inside the plugin
+	// container. Empty means "no artifact slot" (used by importers and mergers,
+	// and by callers that don't need plugins to persist files).
+	if artifactsHostDir != "" {
+		commandLine = append(commandLine, "-v", artifactsHostDir+":/artifacts:rw")
+	}
+
 	if network != "" {
 		commandLine = append(commandLine, "--network", network)
 	}

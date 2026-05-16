@@ -38,7 +38,7 @@ docker compose up          # Starts mongo, mariadb, mosquitto, redis, nginx + ap
 docker compose up -d       # Detached
 ```
 
-Configuration is driven by `.env` (77 documented environment variables covering MongoDB, MariaDB, MQTT, Redis, Vulners, VirusTotal, API, scanner, and worker settings).
+Configuration is driven by `.env` (multiplel documented environment variables covering infrastructure details, API keys, and internal API, scanner, and worker settings).
 
 ## Architecture
 

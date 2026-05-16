@@ -1,4 +1,4 @@
-.PHONY: all bin clean misc docker plugins pull update install uninstall lint help
+.PHONY: all bin clean docker plugins pull update install uninstall lint help
 
 # Default target — show help when invoked as bare `make`.
 .DEFAULT_GOAL := help
@@ -88,11 +88,6 @@ endif
 	@printf "  $(C_DIM)update    (disabled — Go not detected)$(C_RESET)\n"
 	@printf "  $(C_DIM)lint      (disabled — Go not detected)$(C_RESET)\n"
 endif
-ifdef PYTHON
-	@printf "  $(C_CYAN)misc$(C_RESET)      Install Python build requirements (misc/requirements.txt)\n"
-else
-	@printf "  $(C_DIM)misc      (disabled — Python not detected)$(C_RESET)\n"
-endif
 ifdef DOCKER
 	@printf "  $(C_CYAN)docker$(C_RESET)    Build the main g3 Docker image (ghcr.io/golismero/g3)\n"
 	@printf "  $(C_CYAN)plugins$(C_RESET)   Build all plugin Docker images\n"
@@ -167,22 +162,30 @@ endif
 # Target to build all that is buildable given the available toolchains.
 ifdef GO
 ifdef DOCKER
-all: bin misc docker plugins
+all: bin plugins docker
 else
 all: bin
 endif
 else
 ifdef DOCKER
-all: misc docker plugins
+all: plugins docker
 else
 all: help
 endif
 endif
 
-# Install the build requirements.
-misc:
-ifdef PYTHON
-	python3 -m pip install -r misc/requirements.txt
+# Build all of the Docker images for the plugins.
+ifdef DOCKER
+ifdef GO
+plugins:
+	cd plugins && $(MAKE) all
+	cd src && $(MAKE) ../bin/g3config
+	./bin/g3config
+else
+plugins: docker
+	cd plugins && $(MAKE) all
+	docker compose run g3config
+endif
 endif
 
 # Build the g3 Docker image.
@@ -197,19 +200,6 @@ else
 	touch ./misc/deps.txt
 endif
 	docker build -t ghcr.io/golismero/g3 .
-
-# Build all of the Docker images for the plugins.
-ifdef DOCKER
-ifdef GO
-plugins:
-	cd plugins && $(MAKE) all
-	./bin/g3config
-else
-plugins: docker
-	cd plugins && $(MAKE) all
-	docker compose run g3config
-endif
-endif
 
 # Pull the main g3 image and all plugin images from ghcr.io.
 ifdef DOCKER

@@ -135,20 +135,6 @@ services:
   #  ports:
   #    - "127.0.0.1:${REDIS_PORT}:${REDIS_PORT}"
 
-  # Vulners-Proxy saves on Vulners credits by caching API responses.
-  vulners-proxy:
-    image: vulners/proxy:latest
-    restart: unless-stopped
-    networks:
-      - g3net
-    volumes:
-      - ./volumes/vulners-proxy/vulners-proxy.cache:/tmp/vulners-proxy.cache
-      - ./volumes/vulners-proxy/vulners-proxy.statistic.cache:/tmp/vulners-proxy.statistic.cache
-  #  ports:
-  #    - "127.0.0.1:${VULNERS_PROXY_PORT}:8000"
-    environment:
-      - apiKey=${VULNERS_API_KEY}
-
   # This is the web server that will serve the app.
   nginx:
     image: nginx:latest
@@ -358,8 +344,6 @@ services:
         condition: service_started
       mosquitto:
         condition: service_started
-      vulners-proxy:
-        condition: service_started
       redis:
         condition: service_started
     networks:
@@ -386,9 +370,6 @@ services:
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - VIRUSTOTAL_API_KEY
-      - VULNERS_API_KEY
-      - VULNERS_PROXY_HOST=vulners-proxy
-      - VULNERS_PROXY_PORT
 
   g3worker2:
     image: ghcr.io/golismero/g3:latest
@@ -402,8 +383,6 @@ services:
       mongo:
         condition: service_started
       mosquitto:
-        condition: service_started
-      vulners-proxy:
         condition: service_started
       redis:
         condition: service_started
@@ -431,9 +410,6 @@ services:
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - VIRUSTOTAL_API_KEY
-      - VULNERS_API_KEY
-      - VULNERS_PROXY_HOST=vulners-proxy
-      - VULNERS_PROXY_PORT
 
   g3worker3:
     image: ghcr.io/golismero/g3:latest
@@ -447,8 +423,6 @@ services:
       mongo:
         condition: service_started
       mosquitto:
-        condition: service_started
-      vulners-proxy:
         condition: service_started
       redis:
         condition: service_started
@@ -476,10 +450,7 @@ services:
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - VIRUSTOTAL_API_KEY
-      - VULNERS_API_KEY
-      - VULNERS_PROXY_HOST=vulners-proxy
-      - VULNERS_PROXY_PORT
-
+  
   g3worker4:
     image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3worker
@@ -492,8 +463,6 @@ services:
       mongo:
         condition: service_started
       mosquitto:
-        condition: service_started
-      vulners-proxy:
         condition: service_started
       redis:
         condition: service_started
@@ -521,7 +490,4 @@ services:
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - VIRUSTOTAL_API_KEY
-      - VULNERS_API_KEY
-      - VULNERS_PROXY_HOST=vulners-proxy
-      - VULNERS_PROXY_PORT
   ############################################################################

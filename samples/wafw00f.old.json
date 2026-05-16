@@ -1,0 +1,14 @@
+[
+  {
+    "url": "https://example.com",
+    "detected": true,
+    "firewall": "Edgecast",
+    "manufacturer": "Verizon Digital Media"
+  },
+  {
+    "url": "https://example.com",
+    "detected": true,
+    "firewall": "Generic",
+    "manufacturer": "Unknown"
+  }
+]

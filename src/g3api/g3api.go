@@ -129,8 +129,12 @@ func Main() int {
 	// Load the plugins i18n templates.
 	pluginTemplatesCache := g3lib.LoadPluginTemplates()
 
-	// Initialize the notification tracker.
-	notifyTracker := NewNotifyTracker()
+	// Initialize the notification trackers. Each WS msgtype has its own
+	// tracker so a subscriber to "scanremoved" never receives a
+	// "scanprogress" payload (which would otherwise be wrapped with the
+	// wrong msgtype on the wire by the per-subscription writer goroutine).
+	progressNotify := NewNotifyTracker()
+	removeNotify := NewNotifyTracker()
 
 	// Create the webserver object.
 	bindAddr := os.Getenv(G3_WS_ADDR)
@@ -229,7 +233,7 @@ func Main() int {
 		g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, msg.Progress, msg.Message) //nolint:errcheck
 
 		// Notify the event if anyone wants it.
-		notifyTracker.SendNotification(msg)
+		progressNotify.SendNotification(msg)
 	})
 	defer g3lib.Unsubscribe(mq_client, topic)
 
@@ -690,6 +694,12 @@ func Main() int {
 			if reterr != "" {
 				g3lib.SendApiError(w, http.StatusInternalServerError, reterr)
 			} else {
+				// Notify WS subscribers so they can drop the row
+				// immediately rather than wait for the next periodic
+				// snapshot to reveal the absence. Fire only on full
+				// success; partial failures leave the row in some tables
+				// and the next snapshot will reconcile.
+				removeNotify.SendNotification(g3lib.G3ScanRemoved{ScanID: scanid})
 				g3lib.SendApiResponse(w, nil)
 			}
 		}))
@@ -980,8 +990,8 @@ func Main() int {
 					// Create a channel and register it with the notification tracker.
 					log.Debug("Subscribed to progress updates.")
 					channel := make(chan any)
-					ticket := notifyTracker.AddChannel(channel)
-					defer notifyTracker.RemoveChannel(ticket)
+					ticket := progressNotify.AddChannel(channel)
+					defer progressNotify.RemoveChannel(ticket)
 
 					// Launch a goroutine that sends scan updates to connected websocket clients.
 					wg.Add(1)
@@ -1000,6 +1010,39 @@ func Main() int {
 								}
 								log.Debug("Sending scan progress update to websocket client.")
 								err := conn.WriteData("scanprogress", msg)
+								if err != nil {
+									log.Error(err.Error())
+								}
+							}
+						}
+					}(channel)
+
+				// Subscribe to scan-removal events via websocket. Mirrors
+				// the scanprogress case in structure; payload is a tiny
+				// G3ScanRemoved{ScanID} pushed when /scan/delete succeeds.
+				case "scanremoved":
+
+					log.Debug("Subscribed to scan-removal events.")
+					channel := make(chan any)
+					ticket := removeNotify.AddChannel(channel)
+					defer removeNotify.RemoveChannel(ticket)
+
+					wg.Add(1)
+					go func(channel chan any) {
+						defer wg.Done()
+						log.Debug("Launched goroutine for scanremoved websocket.")
+						for {
+							select {
+							case <-ctx.Done():
+								log.Debug("Shutdown requested.")
+								return
+							case msg := <-channel:
+								if msg == nil {
+									log.Debug("Closing down scanremoved websocket goroutine.")
+									return
+								}
+								log.Debug("Sending scan-removal event to websocket client.")
+								err := conn.WriteData("scanremoved", msg)
 								if err != nil {
 									log.Error(err.Error())
 								}

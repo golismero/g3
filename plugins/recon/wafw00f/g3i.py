@@ -4,6 +4,12 @@ import sys
 import json
 import urllib.parse
 
+# Flag that indicates this is the result of a run, not an import.
+if len(sys.argv) == 2 and sys.argv[1] == "r":
+    ARTIFACTS = ["wafw00f.txt", "wafw00f.json"]
+else:
+    ARTIFACTS = []
+
 # We have two possible output formats, JSON or CSV.
 # The CSV format is actually broken (no double quotes) so we have to hand parse it.
 raw_input = sys.stdin.read()
@@ -14,22 +20,34 @@ try:
         sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
         sys.exit(1)
     for item in json_input:
-        if set(item.keys()) != set(["url", "detected", "firewall", "manufacturer"]):
+        if set(["url", "detected", "firewall", "manufacturer"]).issubset(set(item.keys())):
             sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
             sys.exit(1)
 except Exception:
     lines = raw_input.splitlines()
-    if lines.pop(0) != "url,detected,firewall,manufacturer":
+    header = lines.pop(0)
+    if header == "url,detected,firewall,manufacturer":
+        for line in lines:
+            url, detected, firewall, manufacturer = line.split(",", 4)
+            json_input.append({
+                "url": url,
+                "detected": bool(detected.lower() == "true"),
+                "firewall": firewall,
+                "manufacturer": manufacturer,
+            })
+    elif header == "url,detected,trigger_url,firewall,manufacturer":
+        for line in lines:
+            url, detected, trigger_url, firewall, manufacturer = line.split(",", 5)
+            json_input.append({
+                "url": url,
+                "detected": bool(detected.lower() == "true"),
+                "trigger_url": trigger_url,
+                "firewall": firewall,
+                "manufacturer": manufacturer,
+            })
+    else:
         sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
         sys.exit(1)
-    for line in lines:
-        url, detected, firewall, manufacturer = line.split(",", 4)
-        json_input.append({
-            "url": url,
-            "detected": bool(detected.lower() == "true"),
-            "firewall": firewall,
-            "manufacturer": manufacturer,
-        })
 if not json_input:
     sys.stderr.write("Empty file, ignoring.\n")
     sys.stdout.write("[]")
@@ -51,10 +69,13 @@ for item in json_input:
     if url not in results_per_url:
         results_per_url[url] = []
         urls.add(url)
-    results_per_url[url].append({
+    result = {
         "firewall": item["firewall"],
         "manufacturer": item["manufacturer"],
-    })
+    }
+    if "trigger_url" in item and item["trigger_url"]:
+        result["trigger_url"] = item["trigger_url"]
+    results_per_url[url].append(result)
 
 # Generate an output array of G3 data objects.
 output = []
@@ -67,6 +88,7 @@ for url in sorted(urls):
     data = {
         "_cmd": cmd,
         "_fp": [cmd],
+        "_artifacts": ARTIFACTS,
         "url": url,
         "scheme": o.scheme,
         "host": o.hostname,

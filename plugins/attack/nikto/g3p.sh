@@ -1,6 +1,5 @@
 #!/bin/sh
-csvfile=`mktemp` || exit 1
-nikto.pl -nointeractive -Format csv -o "$csvfile" "$@" 1>&2
-cat "$csvfile" | /usr/bin/g3i "$@"
-rm "$csvfile"
+set -e
+nikto.pl -nointeractive -Format csv -o /artifacts/nikto.csv "$@" 1>&2
+cat /artifacts/nikto.csv | /usr/bin/g3i "$@"
 exit 0

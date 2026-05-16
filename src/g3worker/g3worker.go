@@ -682,32 +682,47 @@ func main() {
 			return
 		}
 		hostSlotDir := filepath.Join(artifactsHostRoot, task.ScanID, task.TaskID)
-		parsed.DockerOpt = append(append([]string{}, parsed.DockerOpt...),
-			"-v", hostSlotDir+":/artifacts:rw")
 
 		log.Info("Running plugin: " + task.Tool)
 		pluginStartTS := time.Now().Unix()
-		outputArray, err := g3lib.RunPluginCommand(ctx, plugin, parsed, data, w)
+		outputArray, err := g3lib.RunPluginCommand(ctx, plugin, parsed, data, hostSlotDir, w)
+		pluginEndTS := time.Now().Unix()
 
-		// Write the per-task manifest: a record of what ran and which files the
-		// plugin left in its slot. Written for every outcome (success, error,
-		// cancel) so every task that reached execution has a manifest.
-		manifestTool, manifestCmd := g3lib.ManifestProvenance(outputArray, plugin, parsed)
-		manifestStatus := "success"
-		if err != nil {
-			manifestStatus = err.Error()
+		// Build and write the per-task manifest. Always written so every task
+		// that reached execution has a record. Validation only runs on the
+		// success path: a canceled or errored plugin run may have left
+		// claimed artifacts unwritten, which is expected, not a defect.
+		manifestFiles, enumErr := g3lib.EnumerateSlot(slotDir)
+		if enumErr != nil {
+			log.Error("Cannot enumerate artifact slot " + slotDir + ": " + enumErr.Error())
+			manifestFiles = []g3lib.G3ManifestFile{}
 		}
-		if e := g3lib.WriteTaskManifest(slotDir, g3lib.G3Manifest{
+		var validationErr error
+		manifestStatus := "success"
+		switch {
+		case errors.Is(err, context.Canceled):
+			manifestStatus = "canceled"
+		case err != nil:
+			manifestStatus = err.Error()
+		default:
+			validationErr = g3lib.ValidateArtifactClaims(outputArray, manifestFiles)
+			if validationErr != nil {
+				manifestStatus = validationErr.Error()
+			}
+		}
+		manifestWriteErr := g3lib.WriteManifest(slotDir, g3lib.G3Manifest{
 			ScanID:     task.ScanID,
 			TaskID:     task.TaskID,
 			Plugin:     plugin.Name,
-			Tool:       manifestTool,
-			Cmd:        manifestCmd,
+			Tool:       g3lib.ManifestTool(outputArray, plugin),
 			ExitStatus: manifestStatus,
 			StartedAt:  pluginStartTS,
-			EndedAt:    time.Now().Unix(),
-		}); e != nil {
-			log.Error("Cannot write task manifest for " + task.TaskID + ": " + e.Error())
+			EndedAt:    pluginEndTS,
+			Files:      manifestFiles,
+			Work:       g3lib.BuildManifestWork(outputArray),
+		})
+		if manifestWriteErr != nil {
+			log.Error("Cannot write task manifest for " + task.TaskID + ": " + manifestWriteErr.Error())
 		}
 
 		// Remove the cancel context.
@@ -736,6 +751,31 @@ func main() {
 			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
+				log.Error(err.Error())
+			}
+			return
+		}
+
+		// Artifact-claim validation failed (plugin reported a file it didn't
+		// write, or returned a malformed _artifacts shape). The manifest has
+		// already been written with the validation error in its exit_status;
+		// upgrade the task outcome to ERROR. By design, this branch is loud —
+		// surfaces plugin bugs as task failures rather than as silent data loss.
+		if validationErr != nil {
+			log.Error("Artifact validation failed for " + plugin.Name + ": " + validationErr.Error())
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+				log.Error(err.Error())
+			}
+			return
+		}
+
+		// The manifest write itself failed (rare — disk full, permissions on
+		// slotDir, etc). Per the spec, this also marks the task ERROR: a task
+		// without a successfully-written manifest is incomplete.
+		if manifestWriteErr != nil {
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
 			return

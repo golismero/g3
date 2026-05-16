@@ -90,9 +90,15 @@ func dialAndSubscribe(ctx context.Context, wsURL, token string) (*websocket.Conn
 	if err != nil {
 		return nil, err
 	}
-	if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"msgtype":"scanprogress"}`)); err != nil {
-		_ = conn.Close()
-		return nil, err
+	// One subscribe frame per channel. The server spawns an
+	// independent writer goroutine per subscribe, so both feeds share
+	// this single connection without further coordination.
+	for _, msgtype := range []string{"scanprogress", "scanremoved"} {
+		frame := []byte(`{"msgtype":"` + msgtype + `"}`)
+		if err := conn.WriteMessage(websocket.TextMessage, frame); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
 	}
 	return conn, nil
 }
@@ -134,19 +140,28 @@ func readLoop(ctx context.Context, conn *websocket.Conn, send func(tea.Msg)) {
 			send(ErrorMsg{Op: "ws-decode", Err: err})
 			continue
 		}
-		if env.MsgType != "scanprogress" {
+		switch env.MsgType {
+		case "scanprogress":
+			var status g3lib.G3ScanStatus
+			if err := json.Unmarshal(env.Data, &status); err != nil {
+				send(ErrorMsg{Op: "ws-decode", Err: err})
+				continue
+			}
+			send(ScanProgressUpdate{
+				ScanID:   status.ScanID,
+				Status:   status.Status,
+				Progress: status.Progress,
+				Message:  status.Message,
+			})
+		case "scanremoved":
+			var removed g3lib.G3ScanRemoved
+			if err := json.Unmarshal(env.Data, &removed); err != nil {
+				send(ErrorMsg{Op: "ws-decode", Err: err})
+				continue
+			}
+			send(ScanRemoved{ScanID: removed.ScanID})
+		default:
 			continue
 		}
-		var status g3lib.G3ScanStatus
-		if err := json.Unmarshal(env.Data, &status); err != nil {
-			send(ErrorMsg{Op: "ws-decode", Err: err})
-			continue
-		}
-		send(ScanProgressUpdate{
-			ScanID:   status.ScanID,
-			Status:   status.Status,
-			Progress: status.Progress,
-			Message:  status.Message,
-		})
 	}
 }

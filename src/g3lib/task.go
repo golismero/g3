@@ -116,6 +116,15 @@ type G3ScanStop struct {        // MessageType: MSG_STOP
 	G3Message
 }
 
+// G3ScanRemoved is the WS notification payload pushed on the
+// "scanremoved" channel when a scan is deleted server-side. It carries
+// only the scan id — any further state is by definition gone — and
+// lets subscribed clients drop the entry immediately rather than wait
+// for the next periodic /scan/progress snapshot to reveal the absence.
+type G3ScanRemoved struct {
+	ScanID string               `json:"scanid"      validate:"required,uuid4"`
+}
+
 type MessageQueueClient mqtt.Client
 
 type TaskHandler func(MessageQueueClient, G3Task)

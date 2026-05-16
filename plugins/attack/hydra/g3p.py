@@ -18,6 +18,16 @@ if "HYDRA_MAX_TASKS" in os.environ:
     base_args.append("-t")
     base_args.append(os.environ["HYDRA_MAX_TASKS"])
 
+# Slug an IP for safe use in artifact filenames: dots/colons become dashes;
+# anything outside [0-9a-fA-F-] returns None (defense against malformed upstream data).
+_IP_SLUG_ALLOWED = set("0123456789abcdefABCDEF-")
+
+def ip_slug(ip):
+    slug = ip.replace(":", "-").replace(".", "-")
+    if not slug or not all(c in _IP_SLUG_ALLOWED for c in slug):
+        return None
+    return slug
+
 # Here we will have the output data.
 output_data = []
 
@@ -30,6 +40,10 @@ input_data = json.load(sys.stdin)
 # It's written as a loop to make it more future-proof (at least it'll do something right-ish).
 for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "")):
     if not ip: continue
+    slug = ip_slug(ip)
+    if slug is None:
+        sys.stderr.write("Warning: skipping hydra for malformed IP value %r\n" % ip)
+        continue
     host = input_data
 
     # This code assumes only the first hostname is the "good" one.
@@ -76,37 +90,31 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "")):
             sys.stderr.write("[G3] Protocol not supported by Hydra: %s (port %d)\n" % (protocol, port))
             continue
 
-        # Create a temporary file for the tool output.
-        fd, tmp = tempfile.mkstemp()
-        try:
-            with os.fdopen(fd, 'r') as tmpfd:
+        # Prepare the output filename for hydra.
+        output_file = "/artifacts/hydra.%s.%d.txt" % (slug, port)
 
-                # Build the command line for Hydra.
-                args = list(base_args)
-                args.append("%s://%s:%d" % (protocol, hostname, port))
-                args.append("-o")
-                args.append(tmp)
+        # Build the command line for Hydra.
+        args = list(base_args)
+        args.append("%s://%s:%d" % (protocol, hostname, port))
+        args.append("-o")
+        args.append(output_file)
 
-                # Run Hydra, piping stdout and stderr directly to our stderr.
-                # This will send all of the text output into the G3 logs.
-                # On error an exception is raised.
-                subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
+        # Run Hydra, piping stdout and stderr directly to our stderr.
+        # This will send all of the text output into the G3 logs.
+        # On error an exception is raised.
+        subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
 
-                # Call the importer on the output file.
-                # Capture stdout so we can parse it later.
-                process = subprocess.Popen(["/usr/bin/g3i", tmp], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-                stdout, stderr = process.communicate()
-                if stderr:
-                    sys.stderr.write(stderr)
-                if not stdout:
-                    continue
+        # Call the importer on the output file.
+        # Capture stdout so we can parse it later.
+        process = subprocess.Popen(["/usr/bin/g3i", output_file], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        if stderr:
+            sys.stderr.write(stderr)
+        if not stdout:
+            continue
 
-                # Parse the output file as JSON.
-                output_data.extend( json.loads(stdout) )
-
-        # Delete the temporary file when we're done.
-        finally:
-            os.unlink(tmp)
+        # Parse the output file as JSON.
+        output_data.extend( json.loads(stdout) )
 
 # Send the JSON output array over stdout.
 json.dump(output_data, sys.stdout)

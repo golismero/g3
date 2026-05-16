@@ -26,8 +26,5 @@ COPY --chmod=0755 g3p.py /usr/bin/g3p
 COPY --chmod=0755 g3i.py /usr/bin/g3i
 COPY --chmod=0755 g3m.py /usr/bin/g3m
 
-# Switch back to the non privileged user.
-USER testssl
-
 # Change the entrypoint to our wrapper.
 ENTRYPOINT ["/usr/bin/g3p"]

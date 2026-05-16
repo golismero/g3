@@ -148,56 +148,136 @@ compose `G3HOME=/app` convention.
 ### What it does
 
 After a plugin container exits, the worker writes `manifest.json` into the task's slot
-directory. It is written **always** — even when the plugin produced no files — so every
-task that ran has a consistent, machine-readable record. Consumers read `manifest.json`
-to map files back to the tool that produced them. No `.g3p` changes and no plugin
-cooperation are required.
+directory. It is written **always** — even when the plugin produced no files, and even
+when validation of the plugin's artifact claims fails — so every task that reached
+execution has a consistent, machine-readable record of what happened.
 
 The manifest is the **magenta integration contract.** magenta's own integration design
-(`docs/g3-integration-discussion.md` in the magenta repo) settled on exactly this shape:
-g3 hands magenta a directory of tool output files plus a manifest, and the manifest is
+(`docs/g3-integration-discussion.md` in the magenta repo) settled on this shape: g3
+hands magenta a directory of tool output files plus a manifest, and the manifest is
 what lets magenta tell `nmap.xml` from a generic `out.xml`. (magenta matches input files
 by filename prefix — `<tool>.*` — but g3 will *not* rename or copy files to fit that
 convention; magenta gains a g3-manifest-aware input path instead. See *Future work*.)
 
-### How it works
+### A plugin run can contain multiple command runs
 
-The worker writes the manifest after the plugin process returns and before the task is
-marked terminal. The worker enumerates the slot directory to discover what the plugin
-actually wrote — the plugin does not self-report.
+A worker task corresponds to one plugin entrypoint invocation, but the plugin's
+entrypoint script can run *multiple sub-commands* internally. testssl, for instance,
+runs `testssl.sh` once per (host, port) tuple; a plugin in
+principle could do anything. Each sub-command run has its own command line and its own
+output files. The manifest models this with a `work[]` array: one entry per unique
+sub-command, each carrying that command's `cmd` and the filenames of the artifacts it
+produced.
 
-`tool` and `cmd` are lifted from the G3Data objects the plugin emitted (the worker
-already receives these as the `outputArray` return of `RunPluginCommand`). Both are
-guaranteed available: g3lib's output normalization in `runPluginInternal` injects
-`_tool` (defaulting to the plugin name) and `_cmd` (defaulting to the dispatched command
-line) onto every object, and injects a dummy object when the tool emits nothing — so
-there is always at least one object carrying them. `_cmd` is also guaranteed to be a
-*string*: `runPluginInternal` normalizes non-string `_cmd` shapes (e.g. a plugin that
-emitted a token array) before the data is returned, so the manifest just reads an
-already-normalized value.
+The grouping key is `_cmd`. The plugin's importer already stamps the right `_cmd` onto
+each emitted G3Data (testssl's importer, for example, stamps the testssl-on-port-N
+command line onto every object it produces from that invocation). The worker groups
+output objects by `_cmd` and unions their `_artifacts` claims into a single `work`
+entry per unique command.
 
-`manifest.json` fields:
+### The G3Data `_artifacts` field
 
-| Field          | Source                                                        |
-|----------------|---------------------------------------------------------------|
-| `scan_id`      | The task's scan ID.                                           |
-| `task_id`      | The task's task ID.                                           |
-| `plugin`       | g3 plugin name (`G3Plugin.Name`) — identifies *which variant* ran (e.g. `nmap-fast`). |
-| `tool`         | `_tool` from the emitted G3Data — the canonical tool name magenta resolves (e.g. `nmap`). Equals `plugin` for most plugins; diverges for variant plugins like the nmap trio. |
-| `cmd`          | `_cmd` from the emitted G3Data — the command line, normalized to a string by g3lib. |
-| `exit_status`  | Tool exit status.                                             |
-| `started_at`   | Task start timestamp.                                         |
-| `ended_at`     | Task end timestamp.                                           |
-| `files`        | List of `{name, size, modified}`, one per file the plugin left in `/artifacts/`. Empty list if none. |
+`G3Data` gains a new optional underscore field:
 
-`manifest.json` itself is excluded from the `files` enumeration.
+- **`_artifacts ([]string)`** — relative filenames (under `/artifacts/`) the producing
+  command wrote. The plugin's importer sets it. Absent, empty, or partial (not
+  claiming everything in the slot) are all allowed — see *unclaimed files* below.
+
+`_artifacts` is documented alongside the other underscore fields in
+[`src/g3lib/common.go`](../../../src/g3lib/common.go) and listed in the
+known-underscore-field allowlist there.
+
+### How `tool` and per-work `cmd` are derived
+
+`tool` and per-work `cmd` are lifted from the G3Data objects the plugin emitted (the
+worker already receives them as the `outputArray` return of `RunPluginCommand`). Both
+are guaranteed available: g3lib's output normalization in `runPluginInternal` injects
+`_tool` (defaulting to the plugin name) and `_cmd` (defaulting to the dispatched
+command line) onto every object, and injects a dummy object when the tool emits
+nothing — so there is always at least one object carrying them. `_cmd` is also
+guaranteed to be a *string*: `runPluginInternal` normalizes non-string `_cmd` shapes
+(e.g. a plugin that emitted a token array) before the data is returned, so the
+manifest reads an already-normalized value.
+
+### Worker flow
+
+After the plugin exits and the per-G3Data `IsValidData` filter has run, and before
+any termination state is decided:
+
+1. **Enumerate the slot directory** → the root-level `files` list, with rich per-file
+   records (`name`, `size`, `modified`). The slot dir is the authoritative source of
+   truth for what's on disk; `manifest.json` itself is excluded from the enumeration.
+2. **Validate `_artifacts` claims.** For each surviving G3Data with an `_artifacts`
+   field, verify the field is a list of strings (allowing JSON's `[]interface{}` of
+   strings after unmarshal) and that every named filename appears in the enumerated
+   `files`.
+3. **Validation failures are loud.** Any missing claimed filename or any malformed
+   `_artifacts` shape marks the task `ERROR` regardless of whether the plugin itself
+   returned cleanly. The manifest's `exit_status` records the specific reason (e.g.
+   `missing artifacts: testssl.443.json (claimed by cmd 'testssl ... :443')`).
+4. **Build `work[]`** by grouping output G3Data objects by their `_cmd` string and
+   unioning their `_artifacts` filenames per group. One unique `_cmd` produces one
+   `work` entry. The worker-injected dummy G3Data (`_type: "nil"`, defaulted `_cmd`,
+   no `_artifacts`) contributes a single `work` entry with empty `artifacts` when the
+   plugin emitted nothing.
+5. **Write the manifest** with the populated `files`, `work[]`, and `exit_status`.
+6. **Proceed to the existing termination branches.** A canceled task skips
+   validation entirely — a canceled run that didn't finish writing claimed files is
+   expected, not a defect.
+
+### Unclaimed files (orphans) are intentional
+
+A file present in the slot but listed in no `work[].artifacts` is an **orphan** —
+present in `files`, claimed by nobody. This is allowed and useful: plugins can
+deliberately retain debug logs, forensic dumps, or anything else they don't want
+downstream consumers to process. Magenta and other curated consumers iterate
+`work[].artifacts`; an operator doing forensics walks `files` directly.
+
+### Manifest schema
+
+```json
+{
+  "scan_id": "...",
+  "task_id": "...",
+  "plugin": "testssl",
+  "tool": "testssl",
+  "exit_status": "success",
+  "started_at": 123,
+  "ended_at": 456,
+  "files": [
+    {"name": "testssl.443.json", "size": 1024, "modified": 456},
+    {"name": "debug.log",        "size": 512,  "modified": 457}
+  ],
+  "work": [
+    {"cmd": "testssl.sh ... -- example.com:443", "artifacts": ["testssl.443.json"]}
+  ]
+}
+```
+
+| Field         | Source                                                                                                                                                                |
+|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `scan_id`     | The task's scan ID.                                                                                                                                                   |
+| `task_id`     | The task's task ID.                                                                                                                                                   |
+| `plugin`      | g3 plugin name (`G3Plugin.Name`) — identifies which variant ran (e.g. `nmap-fast`).                                                                                   |
+| `tool`        | `_tool` from the first G3Data — the canonical tool name magenta resolves (e.g. `nmap`).                                                                               |
+| `exit_status` | `"success"` if the plugin returned cleanly and artifact validation passed; otherwise an explanatory string (plugin error, missing artifacts, malformed `_artifacts`). |
+| `started_at`  | Wallclock seconds — worker's view, immediately before `RunPluginCommand`.                                                                                             |
+| `ended_at`    | Wallclock seconds — worker's view, after `RunPluginCommand`.                                                                                                          |
+| `files`       | Worker-enumerated list of every regular file in the slot, each with `{name, size, modified}`. `manifest.json` itself is excluded. Empty if the plugin wrote nothing.  |
+| `work`        | Per-command groupings: one entry per unique `_cmd` in the output array. Each entry has `cmd` (g3lib-normalized string) and `artifacts` (plain `[]string` referencing filenames in `files`). |
 
 ### Failure handling
 
-- **Plugin writes nothing** — not an error. Manifest is written with an empty `files`
-  list.
-- **Manifest write fails** — the plugin's real output is already on disk; do not lose it
-  over a manifest failure. Log the error and mark the task result accordingly.
+- **Plugin writes nothing** — not an error. `files` is empty; `work[]` has one entry
+  with the default `_cmd` and empty `artifacts`.
+- **Plugin returns an error** — task `ERROR`. Manifest still written; `exit_status`
+  carries the error string.
+- **Claimed artifact missing on disk** — task `ERROR`. Manifest still written;
+  `exit_status` names the missing files and the cmd that claimed them.
+- **Malformed `_artifacts` shape** (not a list of strings) — task `ERROR`. Manifest
+  still written; `exit_status` names the offending object.
+- **Manifest write itself fails** (disk error) — log the error, mark the task
+  `ERROR`. Do not retry.
 
 ---
 
@@ -298,31 +378,38 @@ These are documented in `.env` alongside the existing environment variables.
 
 | File                          | Change                                                                 |
 |-------------------------------|------------------------------------------------------------------------|
+| `src/g3lib/common.go`         | Document `_artifacts` in the G3Data underscore-field comment block; add it to the known-underscore-field allowlist in `IsValidData`. |
+| `src/g3lib/manifest.go`       | `G3Manifest` / `G3ManifestFile` / `G3ManifestWork` types; helpers to enumerate the slot, validate `_artifacts` claims, group output by `_cmd`, and write the manifest. |
 | `src/g3lib/plugin.go`         | `runPluginInternal` / tool-command path: mkdir the task slot, add the `-v` mount for `/artifacts`. |
-| `src/g3worker/g3worker.go`    | Resolve scan/task slot path; write `manifest.json` after the plugin exits (lifting `tool`/`cmd` from the `RunPluginCommand` output array); fail the task on `MkdirAll` error. |
+| `src/g3worker/g3worker.go`    | Resolve scan/task slot path; after the plugin exits, build and write `manifest.json` (enumerate slot → `files`; validate `_artifacts` claims; group output by `_cmd` → `work[]`); on validation failure, override the task outcome to `ERROR`; fail the task on `MkdirAll` error. |
 | `src/g3api/g3api.go`          | Upload handler writes to `_uploads/`; import loop relocates into `<scanid>/imports/`; `/scan/delete` removes `<scanid>/`; `_uploads/` orphan sweep goroutine. |
 | `src/g3lib/` (env constants)  | New constants for `G3_ARTIFACTS_ROOT`, `G3_ARTIFACTS_HOST_ROOT`, `G3_UPLOAD_TTL`. |
 | `docker-compose.yml`          | Mount `./volumes/artifacts` into g3api and each g3worker.              |
 | `.env`                        | Document the three new variables.                                      |
 
-The `manifest.json` struct most naturally lives in g3lib so the worker can marshal it
-and future consumers within the g3 codebase can unmarshal it.
+The `manifest.json` types and helpers live in `src/g3lib/manifest.go` so the worker
+can marshal them and future consumers within the g3 codebase can unmarshal them.
 
 ---
 
 ## Error handling summary
 
-| Situation                              | Behavior                                                              |
-|-----------------------------------------|-----------------------------------------------------------------------|
-| Artifacts root missing/unwritable at startup | g3api and g3worker fail fast with a clear error.                 |
-| `MkdirAll` fails for a task             | Task → `ERROR` terminal state, logged.                                |
-| Plugin writes no files                  | Not an error; manifest written with empty `files` list.               |
-| Manifest write fails                    | Log the error, mark task result accordingly; do not discard the plugin's actual output. |
-| `os.RemoveAll` fails on scan delete     | Logged into `reterr`; handler returns error status, other deletions still run. |
-| Plugin writes garbage / oversized files | Out of scope; bind-mount scope already contains blast radius to one task dir. Disk quotas are an infrastructure concern. |
+| Situation                                    | Behavior                                                                                                                                          |
+|----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| Artifacts root missing/unwritable at startup | g3api and g3worker fail fast with a clear error.                                                                                                  |
+| `MkdirAll` fails for a task                  | Task → `ERROR` terminal state, logged.                                                                                                            |
+| Plugin writes no files                       | Not an error; manifest written with empty `files` list and a single default `work` entry.                                                          |
+| Plugin returns an error                      | Task → `ERROR`; manifest still written with `exit_status` carrying the error string.                                                              |
+| `_artifacts` field has a wrong shape         | Task → `ERROR`; manifest still written with `exit_status` naming the offending object. Loud by design — surfaces plugin bugs.                     |
+| Claimed artifact missing on disk             | Task → `ERROR`; manifest still written with `exit_status` naming the missing files and the cmd that claimed them. Loud by design.                 |
+| Files in slot not claimed by any work entry  | Allowed (intentional orphans for forensics/debug). Present in `files`, absent from any `work[].artifacts`. No error, no warning.                  |
+| Manifest write itself fails                  | Log the error, mark task `ERROR`. Do not retry.                                                                                                   |
+| `os.RemoveAll` fails on scan delete          | Logged into `reterr`; handler returns error status, other deletions still run.                                                                    |
+| Plugin writes garbage / oversized files      | Out of scope; bind-mount scope already contains blast radius to one task dir. Disk quotas are an infrastructure concern.                          |
 
 No fake fallbacks: a misconfigured or unwritable artifacts volume surfaces as an error,
-it is never silently disabled.
+it is never silently disabled. Plugin bugs that produce inconsistent claims surface
+loudly as task errors, never as silent data loss.
 
 ---
 
@@ -341,14 +428,26 @@ Manual verification points for the maintainer:
 2. Running a scan that imports that upload relocates it to
    `<root>/<scanid>/imports/<uuid>.{bin,txt}` and leaves `_uploads/` empty for that uuid.
 3. A tool task produces `<root>/<scanid>/<taskid>/manifest.json` plus whatever the
-   plugin wrote; the manifest's `files` list matches the directory contents.
+   plugin wrote; `manifest.files` matches the directory contents exactly (minus
+   `manifest.json` itself).
 4. A task whose plugin writes nothing still produces a `manifest.json` with an empty
-   `files` list.
-5. `DELETE /scan/<id>` removes `<root>/<scanid>/` entirely.
-6. With `G3_UPLOAD_TTL=0`, an old file in `_uploads/` is never touched by g3api; with a
-   positive value, it is swept after the threshold.
-7. Multi-host smoke test: with the artifacts root on a shared mount, a plugin run on
-   worker host A produces a task dir readable from host B.
+   `files` list and a single default `work` entry.
+5. A plugin emitting multiple G3Data with distinct `_cmd` values produces one
+   `work[]` entry per unique `_cmd`, with that entry's `artifacts` carrying the
+   union of `_artifacts` claims from the matching objects.
+6. A plugin that writes a debug file to `/artifacts/` but does not claim it via any
+   `_artifacts` field still has that file listed in `manifest.files`, absent from
+   every `work[].artifacts` — and the task completes `DONE`.
+7. A plugin that claims a filename in `_artifacts` but does not write it to
+   `/artifacts/` causes the task to terminate `ERROR`, with `manifest.exit_status`
+   naming the missing file. The manifest is still written.
+8. A plugin that emits a non-list `_artifacts` (e.g. a string) causes the task to
+   terminate `ERROR`, with `manifest.exit_status` naming the offending object.
+9. `DELETE /scan/<id>` removes `<root>/<scanid>/` entirely.
+10. With `G3_UPLOAD_TTL=0`, an old file in `_uploads/` is never touched by g3api;
+    with a positive value, it is swept after the threshold.
+11. Multi-host smoke test: with the artifacts root on a shared mount, a plugin run
+    on worker host A produces a task dir readable from host B.
 
 ---
 

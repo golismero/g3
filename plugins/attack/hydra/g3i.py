@@ -17,7 +17,7 @@ re_result = re.compile(r"^\[([0-9]+)\]\[([^\]]+)\] host: ([^ ]+) +login: ([^ ]+)
 fmt_timestamp = "%Y-%m-%d %H:%M:%S"
 
 # Importer function.
-def import_hydra_textfile(fd, is_internal):
+def import_hydra_textfile(fd, artifacts):
     did_warn_0 = False
     did_warn_1 = False
     did_warn_2 = False
@@ -34,7 +34,7 @@ def import_hydra_textfile(fd, is_internal):
         m = re_start.match(line)
         if m:
             if current is not None:
-                if is_internal and not did_warn_0:
+                if artifacts and not did_warn_0:
                     sys.stderr.write("WARNING: parser found multiple Hydra run results in the same file, this should not happen\n")
                     did_warn_0 = True
                 _finish_issue(current, credentials)
@@ -50,8 +50,9 @@ def import_hydra_textfile(fd, is_internal):
                 "_tool": "hydra",
                 "_cmd": shlex.join(cmdline),
                 "_fp": ["hydra " + hostname],
+                "_artifacts": artifacts,
                 "_start": start_time,
-                "_end": now if is_internal else 0,
+                "_end": now if artifacts else 0,
             }
             credentials = set()
             continue
@@ -111,11 +112,11 @@ if __name__ == "__main__":
     # If we have a filename in the command line, this means the script was invoked internally.
     if len(sys.argv) == 2:
         with open(sys.argv[1], "r") as fd:
-            output = import_hydra_textfile(fd, is_internal=True)
+            output = import_hydra_textfile(fd, artifacts=[sys.argv[1]])
 
     # If we don't, this means the script was invoked as an importer plugin.
     else:
-        output = import_hydra_textfile(sys.stdin, is_internal=False)
+        output = import_hydra_textfile(sys.stdin, artifacts=[])
 
     # Convert the output array to JSON and send it over stdout.
     json.dump(output, sys.stdout)

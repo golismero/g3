@@ -250,7 +250,9 @@ def parse_nikto_csv(input_data):
     if len(sys.argv) > 1:
         cmdline = ["nikto.pl"] + sys.argv[1:]
         use_ssl = "-ssl" in sys.argv[1:]
+        artifacts = ["nikto.csv"]
     else:
+        artifacts = []
         if port == 443:
             cmdline = ["nikto.pl", "-host", hostname, "-port", port, "-ssl"]
             use_ssl = True
@@ -299,6 +301,7 @@ def parse_nikto_csv(input_data):
     return [{
         "_cmd": shlex.join(cmdline),
         "_fp": [fp],
+        "_artifacts": artifacts,
         "severity": 2,  # high
         "affects": sorted(set(
             "%s://%s:%s%s" % ("https" if use_ssl else "http", hostname, port, x[0])

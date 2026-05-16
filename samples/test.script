@@ -5,7 +5,6 @@ target https://www.alligatorcon.eu/
 target https://www.alligatorcon.pl/
 
 dig | nmap | testssl
-dig | nmap | vulners
 
 nikto
 subfinder

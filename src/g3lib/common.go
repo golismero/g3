@@ -139,12 +139,16 @@ func LoadG3Strings() G3TranslatedStrings {
 //
 // The following are optional:
 //
-//   _id        (int): Database ID of the object (if stored in a database).
-//   _scanid (string): Scan ID (used to correlate logs).
-//   _taskid (string): Task ID (used to correlate logs).
-//   _cmd    (string): Command line that was executed to generate this object.
-//   _start     (int): Unix timestamp of the moment the command started.
-//   _end       (int): Unix timestamp of the moment the command ended.
+//   _id          (int): Database ID of the object (if stored in a database).
+//   _scanid   (string): Scan ID (used to correlate logs).
+//   _taskid   (string): Task ID (used to correlate logs).
+//   _cmd      (string): Command line that was executed to generate this object.
+//   _start       (int): Unix timestamp of the moment the command started.
+//   _end         (int): Unix timestamp of the moment the command ended.
+//   _artifacts ([]string): Relative filenames (under /artifacts/) the producing
+//                          command wrote. Used by the worker to build the per-
+//                          task manifest. Absent / empty / partial is allowed.
+//                          Claimed-but-missing files cause a loud task ERROR.
 //
 type G3Data map[string]interface{}
 
@@ -191,6 +195,7 @@ func IsValidData(data G3Data) (bool, error) {
 			case "_cmd":
 			case "_start":
 			case "_end":
+			case "_artifacts":
 
 			default:
 				return false, errors.New("Unknown underscore field: " + field)

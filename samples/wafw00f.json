@@ -1,14 +1,16 @@
 [
   {
-    "url": "https://example.com",
     "detected": true,
-    "firewall": "Edgecast",
-    "manufacturer": "Verizon Digital Media"
+    "firewall": "Cloudflare",
+    "manufacturer": "Cloudflare Inc.",
+    "trigger_url": "https://www.example.net/?faplkhnv=%3Cscript%3Ealert%28%22XSS%22%29%3B%3C%2Fscript%3E&wsjetvhg=UNION+SELECT+ALL+FROM+information_schema+AND+%22+or+SLEEP%285%29+or+%22&iaueunsf=..%2F..%2Fetc%2Fpasswd",
+    "url": "https://www.example.net/"
   },
   {
-    "url": "https://example.com",
-    "detected": true,
-    "firewall": "Generic",
-    "manufacturer": "Unknown"
+    "detected": false,
+    "firewall": "None",
+    "manufacturer": "None",
+    "trigger_url": null,
+    "url": "https://www.example.net/"
   }
 ]

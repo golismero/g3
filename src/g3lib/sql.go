@@ -34,23 +34,24 @@ type SQLDBClient struct {
 }
 
 type LogEntry struct {
-	Timestamp int64         `json:"timestamp"   validate:"gte=0"`
-	ScanID string           `json:"scanid"      validate:"required,uuid4"`
-	TaskID string           `json:"taskid"      validate:"required,uuid4"`
-	Text string             `json:"text"`
+	Timestamp int64  `json:"timestamp"   validate:"gte=0"`
+	ScanID    string `json:"scanid"      validate:"required,uuid4"`
+	TaskID    string `json:"taskid"      validate:"required,uuid4"`
+	Text      string `json:"text"`
 }
 
 type TaskLogLine struct {
-	Timestamp int64         `json:"timestamp"       validate:"gte=0"`
-	Text string             `json:"text"`
+	Timestamp int64  `json:"timestamp"       validate:"gte=0"`
+	Text      string `json:"text"`
 }
 type G3TaskLog struct {
-	ScanID string           `json:"scanid"          validate:"required,uuid4"`
-	TaskID string           `json:"taskid"          validate:"required,uuid4"`
-	Start int64             `json:"start,omitempty" validate:"gte=0"`
-	End int64               `json:"end,omitempty"   validate:"gte=0"`
-	Lines []TaskLogLine     `json:"lines,omitempty" validate:"dive"`
+	ScanID string        `json:"scanid"          validate:"required,uuid4"`
+	TaskID string        `json:"taskid"          validate:"required,uuid4"`
+	Start  int64         `json:"start,omitempty" validate:"gte=0"`
+	End    int64         `json:"end,omitempty"   validate:"gte=0"`
+	Lines  []TaskLogLine `json:"lines,omitempty" validate:"dive"`
 }
+
 func (log G3TaskLog) String() string {
 	var text string
 	for _, line := range log.Lines {
@@ -60,25 +61,25 @@ func (log G3TaskLog) String() string {
 }
 
 type ScanStatusEntry struct {
-	ScanID string           `json:"scanid"      validate:"required,uuid4"`
-	Status G3SCANSTATUS     `json:"status"      validate:"required"`
-	Progress int            `json:"progress"    validate:"gte=0,lte=100"`
-	Message string          `json:"message"`
+	ScanID   string       `json:"scanid"      validate:"required,uuid4"`
+	Status   G3SCANSTATUS `json:"status"      validate:"required"`
+	Progress int          `json:"progress"    validate:"gte=0,lte=100"`
+	Message  string       `json:"message"`
 }
 
 type TaskStatusEntry struct {
-	TaskID     string       `json:"taskid"                   validate:"required,uuid4"`
-	Tool       string       `json:"tool,omitempty"`
-	Worker     string       `json:"worker,omitempty"`
-	State      string       `json:"state,omitempty"`          // RUNNING / DONE / ERROR / CANCELED (from Redis)
-	DispatchTS int64        `json:"dispatch_ts,omitempty"`
-	StartTS    int64        `json:"start_ts,omitempty"`
-	CompleteTS int64        `json:"complete_ts,omitempty"`
-	ErrorMsg   string       `json:"error_msg,omitempty"`
-	FirstLogTS int64        `json:"first_log_ts"             validate:"gte=0"`
-	LastLogTS  int64        `json:"last_log_ts"              validate:"gte=0"`
-	LineCount  int          `json:"line_count"               validate:"gte=0"`
-	AgeSeconds int64        `json:"age_seconds"              validate:"gte=0"`
+	TaskID     string `json:"taskid"                   validate:"required,uuid4"`
+	Tool       string `json:"tool,omitempty"`
+	Worker     string `json:"worker,omitempty"`
+	State      string `json:"state,omitempty"` // RUNNING / DONE / ERROR / CANCELED (from Redis)
+	DispatchTS int64  `json:"dispatch_ts,omitempty"`
+	StartTS    int64  `json:"start_ts,omitempty"`
+	CompleteTS int64  `json:"complete_ts,omitempty"`
+	ErrorMsg   string `json:"error_msg,omitempty"`
+	FirstLogTS int64  `json:"first_log_ts"             validate:"gte=0"`
+	LastLogTS  int64  `json:"last_log_ts"              validate:"gte=0"`
+	LineCount  int    `json:"line_count"               validate:"gte=0"`
+	AgeSeconds int64  `json:"age_seconds"              validate:"gte=0"`
 }
 
 // Response container for /scan/tasks/status. Bundles the scan-level status
@@ -89,7 +90,7 @@ type ScanTaskStatusResponse struct {
 	Tasks      []TaskStatusEntry `json:"tasks"`
 }
 
-type QueryLogCallback func(LogEntry)(error)
+type QueryLogCallback func(LogEntry) error
 
 // Connect to the SQL database.
 func ConnectToSQL() (SQLDBClient, error) {
@@ -137,7 +138,7 @@ func SaveLogLine(db SQLDBClient, scanid, taskid, text string) error {
 }
 
 // Query the log.
-func QueryLog(db SQLDBClient, callback QueryLogCallback, args ...string) (error) {
+func QueryLog(db SQLDBClient, callback QueryLogCallback, args ...string) error {
 	var err error
 
 	// Build the query string dynamically.
@@ -159,7 +160,7 @@ func QueryLog(db SQLDBClient, callback QueryLogCallback, args ...string) (error)
 
 	// Make the SQL query.
 	parameters := make([]interface{}, len(args))
-	for i := range(args) {
+	for i := range args {
 		parameters[i] = args[i]
 	}
 	rows, err := db.db.Query(query, parameters...)
@@ -249,7 +250,7 @@ func QueryLogForTask(db SQLDBClient, scanid string, taskid string) (G3TaskLog, e
 	var log G3TaskLog
 	log.ScanID = scanid
 	log.TaskID = taskid
-	callback := func(entry LogEntry)(error) {
+	callback := func(entry LogEntry) error {
 		var line TaskLogLine
 		if entry.Timestamp != 0 && (log.Start == 0 || entry.Timestamp < log.Start) {
 			log.Start = entry.Timestamp
@@ -300,7 +301,7 @@ func UpdateScanProgress(db SQLDBClient, scanid string, status G3SCANSTATUS, prog
 				break
 			}
 		}
-		if ! found {
+		if !found {
 			return fmt.Errorf("unsupported value for argument `status`: %v", status)
 		}
 		query = query + "`status` = ?, "
@@ -328,7 +329,7 @@ func UpdateScanProgress(db SQLDBClient, scanid string, status G3SCANSTATUS, prog
 	if !correct {
 		return errors.New("invalid call to UpdateScanProgress(), nothing to update")
 	}
-	query = query[:len(query) - 2] + " WHERE `scanid` = ?"
+	query = query[:len(query)-2] + " WHERE `scanid` = ?"
 	args = append(args, scanid)
 	_, err := db.db.ExecContext(context.Background(), query, args...)
 	return err
@@ -337,7 +338,7 @@ func UpdateScanProgress(db SQLDBClient, scanid string, status G3SCANSTATUS, prog
 // Get the scan IDs of every scan known to the progress table.
 func GetAllScanIDs(db SQLDBClient) ([]string, error) {
 	var ids []string
-	rows, err := db.db.Query("SELECT `scanid` FROM `progress`")
+	rows, err := db.db.Query("SELECT `scanid` FROM `progress` ORDER BY `id` DESC")
 	if err != nil {
 		return ids, err
 	}
@@ -358,7 +359,7 @@ func GetProgressList(db SQLDBClient) ([]ScanStatusEntry, error) {
 	var err error
 	var validate = validator.New()
 
-	query := "SELECT `scanid`, `status`, `progress`, `message` FROM `progress`"
+	query := "SELECT `scanid`, `status`, `progress`, `message` FROM `progress` ORDER BY `id` DESC"
 	rows, err := db.db.Query(query)
 	if err != nil {
 		return scanstatus, err

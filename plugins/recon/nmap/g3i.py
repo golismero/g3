@@ -225,6 +225,7 @@ def main():
             assert len(nmap_report.hosts) == 1
             host = parse_host(nmap_report, nmap_report.hosts[0], input_data)
             if host is not None:
+                host["_artifacts"] = ["nmap.xml", "nmap.txt"]
                 output.append(host)
 
     # Otherwise, we are not running a scan but importing from a user provided report.

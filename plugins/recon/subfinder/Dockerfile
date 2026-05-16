@@ -3,7 +3,7 @@ FROM projectdiscovery/subfinder:latest
 
 # Python 3 for the importer wrapper.
 ENV PYTHONUNBUFFERED=1
-RUN apk add --no-cache python3
+RUN apk add --no-cache python3 coreutils
 
 # Add the Golismero3 wrapper.
 WORKDIR /app

@@ -92,9 +92,6 @@ jobs:
             context: plugins/recon/sublist3r
           - image: testssl
             context: plugins/recon/testssl
-          - image: vulners
-            context: plugins/recon/vulners
-            prep: cpe-dictionary
           - image: wafw00f
             context: plugins/recon/wafw00f
     steps:
@@ -107,17 +104,17 @@ jobs:
         if: matrix.prep == 'go-deps'
         uses: actions/setup-go@v5
 
-      # Three plugins (nikto, nmap, vulners) bake downloaded reference data
+      # Two plugins (nikto, nmap) bake downloaded reference data
       # into their image at build time. The scripts live in ./misc/ and need
       # beautifulsoup4 + lxml (see misc/requirements.txt).
       - name: Set up Python
-        if: matrix.prep == 'osvdb2cve' || matrix.prep == 'iana-descriptions' || matrix.prep == 'cpe-dictionary'
+        if: matrix.prep == 'osvdb2cve' || matrix.prep == 'iana-descriptions'
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
       - name: Install asset-generator dependencies
-        if: matrix.prep == 'osvdb2cve' || matrix.prep == 'iana-descriptions' || matrix.prep == 'cpe-dictionary'
+        if: matrix.prep == 'osvdb2cve' || matrix.prep == 'iana-descriptions'
         run: pip install -r misc/requirements.txt
 
       # Cache the deterministic outputs of the three asset-generator prep
@@ -141,14 +138,6 @@ jobs:
           path: plugins/recon/nmap/iana-descriptions.json
           key: iana-descriptions-${{ hashFiles('misc/iana-descriptions.py') }}
 
-      - name: Cache CPE dictionary (vulners)
-        if: matrix.prep == 'cpe-dictionary'
-        id: cache-cpe-dictionary
-        uses: actions/cache@v4
-        with:
-          path: plugins/recon/vulners/cpe.db
-          key: cpe-dictionary-${{ hashFiles('misc/cpe-dictionary.py') }}
-
       - name: Prep - collect Go module dependencies
         if: matrix.prep == 'go-deps'
         run: |
@@ -165,11 +154,6 @@ jobs:
         if: matrix.prep == 'iana-descriptions' && steps.cache-iana-descriptions.outputs.cache-hit != 'true'
         working-directory: plugins/recon/nmap
         run: python3 ../../../misc/iana-descriptions.py
-
-      - name: Prep - build CPE dictionary (vulners)
-        if: matrix.prep == 'cpe-dictionary' && steps.cache-cpe-dictionary.outputs.cache-hit != 'true'
-        working-directory: plugins/recon/vulners
-        run: python3 ../../../misc/cpe-dictionary.py
 
       - uses: docker/setup-buildx-action@v3
 

@@ -20,8 +20,5 @@ import testssl samples/testssl.csv
 # Now we define the pipelines for the commands to run.
 # It's alright if they are repeated, the engine will figure out how to avoid duplicated tests.
 nmap-fast | testssl
-nmap-fast | vulners
 dig | nmap-fast | testssl
-dig | nmap-fast | vulners
 sublist3r | dig | nmap-fast | testssl
-sublist3r | dig | nmap-fast | vulners
