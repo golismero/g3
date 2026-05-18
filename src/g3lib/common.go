@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
 	log "golismero.com/g3log"
@@ -92,6 +93,62 @@ func GetEnvironmentMap() map[string]string {
 		}
 	}
 	return m
+}
+
+// resolveInstanceID computes the MQTT client ID for this g3scanner or g3worker
+// process. Three modes, in precedence order:
+//
+//  1. Explicit: envKey (G3_SCANNER_ID / G3_WORKER_ID) is set → use verbatim.
+//     Prefix and transient flag are not allowed alongside (would be ignored
+//     silently; we fail loud instead so contradictory configs surface at startup).
+//  2. Transient: G3_INSTANCE_TRANSIENT=true → fresh "[prefix]transient-<uuid>"
+//     per restart. MQTT session won't persist across restarts; queued messages
+//     for the prior session will be dropped by the broker.
+//  3. Hostname-derived (default): "[prefix]<container-hostname>". Stable across
+//     restarts of the same container; changes when the container is recreated.
+//
+// On error: caller should log and exit. The error message names the conflicting
+// env vars and how to resolve.
+func ResolveInstanceID(envKey string) (string, error) {
+	explicitID := os.Getenv(envKey)
+	prefix     := os.Getenv("G3_INSTANCE_PREFIX")
+	transient  := strings.EqualFold(os.Getenv("G3_INSTANCE_TRANSIENT"), "true")
+
+	if explicitID != "" {
+		if prefix != "" {
+			return "", fmt.Errorf(
+				"%s=%q is set together with G3_INSTANCE_PREFIX=%q; "+
+					"explicit IDs are used verbatim and would ignore the prefix. "+
+					"Choose one: explicit ID for full control, or unset %s to let the prefix apply.",
+				envKey, explicitID, prefix, envKey)
+		}
+		if transient {
+			return "", fmt.Errorf(
+				"%s=%q is set together with G3_INSTANCE_TRANSIENT=true; "+
+					"explicit IDs cannot also be transient. "+
+					"Choose one: explicit ID for a stable name, or unset %s for a random per-restart ID.",
+				envKey, explicitID, envKey)
+		}
+		return explicitID, nil
+	}
+
+	if transient {
+		return prefix + "transient-" + uuid.NewString(), nil
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = ""
+	}
+	switch hostname {
+	case "", "(none)", "localhost", "localhost.localdomain":
+		return "", fmt.Errorf(
+			"cannot derive instance ID: hostname is %q. "+
+				"Set %s explicitly, set G3_INSTANCE_PREFIX to disambiguate, "+
+				"or set G3_INSTANCE_TRANSIENT=true for a random per-restart ID",
+			hostname, envKey)
+	}
+	return prefix + hostname, nil
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

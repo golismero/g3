@@ -17,7 +17,6 @@ import (
 )
 
 // Environment variables with the scanner configuration.
-const G3_SCANNER_ID = "G3_SCANNER_ID"							// MQTT client ID. Must be unique in your deployment or bad things will happen.
 const G3_SCANNER_PARALLEL_MODE = "G3_SCANNER_PARALLEL_MODE"		// Set this always to true unless you've got concurrency issues and are desperate.
 const G3_SCANNER_MAX_PIPELINES = "G3_SCANNER_MAX_PIPELINES"		// Defaults to 0 for no limit (danger!) or set to a reasonable value like, say, 20.
 const G3_SCANNER_MAX_DEPTH = "G3_SCANNER_MAX_DEPTH"				// Defaults to 0 for no limit (danger!) or set to a reasonable value like, say, 20.
@@ -105,6 +104,13 @@ func main() {
 	}
 	log.Debugf("Loaded %d plugins.", len(plugins))
 
+	// Resolve the scanner ID.
+	scannerID, err := g3lib.ResolveInstanceID("G3_SCANNER_ID")
+	if err != nil {
+		log.Critical(err.Error())
+		os.Exit(1)
+	}
+
 	// Get the maximum number of pipelines.
 	maxPipelines := 0	// 0 means no limit
 	if maxPipelinesStr := os.Getenv(G3_SCANNER_MAX_PIPELINES); maxPipelinesStr != "" {
@@ -144,7 +150,7 @@ func main() {
 			case msg := <-scanChannel:
 				currentScanID = msg.ScanID
 				runningTasks.Clear()
-				ScanRunner(responseChannel, plugins, msg)
+				ScanRunner(responseChannel, plugins, msg, scannerID)
 				currentScanID = ""
 				runningTasks.Clear()
 			}
@@ -152,7 +158,7 @@ func main() {
 	}()
 
 	// Connect to the Mosquitto broker.
-	mq_client, err := g3lib.ConnectToBroker(os.Getenv(G3_SCANNER_ID))
+	mq_client, err := g3lib.ConnectToBroker(scannerID)
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)
@@ -309,7 +315,7 @@ func main() {
 
 // Handle an incoming scan request.
 // This function will be running within a goroutine.
-func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMetadata, msg g3lib.G3Scan) {
+func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMetadata, msg g3lib.G3Scan, scannerID string) {
 
 	// Log the start and stop of the scan.
 	defer log.Info("Finished scan: " + msg.ScanID)
@@ -321,7 +327,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 
 	// Connect to the Mosquitto broker.
-	mq_client, err := g3lib.ConnectToBroker(os.Getenv(G3_SCANNER_ID) + "-" + msg.ScanID)
+	mq_client, err := g3lib.ConnectToBroker(scannerID + "-" + msg.ScanID)
 	if err != nil {
 		log.Error(err)
 		os.Exit(1)

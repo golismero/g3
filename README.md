@@ -398,6 +398,18 @@ services:
 
 </details>
 
+### Scanner / worker instance IDs
+
+Scanner and worker processes each need a unique MQTT client ID. Three modes, in precedence order:
+
+1. **Explicit**: set `G3_SCANNER_ID` / `G3_WORKER_ID` per service. The value is used verbatim.
+2. **Transient**: set `G3_INSTANCE_TRANSIENT=true`. The ID becomes `[prefix]transient-<uuid>`, generated fresh on every process restart. The MQTT session is not persistent across restarts — queued messages from the prior session will be dropped by the broker.
+3. **Hostname-derived** (default): the ID is `[prefix]<container-hostname>`. Stable across restarts of the same container. In Docker Compose, container hostnames are unique per container, so this works without any extra config.
+
+`G3_INSTANCE_PREFIX` (optional) prepends a string to modes 2 and 3 — useful for multi-deployment attribution when several g3 deployments share infrastructure (e.g. `site-east-` on one host, `site-west-` on another).
+
+Setting `G3_SCANNER_ID` or `G3_WORKER_ID` alongside `G3_INSTANCE_PREFIX` or `G3_INSTANCE_TRANSIENT=true` is a startup error — explicit IDs are verbatim and cannot be combined with the other modes.
+
 Finally, you will want to change the default `G3_API_TOKEN` in `.env` from `changeme` to a long random value. `g3api` is internal-only and sits behind a trust boundary; the token gates both HTTP and WebSocket calls from `g3cli` and any future front-end.
 
 Now you can start the services using Docker Compose. Note the -d at the end, this instructs Docker to run all services in the background.

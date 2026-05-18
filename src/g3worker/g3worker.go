@@ -20,9 +20,6 @@ import (
 	log "golismero.com/g3log"
 )
 
-// Environment variable with the client ID for this worker.
-const G3_WORKER_ID = "G3_WORKER_ID"
-
 // Environment variable with the list of enabled plugins for a given worker.
 const G3_WORKER_PLUGINS = "G3_WORKER_PLUGINS"
 
@@ -270,7 +267,11 @@ func main() {
 	// Get the current worker ID.
 	// If undefined, this will be chosen at random later on;
 	// but it also means we cannot preserve state across invocations.
-	workerid := os.Getenv(G3_WORKER_ID)
+	workerid, err := g3lib.ResolveInstanceID("G3_WORKER_ID")
+	if err != nil {
+		log.Critical(err.Error())
+		os.Exit(1)
+	}
 
 	// Find out how long we need to hold on to cancellation requests.
 	holdCancelStr := os.Getenv(G3_HOLD_CANCEL)

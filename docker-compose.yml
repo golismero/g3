@@ -1,6 +1,6 @@
 # Example docker-compose file for quickly trying out Golismero locally.
-# Supports 2 concurrent scans and 4 concurrent tools, all sharing the same message queue.
-# Uncomment the relevant sections to enable some webapps that can aid in debugging.
+# Runs 2 scanner replicas and 4 generic worker replicas by default; adjust deploy.replicas
+# in each service to scale. Uncomment the relevant sections to enable debug webapps.
 
 ##############################################
 ## Please do not use this in production !!! ##
@@ -213,12 +213,20 @@ services:
       - G3_UPLOAD_TTL
       - G3_LOG_LEVEL
 
-  # In this example we only run two scans at a time, so there are only two scanners.
-  # In production you'll need more!
-  g3scanner1:
+  # Scanner and worker instances auto-derive their MQTT client ID from the
+  # container's hostname (Docker assigns a unique container ID per replica).
+  # Use `deploy.replicas: N` to scale a service horizontally — each replica
+  # gets a unique hostname automatically. If running multiple deployments
+  # against shared infrastructure, set G3_INSTANCE_PREFIX per-deployment in
+  # .env to disambiguate. To use stable named instances instead, set
+  # G3_SCANNER_ID / G3_WORKER_ID per service explicitly (which is
+  # incompatible with deploy.replicas — one named container).
+  g3scanner:
     image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3scanner
     restart: unless-stopped
+    deploy:
+      replicas: 2  # Scale horizontally by changing this number.
     depends_on:
       g3config:
         condition: service_completed_successfully
@@ -244,42 +252,6 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT
       - REDIS_PASSWORD
-      - G3_SCANNER_ID=g3scanner1
-      - G3_SCANNER_PARALLEL_MODE
-      - G3_SCANNER_MAX_PIPELINES
-      - G3_SCANNER_MAX_DEPTH
-      - G3_LOG_LEVEL
-
-  g3scanner2:
-    image: ghcr.io/golismero/g3:latest
-    entrypoint: /bin/g3scanner
-    restart: unless-stopped
-    depends_on:
-      g3config:
-        condition: service_completed_successfully
-      mariadb:
-        condition: service_started
-      mongo:
-        condition: service_started
-      mosquitto:
-        condition: service_started
-      redis:
-        condition: service_started
-    networks:
-      - g3net
-    volumes:
-      - ./config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - G3HOME=/app
-      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-      - SQL_DRIVER=mysql
-      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
-      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
-      - G3_SCANNER_ID=g3scanner2
       - G3_SCANNER_PARALLEL_MODE
       - G3_SCANNER_MAX_PIPELINES
       - G3_SCANNER_MAX_DEPTH
@@ -325,7 +297,6 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT
       - REDIS_PASSWORD
-      - G3_WORKER_ID=g3worker-nmap
       - G3_WORKER_PLUGINS=nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
@@ -334,10 +305,13 @@ services:
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
 
   # The following workers are all identical and run all plugins *except* the ones above.
-  g3worker1:
+  # Use deploy.replicas to grow or shrink the generic worker pool.
+  g3worker:
     image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
+    deploy:
+      replicas: 4  # Scale worker pool by changing this number.
     depends_on:
       g3config:
         condition: service_completed_successfully
@@ -365,124 +339,6 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT
       - REDIS_PASSWORD
-      - G3_WORKER_ID=g3worker1
-      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
-      - G3_HOLD_CANCEL
-      - G3_LOG_LEVEL
-      - G3_DOCKER_NETWORK
-      - G3_ARTIFACTS_ROOT=/app/artifacts
-      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
-
-  g3worker2:
-    image: ghcr.io/golismero/g3:latest
-    entrypoint: /bin/g3worker
-    restart: unless-stopped
-    depends_on:
-      g3config:
-        condition: service_completed_successfully
-      mariadb:
-        condition: service_started
-      mongo:
-        condition: service_started
-      mosquitto:
-        condition: service_started
-      redis:
-        condition: service_started
-    networks:
-      - g3net
-    volumes:
-      - ./config:/app/config
-      - ./resources:/app/resources
-      - ./volumes/artifacts:/app/artifacts
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - G3HOME=/app
-      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-      - SQL_DRIVER=mysql
-      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
-      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
-      - G3_WORKER_ID=g3worker2
-      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
-      - G3_HOLD_CANCEL
-      - G3_LOG_LEVEL
-      - G3_DOCKER_NETWORK
-      - G3_ARTIFACTS_ROOT=/app/artifacts
-      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
-
-  g3worker3:
-    image: ghcr.io/golismero/g3:latest
-    entrypoint: /bin/g3worker
-    restart: unless-stopped
-    depends_on:
-      g3config:
-        condition: service_completed_successfully
-      mariadb:
-        condition: service_started
-      mongo:
-        condition: service_started
-      mosquitto:
-        condition: service_started
-      redis:
-        condition: service_started
-    networks:
-      - g3net
-    volumes:
-      - ./config:/app/config
-      - ./resources:/app/resources
-      - ./volumes/artifacts:/app/artifacts
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - G3HOME=/app
-      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-      - SQL_DRIVER=mysql
-      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
-      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
-      - G3_WORKER_ID=g3worker3
-      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
-      - G3_HOLD_CANCEL
-      - G3_LOG_LEVEL
-      - G3_DOCKER_NETWORK
-      - G3_ARTIFACTS_ROOT=/app/artifacts
-      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
-  
-  g3worker4:
-    image: ghcr.io/golismero/g3:latest
-    entrypoint: /bin/g3worker
-    restart: unless-stopped
-    depends_on:
-      g3config:
-        condition: service_completed_successfully
-      mariadb:
-        condition: service_started
-      mongo:
-        condition: service_started
-      mosquitto:
-        condition: service_started
-      redis:
-        condition: service_started
-    networks:
-      - g3net
-    volumes:
-      - ./config:/app/config
-      - ./resources:/app/resources
-      - ./volumes/artifacts:/app/artifacts
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - G3HOME=/app
-      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-      - SQL_DRIVER=mysql
-      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
-      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
-      - G3_WORKER_ID=g3worker4
       - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
