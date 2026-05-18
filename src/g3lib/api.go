@@ -247,6 +247,17 @@ func (req *ReqReport) Decode(r *http.Request) error {
 	return validator.New().Struct(req)
 }
 
+type ReqReporter struct {
+	ScanID string `json:"scanid" validate:"required,uuid"`
+	Tool   string `json:"tool"   validate:"required"`
+	Preset string `json:"preset"`
+}
+func (req *ReqReporter) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
 type ReqQueryLog struct {
 	ScanID string               `json:"scanid"              validate:"uuid"`
 	TaskID string               `json:"taskid"              validate:"omitempty,uuid"`

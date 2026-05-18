@@ -227,6 +227,27 @@ func GetTaskStates(rdb KeyValueStoreClient, scanid string) ([]TaskState, error) 
 	return states, nil
 }
 
+// Fetch the state field of a single task. Returns ("", nil) when the task
+// hash has been cleaned up (scan terminal + state reaper ran). Returns the
+// state string ("DISPATCHED", "RUNNING", "DONE", "ERROR", "CANCELED") otherwise.
+// Used by the synchronous /scan/reporter wait loop to detect terminal state.
+func GetTaskState(rdb KeyValueStoreClient, scanid, taskid string) (string, error) {
+	ctx := context.Background()
+	key := taskHashKey(scanid, taskid)
+	exists, err := rdb.c.Exists(ctx, key).Result()
+	if err != nil {
+		return "", err
+	}
+	if exists == 0 {
+		return "", nil
+	}
+	state, err := rdb.c.HGet(ctx, key, "state").Result()
+	if err != nil {
+		return "", err
+	}
+	return state, nil
+}
+
 // Delete every Redis key for a scan's task state. Scanner calls this on terminal transition;
 // /scan/delete calls it in the cleanup fanout. Safe on empty (no-op if nothing is there).
 func DeleteTaskStates(rdb KeyValueStoreClient, scanid string) error {

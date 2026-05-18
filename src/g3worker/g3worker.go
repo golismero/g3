@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"golismero.com/g3lib"
 	log "golismero.com/g3log"
 )
@@ -395,6 +396,15 @@ func main() {
 	}
 	log.Infof("Selected %d plugins.", len(selected))
 
+	// Subset of selected plugins that declare a reporter phase. Used to subscribe
+	// to report/<name> topics in addition to the existing tool/<name> subscriptions.
+	var reporterSelected []string
+	for _, name := range selected {
+		if plugin, ok := plugins[name]; ok && plugin.Reporter != nil {
+			reporterSelected = append(reporterSelected, name)
+		}
+	}
+
 	// Connect to the Mongo database.
 	mdb_client, err := g3lib.ConnectToDatastore()
 	if err != nil {
@@ -513,6 +523,20 @@ func main() {
 		}
 		if err := g3lib.SaveLogLine(sql_db, scanid, taskid, "[g3:done] task="+taskid+" state="+state); err != nil {
 			log.Error("SaveLogLine (done) failed: " + err.Error())
+		}
+	}
+
+	// markReportTerminal is the reporter-task counterpart of markTerminal. Unlike
+	// markTerminal, it accepts an optional error message that gets persisted into
+	// the per-task Redis hash via SetTaskTerminal's errMsg field. The audit log
+	// line still goes through SaveLogLine identically.
+	markReportTerminal := func(scanid, taskid, state, errMsg string) {
+		completeTS := time.Now().Unix()
+		if err := g3lib.SetTaskTerminal(rdb_client, scanid, taskid, state, completeTS, errMsg); err != nil {
+			log.Error("Redis SetTaskTerminal (report) failed: " + err.Error())
+		}
+		if err := g3lib.SaveLogLine(sql_db, scanid, taskid, "[g3:done] report task="+taskid+" state="+state); err != nil {
+			log.Error("SaveLogLine (report done) failed: " + err.Error())
 		}
 	}
 
@@ -830,10 +854,203 @@ func main() {
 			log.Error("Error sending response to the broker: " + err.Error())
 		}
 	})
+
+	reporterTopics := g3lib.SubscribeAsReporter(mq_client, reporterSelected, func(client g3lib.MessageQueueClient, task g3lib.G3ReportTask) {
+
+		// SIGTERM drain: matches the tool handler's first guard.
+		if cancelled {
+			markReportTerminal(task.ScanID, task.TaskID, "CANCELED", "")
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+				log.Error(err.Error())
+			}
+			return
+		}
+
+		// Cancellation context — same pattern as the tool handler.
+		ctx := context.Background()
+		ctx, cancel := context.WithCancel(ctx)
+
+		// Populated inside the cancel-tracker switch's case 2. All other cases
+		// return before WriteManifest runs, so a zero value never reaches the manifest.
+		var startTS int64
+
+		switch cancelTracker.AddTaskIfNew(task.TaskID, cancel) {
+		case 0:
+			log.Notice("Duplicated report task request for ID: " + task.TaskID)
+			return
+		case 1:
+			log.Debug("Rejected report task ID: " + task.TaskID)
+			markReportTerminal(task.ScanID, task.TaskID, "CANCELED", "")
+			if err := g3lib.SendTaskCancelHandled(mq_client, task.ScanID, []string{task.TaskID}); err != nil {
+				log.Error(err.Error())
+			}
+			return
+		case 2:
+			log.Debug("Received new report task:\n" + g3lib.PrettyPrintJSON(task))
+			startTS = time.Now().Unix()
+			if err := g3lib.SetTaskRunning(rdb_client, task.ScanID, task.TaskID, workerid, startTS); err != nil {
+				log.Error("Redis SetTaskRunning (report) failed: " + err.Error())
+			}
+			if err := g3lib.SaveLogLine(sql_db, task.ScanID, task.TaskID, "[g3:start] report task="+task.TaskID+" tool="+task.Tool+" worker="+workerid); err != nil {
+				log.Error("SaveLogLine (report start) failed: " + err.Error())
+			}
+		default:
+			log.Error("internal error")
+			markReportTerminal(task.ScanID, task.TaskID, "ERROR", "internal error")
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+				log.Error(err.Error())
+			}
+			return
+		}
+
+		// Resolve the plugin and confirm it implements a reporter.
+		plugin, ok := plugins[task.Tool]
+		if !ok || plugin.Reporter == nil {
+			log.Error("Report task for unknown or non-reporter plugin: " + task.Tool)
+			markReportTerminal(task.ScanID, task.TaskID, "ERROR", "plugin not found or not a reporter")
+			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+				log.Error(err.Error())
+			}
+			return
+		}
+
+		// Materialize the per-task output slot.
+		outSlot := filepath.Join(artifactsRoot, task.ScanID, task.TaskID)
+		hostOut := filepath.Join(artifactsHostRoot, task.ScanID, task.TaskID)
+		hostIn := filepath.Join(artifactsHostRoot, task.ScanID)
+		if err := os.MkdirAll(outSlot, 0o755); err != nil {
+			log.Error("Cannot create reporter slot " + outSlot + ": " + err.Error())
+			markReportTerminal(task.ScanID, task.TaskID, "ERROR", err.Error())
+			if e := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); e != nil {
+				log.Error(e.Error())
+			}
+			return
+		}
+
+		// Build the parsed reporter command (preset resolution + env expansion).
+		parsed, errA := g3lib.BuildReporterCommand(plugin, task.Preset)
+		if len(errA) > 0 {
+			msg := "reporter command build failed:"
+			for _, e := range errA {
+				msg += "\n - " + e.Error()
+			}
+			log.Error(msg)
+			_ = g3lib.SaveLogLine(sql_db, task.ScanID, task.TaskID, msg)
+			markReportTerminal(task.ScanID, task.TaskID, "ERROR", errA[0].Error())
+			if e := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); e != nil {
+				log.Error(e.Error())
+			}
+			return
+		}
+
+		// Open the JSONL stdin stream and dispatch the container.
+		stdin := g3lib.ReporterStdinStream(mdb_client, rdb_client, task.ScanID)
+		defer stdin.Close() //nolint:errcheck
+		logWriter := &reporterLogWriter{sql: sql_db, scanid: task.ScanID, taskid: task.TaskID}
+		runErr := g3lib.RunPluginReporter(ctx, plugin, parsed, hostIn, hostOut, stdin, logWriter)
+
+		// Remove the cancel context; mirror the tool handler exactly.
+		cancelTracker.ForgetTask(task.TaskID)
+		if e := g3lib.SendTaskCancelHandled(mq_client, task.ScanID, []string{task.TaskID}); e != nil {
+			log.Error(e.Error())
+		}
+
+		// Write the per-task manifest, same as today's tool tasks.
+		files, enumErr := g3lib.EnumerateSlot(outSlot)
+		if enumErr != nil {
+			log.Error("Cannot enumerate reporter slot " + outSlot + ": " + enumErr.Error())
+			files = []g3lib.G3ManifestFile{}
+		}
+		exitStatus := "success"
+		if runErr != nil {
+			if errors.Is(runErr, context.Canceled) {
+				exitStatus = "canceled"
+			} else {
+				exitStatus = runErr.Error()
+			}
+		}
+		endTS := time.Now().Unix()
+		manifestWriteErr := g3lib.WriteManifest(outSlot, g3lib.G3Manifest{
+			ScanID:     task.ScanID,
+			TaskID:     task.TaskID,
+			Plugin:     plugin.Name,
+			Tool:       plugin.Name,
+			ExitStatus: exitStatus,
+			StartedAt:  startTS,
+			EndedAt:    endTS,
+			Files:      files,
+			Work: []g3lib.G3ManifestWork{{
+				Cmd:       shellquote.Join(parsed.Command...),
+				Artifacts: nil,
+			}},
+		})
+		if manifestWriteErr != nil {
+			log.Error("Cannot write reporter manifest for " + task.TaskID + ": " + manifestWriteErr.Error())
+		}
+
+		// Decide terminal state and notify.
+		terminal := "DONE"
+		terminalMsg := ""
+		if runErr != nil {
+			if errors.Is(runErr, context.Canceled) {
+				terminal = "CANCELED"
+			} else {
+				terminal = "ERROR"
+				terminalMsg = runErr.Error()
+			}
+		} else if manifestWriteErr != nil {
+			terminal = "ERROR"
+			terminalMsg = "manifest write failed: " + manifestWriteErr.Error()
+		}
+		markReportTerminal(task.ScanID, task.TaskID, terminal, terminalMsg)
+		if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
+			log.Error("SendEmptyResponse (report) failed: " + err.Error())
+		}
+	})
+	topics = append(topics, reporterTopics...)
 	defer g3lib.Unsubscribe(mq_client, topics...)
 
 	// Listen for incoming tasks until we get a SIGTERM.
 	log.Info("Waiting for incoming tasks...")
 	wg.Wait()
 	log.Info("Quitting...")
+}
+
+// reporterLogWriter routes the reporter container's stdout/stderr to
+// SaveLogLine, one line at a time. Partial trailing lines are buffered
+// until the next Write; if the container exits without a trailing newline,
+// the last partial fragment is lost (acceptable — the manifest's ExitStatus
+// is the authoritative success/failure signal).
+type reporterLogWriter struct {
+	sql    g3lib.SQLDBClient
+	scanid string
+	taskid string
+	mu     sync.Mutex
+	buf    []byte
+}
+
+func (w *reporterLogWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.buf = append(w.buf, p...)
+	for {
+		idx := -1
+		for i, b := range w.buf {
+			if b == '\n' {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			break
+		}
+		line := string(w.buf[:idx])
+		w.buf = w.buf[idx+1:]
+		if line != "" {
+			if err := g3lib.SaveLogLine(w.sql, w.scanid, w.taskid, line); err != nil {
+				log.Error("SaveLogLine (report stream) failed: " + err.Error())
+			}
+		}
+	}
+	return len(p), nil
 }

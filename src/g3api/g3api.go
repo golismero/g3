@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"database/sql"
@@ -910,6 +911,150 @@ func Main() int {
 					result["errors"] = errorText
 				}
 				g3lib.SendApiResponse(w, result)
+			}
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
+		// Run a reporter plugin and stream the result. Synchronous (Tier 1). Future Tier 2
+		// adds ?async=true and a separate generic /scan/task/artifacts download endpoint.
+		//
+		http.HandleFunc(apiPath + "/scan/reporter", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: scan/reporter")
+			var request g3lib.ReqReporter
+			err := request.Decode(r)
+			if err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+
+			// Look up the plugin and validate the reporter phase + preset.
+			plugin, ok := plugins[request.Tool]
+			if !ok {
+				g3lib.SendApiError(w, http.StatusBadRequest, "Unknown tool: "+request.Tool)
+				return
+			}
+			if plugin.Reporter == nil {
+				g3lib.SendApiError(w, http.StatusBadRequest, "Tool "+request.Tool+" does not implement a reporter")
+				return
+			}
+			if request.Preset != "" {
+				if len(plugin.Reporter.Commands) == 0 {
+					g3lib.SendApiError(w, http.StatusBadRequest, "Tool "+request.Tool+" declares no reporter presets")
+					return
+				}
+				found := false
+				for _, cmd := range plugin.Reporter.Commands {
+					if cmd.Name == request.Preset {
+						found = true
+						break
+					}
+				}
+				if !found {
+					g3lib.SendApiError(w, http.StatusBadRequest, "Unknown preset for tool "+request.Tool+": "+request.Preset)
+					return
+				}
+			}
+
+			// Generate the reporter task id, register dispatch in Redis, publish via MQTT.
+			reporterTaskID := uuid.NewString()
+			dispatchTS := time.Now().Unix()
+			if err := g3lib.SetTaskDispatched(rdb_client, request.ScanID, reporterTaskID, request.Tool, dispatchTS); err != nil {
+				log.Critical("Redis SetTaskDispatched (reporter) failed: " + err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Failed to register reporter task.")
+				return
+			}
+			// X-G3-Task-ID is set on every response from this path once the task is
+			// registered in Redis — forward-compat for the Tier 2 async client that
+			// needs the task id even on errors. (The earliest error path —
+			// SetTaskDispatched failure — has no task id to share since registration
+			// never completed.)
+			w.Header().Set("X-G3-Task-ID", reporterTaskID)
+
+			if err := g3lib.SendReportTask(mq_client, request.ScanID, reporterTaskID, request.Tool, request.Preset); err != nil {
+				log.Critical("SendReportTask failed: " + err.Error())
+				// Best-effort: mark the task as ERROR so consumers see a terminal state.
+				_ = g3lib.SetTaskTerminal(rdb_client, request.ScanID, reporterTaskID, "ERROR", time.Now().Unix(), "MQTT publish failed: "+err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Failed to dispatch reporter task.")
+				return
+			}
+
+			// Poll Redis for terminal state. The HTTP request context cancels on
+			// client disconnect, which exits the loop cleanly.
+			ticker := time.NewTicker(250 * time.Millisecond)
+			defer ticker.Stop()
+			var terminalState string
+		WaitLoop:
+			for {
+				select {
+				case <-r.Context().Done():
+					// Client disconnected. The worker keeps running; the task is still
+					// trackable via /scan/tasks/status?task_id=<reporterTaskID>.
+					log.Debug("Client disconnected while waiting for reporter task " + reporterTaskID)
+					return
+				case <-ticker.C:
+					state, err := g3lib.GetTaskState(rdb_client, request.ScanID, reporterTaskID)
+					if err != nil {
+						log.Error("GetTaskState (reporter) failed: " + err.Error())
+						continue
+					}
+					switch state {
+					case "DONE", "ERROR", "CANCELED":
+						terminalState = state
+						break WaitLoop
+					case "":
+						// Task hash was cleaned up (most likely scan was deleted mid-report).
+						// Treat as canceled so we exit the loop rather than spin forever.
+						terminalState = "CANCELED"
+						break WaitLoop
+					default:
+						// DISPATCHED, RUNNING — keep polling.
+					}
+				}
+			}
+
+			// Handle terminal state.
+			switch terminalState {
+			case "ERROR":
+				g3lib.SendApiError(w, http.StatusInternalServerError, "reporter task failed; see task logs")
+				return
+			case "CANCELED":
+				g3lib.SendApiError(w, http.StatusServiceUnavailable, "reporter task was canceled")
+				return
+			case "DONE":
+				// Stream the bundle. BundleTaskSlot writes the body during its
+				// classify-and-stream walk, but Go's http.ResponseWriter wants headers
+				// set before the body. Buffer the bundle to capture the filename +
+				// content-type from BundleTaskSlot's return values, then set headers
+				// and flush. Acceptable for Tier 1 — reports are bounded by individual
+				// scan size; revisit if memory pressure shows up.
+				artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
+				if artifactsRoot == "" {
+					artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
+				}
+				slotDir := filepath.Join(artifactsRoot, request.ScanID, reporterTaskID)
+				var buf bytes.Buffer
+				filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, request.Tool, reporterTaskID, &buf)
+				if bundleErr != nil {
+					if errors.Is(bundleErr, os.ErrNotExist) {
+						g3lib.SendApiError(w, http.StatusNotFound, "task produced no output")
+						return
+					}
+					log.Error("BundleTaskSlot failed: " + bundleErr.Error())
+					g3lib.SendApiError(w, http.StatusInternalServerError, "failed to bundle reporter output")
+					return
+				}
+				w.Header().Set("Content-Type", contentType)
+				w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+				w.WriteHeader(http.StatusOK)
+				if _, err := w.Write(buf.Bytes()); err != nil {
+					log.Error("response write failed: " + err.Error())
+				}
+				return
+			default:
+				// Shouldn't reach here.
+				g3lib.SendApiError(w, http.StatusInternalServerError, "unexpected terminal state: "+terminalState)
+				return
 			}
 		}))
 

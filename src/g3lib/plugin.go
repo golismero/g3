@@ -51,6 +51,17 @@ type G3MergerCommand struct {
 	DockerOpt   []string            `json:"dockeropt,omitempty"`                            // (Optional) Docker options for the tool.
 }
 
+type G3ReporterCommand struct {
+	Name      string   `json:"name"               validate:"required"`         // Preset name; uniqueness validated in g3config.
+	Command   []string `json:"command,omitempty"`                              // (Optional) Command template, env-var expansion only.
+	DockerOpt []string `json:"dockeropt,omitempty"`                            // (Optional) Docker options, env-var expansion only.
+}
+
+type G3ReporterPhase struct {
+	Default  string              `json:"default,omitempty"`                            // (Optional) Name of the default preset; must reference an existing command.
+	Commands []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"` // (Optional) Named presets. Empty means "entrypoint runs with no args".
+}
+
 type G3Plugin struct {
 	Name        string              `json:"name"`                                           // Tool name. Must be unique.
 	Description map[string]string   `json:"description"`                                    // Description for humans, translated.
@@ -59,6 +70,7 @@ type G3Plugin struct {
 	Commands    []G3ToolCommand     `json:"commands,omitempty"  validate:"omitempty,dive"`  // (Optional) Array of commands and conditions.
 	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty"`       // (Optional) Command for importing files.
 	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty"`       // (Optional) Command for merging issues.
+	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty"`       // (Optional) Phase for generating downloadable reports.
 }
 func (plugin G3Plugin) String() string {
 	output := ""
@@ -274,6 +286,72 @@ func BuildMergerCommand(plugin G3Plugin) (ParsedPluginCommand, []error) {
 	return parsed, errorArray
 }
 
+// Build the command line and Docker options for a reporter run. presetName is
+// the caller-supplied preset; resolution order is:
+//   1. presetName, if non-empty (must match a declared command name)
+//   2. plugin.Reporter.Default, if non-empty
+//   3. first command in plugin.Reporter.Commands
+//   4. no command at all (the container entrypoint runs with no args)
+// The default DockerOpt overrides the image entrypoint to /usr/bin/g3r,
+// mirroring how importer/merger override to /usr/bin/g3i and /usr/bin/g3m.
+func BuildReporterCommand(plugin G3Plugin, presetName string) (ParsedPluginCommand, []error) {
+	var parsed ParsedPluginCommand
+	var errorArray []error
+
+	// Trivial case: plugin did not declare a reporter phase.
+	if plugin.Reporter == nil {
+		errorArray = append(errorArray, fmt.Errorf("plugin %s does not implement a reporter", plugin.Name))
+		return parsed, errorArray
+	}
+
+	// Resolve which command (if any) the caller wants.
+	var resolved *G3ReporterCommand
+	if len(plugin.Reporter.Commands) > 0 {
+		chosen := presetName
+		if chosen == "" {
+			chosen = plugin.Reporter.Default
+		}
+		if chosen == "" {
+			resolved = &plugin.Reporter.Commands[0]
+		} else {
+			for i := range plugin.Reporter.Commands {
+				if plugin.Reporter.Commands[i].Name == chosen {
+					resolved = &plugin.Reporter.Commands[i]
+					break
+				}
+			}
+			if resolved == nil {
+				errorArray = append(errorArray, fmt.Errorf("plugin %s has no reporter preset named %q", plugin.Name, chosen))
+				return parsed, errorArray
+			}
+		}
+	} else if presetName != "" {
+		errorArray = append(errorArray, fmt.Errorf("plugin %s declares no reporter presets, but preset %q was requested", plugin.Name, presetName))
+		return parsed, errorArray
+	}
+
+	// Build command and dockeropt arrays. Templates are expanded against the
+	// environment only — reporters never see G3Data templates.
+	environment := GetEnvironmentMap()
+	command := []string{}
+	dockerOpt := []string{"-i", "--rm", "--entrypoint", "/usr/bin/g3r"}
+	if resolved != nil {
+		var tmpErrA []error
+		if len(resolved.Command) > 0 {
+			command, tmpErrA = ExpandTemplateArray(resolved.Command, environment)
+			errorArray = append(errorArray, tmpErrA...)
+		}
+		if len(resolved.DockerOpt) > 0 {
+			dockerOpt, tmpErrA = ExpandTemplateArray(resolved.DockerOpt, environment)
+			errorArray = append(errorArray, tmpErrA...)
+		}
+	}
+
+	parsed.Command = command
+	parsed.DockerOpt = dockerOpt
+	return parsed, errorArray
+}
+
 // Build the plugin fingerprint.
 func BuildPluginFingerprint(fingerprintTemplate []string, data G3Data) ([]string, []error) {
 	var errorArray []error
@@ -338,6 +416,78 @@ func RunPluginMerger(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCo
 
 	// Run the command on the plugin's container.
 	return runPluginInternal(ctx, plugin, parsed, &stdin, "", stderr)
+}
+
+// Run a reporter plugin container. Differs from RunPluginCommand in three ways:
+//   - binds two host directories (hostInDir → /input:ro, hostOutDir → /output:rw)
+//     instead of a single /artifacts mount;
+//   - pipes the caller-supplied stdin reader straight to the container (the
+//     caller is responsible for closing the reader; see ReporterStdinStream);
+//   - does NOT parse stdout as G3Data — reporters write files to /output, so
+//     stdout/stderr are both routed to the task log writer.
+//
+// Returns nil on container exit 0, ctx.Err() on cancellation, or the underlying
+// exec error otherwise.
+func RunPluginReporter(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, hostInDir, hostOutDir string, stdin io.Reader, stderr io.Writer) error {
+	network := os.Getenv(G3_DOCKER_NETWORK)
+
+	tempfile, err := os.CreateTemp(os.TempDir(), "g3-")
+	if err != nil {
+		return err
+	}
+	os.Remove(tempfile.Name()) //nolint:errcheck
+	defer os.Remove(tempfile.Name()) //nolint:errcheck
+
+	commandLine := []string{"docker", "run", "-q", "--cidfile", tempfile.Name(), "-v", "./resources:/resources:ro"}
+	if hostInDir != "" {
+		commandLine = append(commandLine, "-v", hostInDir+":/input:ro")
+	}
+	if hostOutDir != "" {
+		commandLine = append(commandLine, "-v", hostOutDir+":/output:rw")
+	}
+	if network != "" {
+		commandLine = append(commandLine, "--network", network)
+	}
+	commandLine = append(commandLine, parsed.DockerOpt...)
+	commandLine = append(commandLine, plugin.Image)
+	commandLine = append(commandLine, parsed.Command...)
+
+	process := exec.Command(commandLine[0], commandLine[1:]...)
+	if stdin != nil {
+		process.Stdin = stdin
+	}
+	if stderr != nil {
+		process.Stdout = stderr
+		process.Stderr = stderr
+	} else {
+		process.Stdout = io.Discard
+		process.Stderr = io.Discard
+	}
+
+	c := make(chan error)
+	if err := process.Start(); err != nil {
+		return err
+	}
+	go func() { c <- process.Wait() }()
+
+	select {
+	case <-ctx.Done():
+		log.Info("Cancellation requested, stopping reporter container...")
+		if b, e := os.ReadFile(tempfile.Name()); e != nil {
+			log.Error(e.Error())
+		} else {
+			log.Debug("Container ID: " + string(b))
+			stop := exec.Command("docker", "stop", string(b))
+			stop.Dir = GetHomeDirectory()
+			if e := stop.Run(); e != nil {
+				log.Error(e.Error())
+			}
+		}
+		log.Info("Reporter container stopped.")
+		return ctx.Err()
+	case e := <-c:
+		return e
+	}
 }
 
 // Run a plugin but take the input from a reader.

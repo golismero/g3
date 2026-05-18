@@ -1,10 +1,14 @@
 package g3lib
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ManifestFilename is the name of the per-task manifest the worker writes into
@@ -188,4 +192,103 @@ func WriteManifest(slotDir string, m G3Manifest) error {
 // to be persisted past the invocation.
 func CreateEphemeralArtifactSlot() (string, error) {
 	return os.MkdirTemp("", "g3-cli-artifacts-")
+}
+
+// BundleTaskSlot enumerates slotDir (any task's artifact slot) and streams its
+// contents to w, applying the 0/1/many discovery rule from the reporter plugin
+// spec:
+//
+//   - 0 regular files → returns ("", "", os.ErrNotExist) so callers can render
+//     a 404. (Impossible in practice: WriteManifest always lands manifest.json
+//     in the slot. A 0 means the slot was reaped or the task_id is wrong.)
+//   - Exactly 1 regular file, no subdirs → streams that file as-is to w.
+//     Returned filename: <stem>-<taskID>.<ext> (stem/ext split on last dot).
+//     Returned content-type: mime.TypeByExtension(.ext) or "application/octet-stream".
+//   - Otherwise → streams a zip containing every regular file (recursing
+//     subdirs). Returned filename: <tool>-<taskID>.zip; content-type:
+//     "application/zip".
+//
+// The zip writer targets w directly — no in-memory buffering.
+func BundleTaskSlot(slotDir, tool, taskID string, w io.Writer) (filename, contentType string, err error) {
+
+	// First pass: walk the slot to classify it.
+	var files []string                 // regular files, relative to slotDir
+	var hasSubdir bool
+	err = filepath.WalkDir(slotDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == slotDir {
+			return nil
+		}
+		rel, _ := filepath.Rel(slotDir, path)
+		if d.IsDir() {
+			hasSubdir = true
+			return nil
+		}
+		if d.Type().IsRegular() {
+			files = append(files, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", "", err
+	}
+
+	// 0 files → not found.
+	if len(files) == 0 {
+		return "", "", os.ErrNotExist
+	}
+
+	// Exactly 1 file, no subdirs → stream as-is.
+	if len(files) == 1 && !hasSubdir {
+		name := files[0]
+		ext := filepath.Ext(name)
+		stem := strings.TrimSuffix(name, ext)
+		out := stem + "-" + taskID + ext
+		ctype := mime.TypeByExtension(ext)
+		if ctype == "" {
+			ctype = "application/octet-stream"
+		}
+		fp, err := os.Open(filepath.Join(slotDir, name))
+		if err != nil {
+			return "", "", err
+		}
+		defer fp.Close()
+		if _, err := io.Copy(w, fp); err != nil {
+			return "", "", err
+		}
+		return out, ctype, nil
+	}
+
+	// Otherwise → zip. Re-walk so we pick up files inside subdirs too.
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+	err = filepath.WalkDir(slotDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == slotDir || d.IsDir() {
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, _ := filepath.Rel(slotDir, path)
+		zf, err := zw.Create(rel)
+		if err != nil {
+			return err
+		}
+		fp, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer fp.Close()
+		_, err = io.Copy(zf, fp)
+		return err
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return tool + "-" + taskID + ".zip", "application/zip", nil
 }

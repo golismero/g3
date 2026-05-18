@@ -40,6 +40,8 @@ const G3WORKERSUBTOPIC      = "$share/g3worker/tool/"
 const G3WORKERPUBTOPIC      = "tool/"
 const G3CANCELTOPIC         = "cancel"
 const G3RESPONSETOPIC       = "response/"
+const G3REPORTSUBTOPIC      = "$share/g3worker/report/"
+const G3REPORTPUBTOPIC      = "report/"
 
 type G3MESSAGETYPE string
 const (
@@ -49,8 +51,9 @@ const (
 	MSG_CANCEL   G3MESSAGETYPE = "cancel"
 	MSG_STOP     G3MESSAGETYPE = "stop"
 	MSG_RESPONSE G3MESSAGETYPE = "response"
+	MSG_REPORT   G3MESSAGETYPE = "report"
 )
-var VALID_MSG = [...]G3MESSAGETYPE{MSG_TASK, MSG_SCAN, MSG_STATUS, MSG_CANCEL, MSG_RESPONSE}
+var VALID_MSG = [...]G3MESSAGETYPE{MSG_TASK, MSG_SCAN, MSG_STATUS, MSG_CANCEL, MSG_RESPONSE, MSG_REPORT}
 
 type G3SCANSTATUS string
 const (
@@ -81,6 +84,12 @@ type G3Task struct {            // MessageType: MSG_TASK
 	DataID string               `json:"dataid"      validate:"required,mongodb"`
 	Tool string                 `json:"tool"        validate:"required"`
 	Index int                   `json:"index"       validate:"gte=0"`
+}
+
+type G3ReportTask struct {      // MessageType: MSG_REPORT
+	G3TaskMessage
+	Tool   string `json:"tool"   validate:"required"`
+	Preset string `json:"preset"`                      // resolved name; "" only when plugin has reporter:{} with no commands
 }
 
 type G3Response struct {        // MessageType: MSG_RESPONSE
@@ -133,6 +142,7 @@ type ResponseHandler func(MessageQueueClient, G3Response)
 type NewScanHandler func(MessageQueueClient, G3Scan)
 type ScanStatusHandler func(MessageQueueClient, G3ScanStatus)
 type ScanStopHandler func(MessageQueueClient, G3ScanStop)
+type ReportTaskHandler func(MessageQueueClient, G3ReportTask)
 
 // Connect to the MQTT broker.
 func ConnectToBroker(clientid string) (MessageQueueClient, error) {
@@ -337,6 +347,27 @@ func SendTask(client MessageQueueClient, scanid, taskid, tool string, index int,
 	return SendMQPayload(client, topic, msg)
 }
 
+// Send a report task to the MQTT broker. Mirrors SendTask but uses the
+// report/<tool> topic family and a G3ReportTask payload (no DataID/Index).
+// The caller is responsible for generating the task ID and setting up
+// out-of-band state (Redis, SQL logs) before publishing — same race
+// concern as SendTask.
+func SendReportTask(client MessageQueueClient, scanid, taskid, tool, preset string) error {
+	msg := G3ReportTask{}
+	msg.MessageType = MSG_REPORT
+	msg.SenderID = GetClientID(client)
+	msg.TaskID = taskid
+	msg.ScanID = scanid
+	msg.Tool = tool
+	msg.Preset = preset
+	err := validator.New().Struct(msg)
+	if err != nil {
+		return err
+	}
+	topic := G3REPORTPUBTOPIC + tool
+	return SendMQPayload(client, topic, msg)
+}
+
 // Send a task cancellation message to the broker.
 func SendTaskCancel(client MessageQueueClient, scanid string, tasks []string) error {
 	return sendTaskCancelInternal(client, scanid, tasks, false)
@@ -472,6 +503,48 @@ func SubscribeAsWorker(client MessageQueueClient, tools []string, callback TaskH
 		}
 
 		// Call the task handler synchronously.
+		// This prevents receiving more tasks while running this one.
+		callback(client, task)
+	})
+
+	// Return the list of topics being subscribed to.
+	return slices.Sorted(maps.Keys(filters))
+}
+
+// Subscribe to a series of reporter-topic shares — parallel to SubscribeAsWorker
+// but routed through the report/<tool> topic family with G3ReportTask payloads.
+func SubscribeAsReporter(client MessageQueueClient, tools []string, callback ReportTaskHandler) []string {
+
+	// Build a map of topic strings and qos bytes.
+	filters := map[string]byte{}
+	for _, tool := range tools {
+		log.Debug("Subscribing to: " + G3REPORTSUBTOPIC + tool)
+		filters[G3REPORTSUBTOPIC + tool] = byte(MQTT_QOS)
+	}
+
+	// Subscribe to all of the topics.
+	client.SubscribeMultiple(filters, func(client mqtt.Client, msg mqtt.Message) {
+
+		// Decode the JSON payload.
+		var task G3ReportTask
+		err := json.Unmarshal(msg.Payload(), &task)
+		if err != nil {
+			log.Error("Error parsing JSON payload from MQTT message: " + err.Error())
+			return
+		}
+
+		// Validate.
+		err = validator.New().Struct(task)
+		if err != nil || task.MessageType != MSG_REPORT {
+			if err != nil {
+				log.Error("Malformed report task received: " + err.Error())
+			} else {
+				log.Error("Malformed report task received: wrong MessageType")
+			}
+			return
+		}
+
+		// Call the report-task handler synchronously.
 		// This prevents receiving more tasks while running this one.
 		callback(client, task)
 	})

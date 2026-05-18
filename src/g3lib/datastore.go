@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"sort"
 
@@ -325,4 +327,111 @@ func SaveData(dbclient DatastoreClient, scanid, taskid string, outputArray []G3D
 // Delete the data for a given scan.
 func DropScanData(dbclient DatastoreClient, scanid string) error {
 	return dbclient.c.Database("scan-" + scanid).Drop(context.Background())
+}
+
+// ReporterStdinStream returns an io.ReadCloser that yields the scan's data
+// as a JSON Lines stream, in the strict order documented by the reporter
+// plugin contract:
+//
+//   Line 1:        the G3Report (deduped issue ID list)
+//   Lines 2..K:    the issue G3Data objects, in G3Report.Issues order
+//   Lines K+1..N:  every other G3Data object in the scan
+//   EOF
+//
+// A goroutine writes to an io.Pipe; the worker passes the reader half to
+// docker as the reporter container's stdin. If the reader closes early
+// (e.g. magenta closes stdin because it doesn't consume the stream), the
+// next Encode returns io.ErrClosedPipe and the goroutine exits — so the
+// MongoDB cursor cost paid is exactly proportional to what the reporter
+// actually consumed.
+//
+// The returned ReadCloser MUST be closed by the caller to release the pipe
+// and unblock the goroutine in the case where the goroutine has already
+// exited via an early return.
+func ReporterStdinStream(mdb DatastoreClient, rdb KeyValueStoreClient, scanid string) io.ReadCloser {
+	pr, pw := io.Pipe()
+	go func() {
+		// Closing the writer half delivers EOF to the reader (the container's stdin).
+		// On panic, also close with the panic value as an error so the reader notices.
+		var encodeErr error
+		defer func() {
+			if r := recover(); r != nil {
+				pw.CloseWithError(fmt.Errorf("ReporterStdinStream panic: %v", r))
+				return
+			}
+			if encodeErr != nil && encodeErr != io.ErrClosedPipe {
+				pw.CloseWithError(encodeErr)
+			} else {
+				pw.Close()
+			}
+		}()
+
+		enc := json.NewEncoder(pw)
+
+		// Line 1: G3Report.
+		report, err := LoadReportInfo(rdb, scanid)
+		if err != nil {
+			encodeErr = fmt.Errorf("ReporterStdinStream: load G3Report for %s: %w", scanid, err)
+			return
+		}
+		if err := enc.Encode(report); err != nil {
+			encodeErr = err
+			return
+		}
+
+		// Lines 2..K: the deduped issue G3Data objects, in report.Issues order.
+		// LoadData uses MongoDB $in, which doesn't preserve input order, so we
+		// reorder here to honor the spec contract on stdin ordering.
+		if len(report.Issues) > 0 {
+			issues, err := LoadData(mdb, scanid, report.Issues)
+			if err != nil {
+				encodeErr = fmt.Errorf("ReporterStdinStream: load issues for %s: %w", scanid, err)
+				return
+			}
+			byID := make(map[string]G3Data, len(issues))
+			for _, issue := range issues {
+				if id, ok := issue["_id"].(string); ok {
+					byID[id] = issue
+				}
+			}
+			for _, id := range report.Issues {
+				issue, ok := byID[id]
+				if !ok {
+					continue // an issue ID in the report but not in MongoDB — skip
+				}
+				if err := enc.Encode(issue); err != nil {
+					encodeErr = err
+					return
+				}
+			}
+		}
+
+		// Lines K+1..N: everything else.
+		// Build a $nin filter from the deduped issue IDs.
+		query := bson.M{}
+		if len(report.Issues) > 0 {
+			objectIds := make([]primitive.ObjectID, 0, len(report.Issues))
+			for _, id := range report.Issues {
+				objid, err := primitive.ObjectIDFromHex(id)
+				if err != nil {
+					continue // malformed ID — skip, don't poison the whole stream
+				}
+				objectIds = append(objectIds, objid)
+			}
+			if len(objectIds) > 0 {
+				query = bson.M{"_id": bson.M{"$nin": objectIds}}
+			}
+		}
+
+		// LoadDataWithCallback iterates a cursor. Callback returning a non-nil
+		// error stops the iteration immediately — that's the EPIPE backpressure
+		// channel for "reader closed stdin, stop streaming".
+		err = LoadDataWithCallback(mdb, scanid, query, func(data G3Data) error {
+			return enc.Encode(data)
+		})
+		if err != nil && err != io.ErrClosedPipe {
+			encodeErr = err
+		}
+	}()
+	return pr
 }

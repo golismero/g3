@@ -301,6 +301,25 @@ func main() {
 			}
 		}
 
+		// Validate the reporter phase if present.
+		if metadata.Reporter != nil {
+			seen := map[string]struct{}{}
+			for cmdidx, cmd := range metadata.Reporter.Commands {
+				if !re.MatchString(cmd.Name) {
+					return fmt.Errorf("ERROR! Invalid reporter command name at index %d: %s", cmdidx, cmd.Name)
+				}
+				if _, dup := seen[cmd.Name]; dup {
+					return fmt.Errorf("ERROR! Duplicated reporter command name: %s", cmd.Name)
+				}
+				seen[cmd.Name] = struct{}{}
+			}
+			if metadata.Reporter.Default != "" {
+				if _, ok := seen[metadata.Reporter.Default]; !ok {
+					return fmt.Errorf("ERROR! Reporter default %q does not match any command name", metadata.Reporter.Default)
+				}
+			}
+		}
+
 		// If the name is missing, add it based on the filename.
 		if metadata.Name == "" {
 			name := filepath.Base(path)
