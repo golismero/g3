@@ -92,6 +92,8 @@ jobs:
             context: plugins/recon/testssl
           - image: wafw00f
             context: plugins/recon/wafw00f
+          - image: magenta
+            context: plugins/report/magenta
     steps:
       - uses: actions/checkout@v4
 

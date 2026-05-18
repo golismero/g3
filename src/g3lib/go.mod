@@ -17,10 +17,10 @@ require (
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/lib/pq v1.12.3
 	github.com/mattn/go-sqlite3 v1.14.44
-	github.com/nakagami/firebirdsql v0.9.18
+	github.com/nakagami/firebirdsql v0.9.19
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/wcharczuk/go-chart v2.0.1+incompatible
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.136.2
+	github.com/ydb-platform/ydb-go-sdk/v3 v3.136.3
 	go.mongodb.org/mongo-driver v1.17.9
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
@@ -66,7 +66,7 @@ require (
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60 // indirect
-	google.golang.org/grpc v1.81.0 // indirect
+	google.golang.org/grpc v1.81.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 )
