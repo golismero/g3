@@ -230,7 +230,7 @@ func GetTaskStates(rdb KeyValueStoreClient, scanid string) ([]TaskState, error) 
 // Fetch the state field of a single task. Returns ("", nil) when the task
 // hash has been cleaned up (scan terminal + state reaper ran). Returns the
 // state string ("DISPATCHED", "RUNNING", "DONE", "ERROR", "CANCELED") otherwise.
-// Used by the synchronous /scan/reporter wait loop to detect terminal state.
+// Used by /scan/task/artifacts to distinguish in-flight tasks from terminal-but-purged ones.
 func GetTaskState(rdb KeyValueStoreClient, scanid, taskid string) (string, error) {
 	ctx := context.Background()
 	key := taskHashKey(scanid, taskid)

@@ -42,6 +42,7 @@ const G3CANCELTOPIC         = "cancel"
 const G3RESPONSETOPIC       = "response/"
 const G3REPORTSUBTOPIC      = "$share/g3worker/report/"
 const G3REPORTPUBTOPIC      = "report/"
+const G3DISPATCHTOPIC       = "dispatch"
 
 type G3MESSAGETYPE string
 const (
@@ -52,8 +53,9 @@ const (
 	MSG_STOP     G3MESSAGETYPE = "stop"
 	MSG_RESPONSE G3MESSAGETYPE = "response"
 	MSG_REPORT   G3MESSAGETYPE = "report"
+	MSG_DISPATCH G3MESSAGETYPE = "dispatch"
 )
-var VALID_MSG = [...]G3MESSAGETYPE{MSG_TASK, MSG_SCAN, MSG_STATUS, MSG_CANCEL, MSG_RESPONSE, MSG_REPORT}
+var VALID_MSG = [...]G3MESSAGETYPE{MSG_TASK, MSG_SCAN, MSG_STATUS, MSG_CANCEL, MSG_RESPONSE, MSG_REPORT, MSG_DISPATCH}
 
 type G3SCANSTATUS string
 const (
@@ -90,6 +92,17 @@ type G3ReportTask struct {      // MessageType: MSG_REPORT
 	G3TaskMessage
 	Tool   string `json:"tool"   validate:"required"`
 	Preset string `json:"preset"`                      // resolved name; "" only when plugin has reporter:{} with no commands
+}
+
+type G3Dispatch struct {        // MessageType: MSG_DISPATCH
+	G3TaskMessage               // embeds ScanID + TaskID; TaskID is required,uuid4
+	Kind   string `json:"kind"   validate:"required,oneof=tool report"`
+	Tool   string `json:"tool"   validate:"required"`
+	// kind=tool fields:
+	DataID string `json:"dataid,omitempty" validate:"omitempty,mongodb"`
+	Index  int    `json:"index,omitempty"  validate:"gte=0"`
+	// kind=report fields:
+	Preset string `json:"preset,omitempty"`
 }
 
 type G3Response struct {        // MessageType: MSG_RESPONSE
@@ -143,6 +156,7 @@ type NewScanHandler func(MessageQueueClient, G3Scan)
 type ScanStatusHandler func(MessageQueueClient, G3ScanStatus)
 type ScanStopHandler func(MessageQueueClient, G3ScanStop)
 type ReportTaskHandler func(MessageQueueClient, G3ReportTask)
+type DispatchHandler func(MessageQueueClient, G3Dispatch)
 
 // Connect to the MQTT broker.
 func ConnectToBroker(clientid string) (MessageQueueClient, error) {
@@ -322,11 +336,13 @@ func SendScanCompleted(client MessageQueueClient, scanid string) error {
 	return SendMQPayload(client, G3SCANSTATUSTOPIC, msg)
 }
 
-// Send a task to the MQTT broker. The caller is responsible for generating the
-// task ID (e.g. via uuid.NewString()) so that out-of-band state (Redis, SQL logs)
-// can be set up before the message is published — otherwise a worker might pick
-// up the task and race ahead of the scanner's own bookkeeping.
-func SendTask(client MessageQueueClient, scanid, taskid, tool string, index int, data G3Data) error {
+// SendTask publishes a tool task to a worker via the tool/<name> topic.
+// The caller is responsible for generating taskid (e.g. via uuid.NewString())
+// and supplying dataid (the MongoDB id of the G3Data the worker will operate on).
+// Generating the task ID outside this function lets out-of-band state (Redis,
+// SQL logs) be set up before the message is published — otherwise a worker
+// might pick up the task and race ahead of the scanner's own bookkeeping.
+func SendTask(client MessageQueueClient, scanid, taskid, tool string, index int, dataid string) error {
 	msg := G3Task{}
 	msg.MessageType = MSG_TASK
 	msg.SenderID = GetClientID(client)
@@ -334,17 +350,27 @@ func SendTask(client MessageQueueClient, scanid, taskid, tool string, index int,
 	msg.ScanID = scanid
 	msg.Tool = tool
 	msg.Index = index
-	if _, ok := data["_id"]; ok {
-		msg.DataID = data["_id"].(string)
-	} else {
-		return errors.New("data missing _id, save to database first")
-	}
+	msg.DataID = dataid
 	err := validator.New().Struct(msg)
 	if err != nil {
 		return err
 	}
 	topic := G3WORKERPUBTOPIC + tool
 	return SendMQPayload(client, topic, msg)
+}
+
+// SendDispatch publishes a G3Dispatch to the scanner's dispatch topic.
+// The caller (g3api) is responsible for generating the TaskID, validating
+// the request shape against plugin metadata, and populating kind-specific
+// fields. The scanner re-validates kind-specific fields on receipt and
+// publishes to the appropriate worker topic.
+func SendDispatch(client MessageQueueClient, msg G3Dispatch) error {
+	msg.MessageType = MSG_DISPATCH
+	msg.SenderID = GetClientID(client)
+	if err := validator.New().Struct(msg); err != nil {
+		return err
+	}
+	return SendMQPayload(client, G3DISPATCHTOPIC, msg)
 }
 
 // Send a report task to the MQTT broker. Mirrors SendTask but uses the
@@ -593,6 +619,42 @@ func SubscribeAsScanner(client MessageQueueClient, callback NewScanHandler) stri
 		}
 	})
 	return topic
+}
+
+// SubscribeAsDispatcher registers the scanner as a dispatch consumer.
+// Unlike SubscribeAsScanner (which spawns a per-scan ScanRunner goroutine
+// to handle MSG_SCAN), this handler runs at the scanner-process level and
+// handles dispatches for any scan — including ones with no active ScanRunner
+// (e.g. dispatching a reporter for a terminated scan).
+func SubscribeAsDispatcher(client MessageQueueClient, callback DispatchHandler) string {
+	log.Debug("Subscribing to: " + G3DISPATCHTOPIC)
+	client.Subscribe(G3DISPATCHTOPIC, MQTT_QOS, func(client mqtt.Client, msg mqtt.Message) {
+
+		// Decode the JSON payload.
+		var dispatch G3Dispatch
+		err := json.Unmarshal(msg.Payload(), &dispatch)
+		if err != nil {
+			log.Error("Error parsing JSON payload from MQTT message: " + err.Error())
+			return
+		}
+
+		// Validate.
+		err = validator.New().Struct(dispatch)
+		if err != nil || dispatch.MessageType != MSG_DISPATCH {
+			if err != nil {
+				log.Error("Malformed dispatch object received: " + err.Error())
+			} else {
+				log.Error("Malformed dispatch object received: wrong MessageType")
+			}
+			return
+		}
+
+		// Run the dispatch handler synchronously. The work is light (one
+		// Redis write, one SQL write, one MQTT publish) so spawning a
+		// goroutine per message would be premature.
+		callback(client, dispatch)
+	})
+	return G3DISPATCHTOPIC
 }
 
 // Subscribe to the scanner stop topic to receive scan stop requests.

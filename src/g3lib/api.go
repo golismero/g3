@@ -247,18 +247,6 @@ func (req *ReqReport) Decode(r *http.Request) error {
 	return validator.New().Struct(req)
 }
 
-type ReqReporter struct {
-	ScanID string `json:"scanid" validate:"required,uuid"`
-	Tool   string `json:"tool"   validate:"required"`
-	Preset string `json:"preset"`
-	Async  bool   `json:"async,omitempty"`
-}
-func (req *ReqReporter) Decode(r *http.Request) error {
-	if err := ValidateHttpRequest(r); err != nil { return err }
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return validator.New().Struct(req)
-}
-
 type ReqTaskArtifacts struct {
 	ScanID string `json:"scanid" validate:"required,uuid"`
 	TaskID string `json:"taskid" validate:"required,uuid"`
@@ -274,6 +262,23 @@ type ReqTaskCancel struct {
 	TaskIDs []string `json:"taskids" validate:"required,min=1,dive,uuid"`
 }
 func (req *ReqTaskCancel) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
+type ReqTaskDispatch struct {
+	ScanID string `json:"scanid" validate:"required,uuid"`
+	Kind   string `json:"kind"   validate:"required,oneof=tool report"`
+	Tool   string `json:"tool"   validate:"required"`
+	// kind=tool fields:
+	DataID string `json:"dataid,omitempty" validate:"omitempty,mongodb"`
+	Index  int    `json:"index,omitempty"  validate:"gte=0"`
+	// kind=report fields:
+	Preset string `json:"preset,omitempty"`
+}
+
+func (req *ReqTaskDispatch) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
 	return validator.New().Struct(req)
