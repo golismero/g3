@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -915,8 +916,10 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Run a reporter plugin and stream the result. Synchronous (Tier 1). Future Tier 2
-		// adds ?async=true and a separate generic /scan/task/artifacts download endpoint.
+		// Run a reporter plugin and stream the result. Sync by default; pass
+		// "async": true in the request body to return 202 + { task_id } immediately
+		// without streaming the bundle. Async clients then poll /scan/tasks/status
+		// and download the bundle via POST /scan/task/artifacts once the task is terminal.
 		//
 		http.HandleFunc(apiPath + "/scan/reporter", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/reporter")
@@ -976,6 +979,19 @@ func Main() int {
 				// Best-effort: mark the task as ERROR so consumers see a terminal state.
 				_ = g3lib.SetTaskTerminal(rdb_client, request.ScanID, reporterTaskID, "ERROR", time.Now().Unix(), "MQTT publish failed: "+err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Failed to dispatch reporter task.")
+				return
+			}
+
+			// Async opt-in (Tier 2). Skip the synchronous polling/bundling loop;
+			// return 202 + { task_id } immediately. The client polls
+			// /scan/tasks/status and then GETs /scan/task/artifacts when ready.
+			if request.Async {
+				w.WriteHeader(http.StatusAccepted)
+				response := g3lib.APIResponse{
+					Status: "success",
+					Data:   map[string]string{"task_id": reporterTaskID},
+				}
+				response.Write(w)
 				return
 			}
 
@@ -1056,6 +1072,129 @@ func Main() int {
 				g3lib.SendApiError(w, http.StatusInternalServerError, "unexpected terminal state: "+terminalState)
 				return
 			}
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
+		// Generic task-artifacts download. Disk-first: manifest.json presence in the slot is
+		// the authoritative durable terminal-state marker. Redis is consulted only to shape
+		// the 425 body message when the manifest is absent — Redis absence is NEVER a
+		// failure signal (Redis is transient by design; terminated scans have no entries).
+		//
+		// See docs/superpowers/specs/2026-05-18-reporter-tier2-design.md (Component 1).
+		//
+		http.HandleFunc(apiPath + "/scan/task/artifacts", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: scan/task/artifacts")
+			var request g3lib.ReqTaskArtifacts
+			err := request.Decode(r)
+			if err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+
+			// Compute the slot path.
+			artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
+			if artifactsRoot == "" {
+				artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
+			}
+			slotDir := filepath.Join(artifactsRoot, request.ScanID, request.TaskID)
+
+			// Step 1: slot dir absent → 404.
+			if _, err := os.Stat(slotDir); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					g3lib.SendApiError(w, http.StatusNotFound, "task not found")
+					return
+				}
+				log.Error("stat slot dir failed: " + err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				return
+			}
+
+			// Step 2: manifest.json present → terminal, serve bundle.
+			manifestPath := filepath.Join(slotDir, g3lib.ManifestFilename)
+			manifestBytes, err := os.ReadFile(manifestPath)
+			if err == nil {
+				// Decode the manifest to recover the tool name. BundleTaskSlot uses
+				// `tool` to construct the multi-file zip filename (`<tool>-<taskid>.zip`);
+				// reading from the manifest avoids the generic endpoint having to know
+				// the tool out-of-band. Fall back to the task ID if the manifest field
+				// is unexpectedly empty (shouldn't happen but defended against).
+				var manifest g3lib.G3Manifest
+				toolName := request.TaskID
+				if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+					log.Error("parse manifest failed: " + err.Error())
+					// Continue with the fallback; a malformed manifest shouldn't block
+					// the download — better to ship the bundle with a less-descriptive
+					// filename than to fail.
+				} else if manifest.Tool != "" {
+					toolName = manifest.Tool
+				}
+
+				var buf bytes.Buffer
+				filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, toolName, request.TaskID, &buf)
+				if bundleErr != nil {
+					if errors.Is(bundleErr, os.ErrNotExist) {
+						// Unreachable in practice (manifest counts as a file) but
+						// defended against for safety.
+						g3lib.SendApiError(w, http.StatusNotFound, "task produced no output")
+						return
+					}
+					log.Error("BundleTaskSlot failed: " + bundleErr.Error())
+					g3lib.SendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
+					return
+				}
+				w.Header().Set("Content-Type", contentType)
+				w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+				w.WriteHeader(http.StatusOK)
+				if _, err := w.Write(buf.Bytes()); err != nil {
+					log.Error("response write failed: " + err.Error())
+				}
+				return
+			} else if !errors.Is(err, os.ErrNotExist) {
+				log.Error("read manifest failed: " + err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				return
+			}
+
+			// Step 3: manifest absent — consult Redis only to shape the body.
+			// Redis presence is a positive "still running" signal; Redis absence
+			// is NOT a failure signal. Either way we return 425.
+			state, _ := g3lib.GetTaskState(rdb_client, request.ScanID, request.TaskID)
+			var msg string
+			if state == "DISPATCHED" || state == "RUNNING" {
+				msg = "task is still " + state
+			} else {
+				msg = "task is not yet complete"
+			}
+			w.Header().Set("Retry-After", "2")
+			g3lib.SendApiError(w, http.StatusTooEarly, msg)
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
+		// Batch task cancellation. Publishes a single G3CancelTask MQTT message covering
+		// all task IDs in one publish. Fire-and-forget: the API doesn't wait for workers
+		// to acknowledge — task state transitions to CANCELED flow through the existing
+		// SetTaskTerminal / /scan/tasks/status / WebSocket task channel pipeline.
+		//
+		// See docs/superpowers/specs/2026-05-18-reporter-tier2-design.md (Component 3).
+		//
+		http.HandleFunc(apiPath + "/scan/task/cancel", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: scan/task/cancel")
+			var request g3lib.ReqTaskCancel
+			err := request.Decode(r)
+			if err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+
+			if err := g3lib.SendTaskCancel(mq_client, request.ScanID, request.TaskIDs); err != nil {
+				log.Error("SendTaskCancel failed: " + err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "failed to publish cancel")
+				return
+			}
+
+			g3lib.SendApiResponse(w, nil)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////

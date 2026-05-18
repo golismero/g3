@@ -251,8 +251,29 @@ type ReqReporter struct {
 	ScanID string `json:"scanid" validate:"required,uuid"`
 	Tool   string `json:"tool"   validate:"required"`
 	Preset string `json:"preset"`
+	Async  bool   `json:"async,omitempty"`
 }
 func (req *ReqReporter) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
+type ReqTaskArtifacts struct {
+	ScanID string `json:"scanid" validate:"required,uuid"`
+	TaskID string `json:"taskid" validate:"required,uuid"`
+}
+func (req *ReqTaskArtifacts) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
+type ReqTaskCancel struct {
+	ScanID  string   `json:"scanid"  validate:"required,uuid"`
+	TaskIDs []string `json:"taskids" validate:"required,min=1,dive,uuid"`
+}
+func (req *ReqTaskCancel) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
 	return validator.New().Struct(req)

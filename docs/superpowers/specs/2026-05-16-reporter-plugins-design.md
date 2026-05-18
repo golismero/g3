@@ -563,7 +563,9 @@ Out of scope: async API, local-CLI integration, additional reporters,
 retention policies, preset discovery API, generic artifacts download
 endpoint.
 
-### Tier 2 — Async API + generic artifacts download
+### Tier 2 — Async API + generic artifacts download + task cancel
+
+Detailed in its own spec: [2026-05-18-reporter-tier2-design.md](2026-05-18-reporter-tier2-design.md).
 
 Reporter tasks are **already** queryable through every existing task
 endpoint and the WebSocket task channel the moment Tier 1 ships — they
@@ -571,20 +573,26 @@ appear in `/scan/tasks`, status is fetched via `/scan/tasks/status`,
 state changes push over the existing WebSocket task channel. No new
 monitoring surface is needed.
 
-Tier 2 adds exactly two pieces:
+Tier 2 adds three pieces:
 
-- **`GET /scan/task/artifacts?task_id=X`** — generic, task-scoped
-  artifacts download endpoint, using the same `BundleTaskSlot` logic
-  introduced in Tier 1. Works for **any** terminal task with a non-empty
-  slot, not just reporter tasks — unlocks downloading e.g. `nmap.xml`
-  from a tool task for free.
-- **`?async=true` query flag on `POST /scan/reporter`** — when set, the
-  endpoint returns `{ task_id }` immediately rather than blocking on the
-  worker. The async client lifecycle reuses what already exists: poll
-  `/scan/tasks/status?task_id=X` (or subscribe to the WebSocket task
-  channel) until terminal, then GET `/scan/task/artifacts?task_id=X`.
+- **`POST /scan/task/artifacts`** body `{ scan_id, task_id }` — generic,
+  task-scoped artifacts download endpoint, using the same `BundleTaskSlot`
+  logic introduced in Tier 1. Works for **any** terminal task with a
+  non-empty slot, not just reporter tasks — unlocks downloading e.g.
+  `nmap.xml` from a tool task for free.
+- **`async` body field on `POST /scan/reporter`** — when set, the endpoint
+  returns `202 Accepted` and `{ task_id }` immediately rather than
+  blocking on the worker. The async client lifecycle reuses what already
+  exists: poll `/scan/tasks/status` (or subscribe to the WebSocket task
+  channel) until terminal, then `POST /scan/task/artifacts` to download.
+- **`POST /scan/task/cancel`** body `{ scan_id, task_ids: [...] }` —
+  batch cancel by ID set, mirrors the existing `G3CancelTask` MQTT shape.
+  Works for any task kind (reporter, tool, importer), completing the
+  "reporter tasks as first-class tasks" story.
 
-No new task table columns required.
+No new task table columns, no new MQTT topics, no new SQL schema changes.
+The async flag is a body field rather than a query parameter for
+consistency with the rest of g3api (POST + JSON body convention).
 
 ### Tier 3 — Local CLI integration
 
