@@ -263,7 +263,9 @@ func BundleTaskSlot(slotDir, tool, taskID string, w io.Writer) (filename, conten
 
 	// Otherwise → zip. Re-walk so we pick up files inside subdirs too.
 	zw := zip.NewWriter(w)
-	defer zw.Close()
+	// Safety net for early-error returns. The success path closes explicitly
+	// below and propagates the error — calling Close twice is harmless.
+	defer zw.Close() //nolint:errcheck
 	err = filepath.WalkDir(slotDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -288,6 +290,12 @@ func BundleTaskSlot(slotDir, tool, taskID string, w io.Writer) (filename, conten
 		return err
 	})
 	if err != nil {
+		return "", "", err
+	}
+	// Flush the zip central directory before returning success — without this
+	// any error from finalizing the archive would be silently dropped and the
+	// caller would ship a corrupt zip downstream.
+	if err := zw.Close(); err != nil {
 		return "", "", err
 	}
 	return tool + "-" + taskID + ".zip", "application/zip", nil
