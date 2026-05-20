@@ -36,6 +36,7 @@ func BuildTemplate(token string) (*template.Template, error) {
 		"timestamp":    FormatUnixTime,     // Convert Unix timestamp to human readable string.
 		"codeblock":    MarkdownCodeBlock,  // Generate a Markdown code block.
 		"uuid":         uuid.NewString,     // Fresh random UUID4. Bypasses scanner dedup when used in a fingerprint.
+		"env":          GetEnvironmentMap,  // Host env map. Use as {{(env).G3_ENV_NAME}}.
 
 		// TODO add more here
 	}

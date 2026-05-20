@@ -83,88 +83,53 @@ POST /scan/task/artifacts
 }
 ```
 
-### Behavior
+### Behavior (updated in Tier 3)
 
-The endpoint is **disk-first**: the existence of `manifest.json` in the slot
-is the authoritative durable marker that the task reached terminal state.
-Redis state, when present, is a positive signal that the task is still in
-flight — but Redis *absence* is never treated as a failure signal, because
-Redis is transient by design (cleaned up when the parent scan terminates).
+The endpoint is **lifecycle-first**: task state is read from Redis (fast
+path) or reconstructed from SQL log markers (durable fallback). The
+filesystem participates in the bundling step only, never in the lifecycle
+decision. This mirrors how `/scan/tasks/status` already resolves state
+across both stores.
 
-Rationale: downloading artifacts from a long-finished scan must work
-— that's the common case. By then the scan has terminated and Redis has
-reaped every per-task hash for it. The manifest file, by contrast, lives
-in the slot forever (until the scan is deleted, at which point the slot
-itself is gone).
+Tool name comes from the SQL `[g3:dispatch]` marker (uniform across
+task kinds). The endpoint no longer reads `manifest.json` — reporter
+tasks don't write one (see Tier 3 design), and tool-task manifests
+aren't needed at this layer either.
 
-Tier 1's worker writes `manifest.json` in every terminal-state code path
-(success, error, canceled) before calling `SendEmptyResponse` — so manifest
-presence implies the task ran to completion, even if that completion was
-an error.
-
-1. Decode + validate the request. Both fields are `uuid` per the existing
-   validator convention used throughout `g3lib/api.go`.
-2. Compute the slot path: `<G3_ARTIFACTS_ROOT>/<scan_id>/<task_id>/`.
-3. Stat the slot dir. If it doesn't exist → 404 `"task not found"`.
-4. Stat `<slot>/manifest.json`. If present → task is terminal, jump to step 7.
-5. Manifest absent — consult Redis for a positive "still running" signal.
-   Look up `GetTaskState(rdb, scan_id, task_id)`. Whatever the result
-   (state string, empty string, or error), the response is 425 Too Early
-   with `Retry-After: 2`; the Redis result only shapes the body text.
-6. Branch on Redis state for the body message:
-   - State is `DISPATCHED` or `RUNNING` → body `"task is still <STATE>"`.
-   - Anything else (empty string, error fetching, unexpected value) →
-     body `"task is not yet complete"`. The endpoint does NOT infer
-     failure from Redis absence — Redis presence is a positive signal,
-     but Redis absence is not a negative signal. Global crash-recovery
-     and stuck-task reconciliation are out of scope for this endpoint.
-7. Serve the bundle. Call `BundleTaskSlot` with a `bytes.Buffer` (same
-   pattern as Tier 1's `/scan/reporter` — Go's `http.ResponseWriter`
-   requires headers set before the body), then set `Content-Type`,
-   `Content-Disposition`, status 200, and flush the buffer.
+1. Decode + validate the request.
+2. `GetTaskState(rdb, scan_id, task_id)`:
+   - DISPATCHED/RUNNING → 425 + "task is still <STATE>" + Retry-After: 2.
+   - DONE/ERROR/CANCELED → terminal; fall through to SQL for tool name.
+   - "" or error → fall through to SQL.
+3. `ReconstructTaskStateFromLogs(sql, scan_id, task_id)`:
+   - No record AND Redis was silent → 404 "task not found".
+   - WAITING/RUNNING/UNKNOWN → 425 + "task is not yet complete" + Retry-After: 2.
+   - DONE/ERROR/CANCELED → terminal; tool name from same lookup.
+4. Stat slot dir at <G3_ARTIFACTS_ROOT>/<scan_id>/<task_id>/:
+   - Missing → 404 "task produced no output".
+   - Present → BundleTaskSlot stream-to-response.
 
 ### Response matrix
 
-| Disk signal | Redis signal | Status | Body / headers |
+| Lifecycle lookup | Slot on disk | Status | Body / headers |
 | --- | --- | --- | --- |
-| Slot dir doesn't exist | n/a | 404 | `"task not found"` |
-| `manifest.json` present in slot | n/a (not checked) | 200 | bundle per Tier 1's `BundleTaskSlot` rules; `Content-Disposition: attachment; filename=...`; `Content-Type` per Tier 1 sniffing rules |
-| `manifest.json` absent | `DISPATCHED` or `RUNNING` | 425 | `"task is still <STATE>"`; header `Retry-After: 2` |
-| `manifest.json` absent | `""` (Redis empty), error, or unexpected | 425 | `"task is not yet complete"`; header `Retry-After: 2` |
-| Malformed request / non-uuid / missing field | n/a | 400 | `"Bad request."` |
-
-Notes:
-- Because the manifest is always written before terminal, "manifest present"
-  with an otherwise-empty slot effectively means "the task ran but produced
-  no output beyond the manifest." `BundleTaskSlot` will treat the manifest
-  as the single file and serve `manifest-<taskid>.json` — informative for
-  the client even if no payload was produced. Tier 1's "0 files → 404"
-  branch is therefore unreachable here in practice.
-- A serve from an ERROR or CANCELED terminal state includes whatever the
-  plugin managed to write before failing — Tier 1's spec keeps the slot
-  for diagnostics, this endpoint surfaces it. The client reads
-  `manifest.json` inside the bundle to see the actual `exit_status`.
-- `Retry-After: 2` (seconds) is a polite hint for retrying clients.
-  RFC 8470 specifies 425 Too Early for TLS early-data replay protection;
-  using it for "resource not yet ready" is an established loose convention.
-- The 404 is reserved for "the slot dir literally doesn't exist on disk"
-  — no evidence the task ever ran. Every other unsuccessful case (manifest
-  absent for any reason) is 425, never 404. This honors the rule that
-  Redis absence is not failure: the endpoint never declares a task dead
-  based on missing Redis state alone.
+| Terminal (Redis or SQL) | Has ≥1 file | 200 | bundle per `BundleTaskSlot` rules |
+| Terminal (Redis or SQL) | Empty or absent | 404 | `"task produced no output"` |
+| DISPATCHED/RUNNING in Redis | n/a | 425 | `"task is still <STATE>"` + `Retry-After: 2` |
+| WAITING/RUNNING/UNKNOWN via SQL only | n/a | 425 | `"task is not yet complete"` + `Retry-After: 2` |
+| No record in Redis or SQL | n/a | 404 | `"task not found"` |
+| Malformed request | n/a | 400 | `"Bad request."` |
 
 ### Reused infrastructure
 
 | Helper | Source | Role |
 | --- | --- | --- |
 | `BundleTaskSlot(slotDir, tool, taskID, w)` | `g3lib/manifest.go` (Tier 1) | Walks slot, returns filename/content-type, streams bundle into `w` |
-| `ManifestFilename` constant | `g3lib/manifest.go` (artifacts spec) | The literal `"manifest.json"` name; reuse to avoid drift |
-| `GetTaskState(rdb, scanID, taskID)` | `g3lib/kvstore.go` (Tier 1) | Single-task Redis state lookup — consulted only when manifest is absent, and only to shape the 425 body message (not to decide the status code) |
+| `GetTaskState(rdb, scanID, taskID)` | `g3lib/kvstore.go` (Tier 1) | Single-task Redis state lookup — fast-path lifecycle check |
+| `ReconstructTaskStateFromLogs(sql, scanID, taskID)` | `g3lib/sql.go` (Tier 3) | Single-task SQL log marker lookup — durable fallback for lifecycle when Redis is silent |
 | `G3_ARTIFACTS_ROOT` env (with `G3_ARTIFACTS_ROOT_DEFAULT` fallback) | `g3lib/plugin.go` (artifacts spec) | Slot-path root |
 
-No new helpers needed. The endpoint is ~60 lines of handler glue (slightly
-more than the original sketch because of the disk-stat + manifest-check
-branches).
+No new helpers needed beyond what Tier 3 introduces. The endpoint is ~80 lines of handler glue (decision tree for Redis → SQL fallback chain, then bundling).
 
 ## Component 2: Async opt-in for `POST /scan/reporter`
 

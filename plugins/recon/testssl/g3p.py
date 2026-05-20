@@ -23,7 +23,11 @@ def ip_slug(ip):
 
 # Base arguments for testssl.
 # TODO some of this could come from environment variables
-base_args = ["testssl.sh", "--sneaky", "--phone-out", "--hints", "-6", "--connect-timeout", "10", "--openssl-timeout", "10", "--wide"]
+base_args = ["testssl.sh", "--sneaky", "--phone-out", "--hints", "--connect-timeout", "10", "--openssl-timeout", "10", "--wide"]
+
+# Disable IPv6 unless explicitly enabled.
+is_ipv6_enabled = os.getenv("G3_ENV_IPV6_SUPPORTED")
+is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true" )
 
 # Here we will have the output data.
 output_data = []
@@ -39,6 +43,8 @@ if "url" in input_data:
     try:
         with os.fdopen(fd, 'r') as tmpfd:
             args = list(base_args)
+            if is_ipv6_enabled:
+                args.append("-6")
             args.extend(["-oJ", tmp, "--overwrite", "--", url])
             # Run testssl, tee'ing combined stdout/stderr to both stderr (live) and the artifacts log.
             with open("/artifacts/testssl.txt", "wb") as logfile:
@@ -66,7 +72,7 @@ if "url" in input_data:
 # Process hosts. This means we are running a network test.
 # Process IPv4 and IPv6 separately since we can only pass one using "--ip".
 else:
-    for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "")):
+    for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_enabled else ""):
         if not ip: continue
         slug = ip_slug(ip)
         if slug is None:

@@ -517,6 +517,89 @@ func ReconstructTaskStatesFromLogs(db SQLDBClient, scanid string) ([]TaskStatusE
 	return out, nil
 }
 
+// ReconstructTaskStateFromLogs returns the lifecycle state and tool name
+// for a single task, reconstructed from SQL log markers. Returns
+// ("", "", nil) if no markers for this task exist (the task either was
+// never dispatched or its log lines were never written).
+//
+// Mirrors ReconstructTaskStatesFromLogs's parsing logic but scoped to
+// one task — useful for endpoints that need to look up a single task's
+// state without paying for the per-scan full reconstruction.
+//
+// State precedence (matches the plural function):
+//   [g3:done]   → state from marker's state= field
+//   [g3:cancel] without [g3:done] → CANCELED
+//   [g3:start]  without done/cancel → UNKNOWN (worker crashed mid-run)
+//   [g3:dispatch] only → WAITING
+func ReconstructTaskStateFromLogs(db SQLDBClient, scanid, taskid string) (string, string, error) {
+	query := "SELECT `timestamp`, `text` FROM `logs` " +
+		"WHERE `scanid` = ? AND `taskid` = ? AND `text` LIKE '[g3:%' " +
+		"ORDER BY `timestamp`, `id` ASC"
+	rows, err := db.db.Query(query, scanid, taskid)
+	if err != nil {
+		return "", "", err
+	}
+	defer rows.Close()
+
+	state := ""
+	tool := ""
+	dispatchSeen := false
+	startSeen := false
+	doneSeen := false
+	cancelSeen := false
+
+	for rows.Next() {
+		var ts int64
+		var text string
+		if e := rows.Scan(&ts, &text); e != nil {
+			return "", "", e
+		}
+		_ = ts // timestamp not currently used; reserved for future
+		switch {
+		case strings.HasPrefix(text, "[g3:dispatch]"):
+			if dispatchSeen {
+				continue // defensive: only first dispatch wins
+			}
+			dispatchSeen = true
+			if t := parseMarkerField(text, "tool"); t != "" {
+				tool = t
+			}
+			if state == "" {
+				state = string(STATUS_WAITING)
+			}
+		case strings.HasPrefix(text, "[g3:start]"):
+			startSeen = true
+			state = string(STATUS_RUNNING)
+		case strings.HasPrefix(text, "[g3:done]"):
+			doneSeen = true
+			if s := parseMarkerField(text, "state"); s != "" {
+				state = s
+			} else {
+				state = string(STATUS_FINISHED)
+			}
+		case strings.HasPrefix(text, "[g3:cancel]"):
+			cancelSeen = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", "", err
+	}
+
+	// Resolve final state for tasks without a [g3:done] marker:
+	//   - cancelSeen → CANCELED (worker killed before [g3:done])
+	//   - startSeen without done/cancel → UNKNOWN (worker crashed mid-run)
+	// Tasks whose [g3:done] arrived keep whatever state that marker set.
+	if !doneSeen {
+		if cancelSeen {
+			state = string(STATUS_CANCELED)
+		} else if startSeen {
+			state = string(STATUS_UNKNOWN)
+		}
+	}
+
+	return state, tool, nil
+}
+
 // parseMarkerField extracts a `key=value` field from a [g3:*] marker
 // line. Values are tokenized at whitespace; this matches the format
 // the scanner/worker emit, where values are simple identifiers (UUIDs,

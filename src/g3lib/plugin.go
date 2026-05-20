@@ -418,6 +418,45 @@ func RunPluginMerger(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCo
 	return runPluginInternal(ctx, plugin, parsed, &stdin, "", stderr)
 }
 
+// Build the "-e NAME" docker args for every host env var matching G3_ENV_*.
+// Values are not duplicated on the command line; Docker reads them from the
+// worker process. Plugin authors can also reference these via the `env`
+// template function.
+func ForwardedPluginEnvArgs() []string {
+	var args []string
+	for _, e := range os.Environ() {
+		if i := strings.Index(e, "="); i >= 0 {
+			name := e[:i]
+			if strings.HasPrefix(name, "G3_ENV_") {
+				args = append(args, "-e", name)
+			}
+		}
+	}
+	return args
+}
+
+// Build the "--sysctl" docker args that disable IPv6 inside the plugin
+// container's network namespace, or nil. The Docker daemon (root) performs the
+// write; the worker only stats the sysctl path (unprivileged). Three cases:
+//   - deployment supports IPv6 (G3_ENV_IPV6_SUPPORTED=true): leave the stack on
+//   - no IPv6: disable it, so tools that resolve hostnames internally (nikto,
+//     wafw00f, ...) never attempt IPv6 connections
+//   - kernel has IPv6 compiled out (sysctl path absent): nothing to do, and
+//     passing --sysctl would error — so skip. This is also the case where IPv6
+//     is already off, making the skip both safe and correct.
+func DisableContainerIPv6Args() []string {
+	if strings.EqualFold(os.Getenv("G3_ENV_IPV6_SUPPORTED"), "true") {
+		return nil
+	}
+	if _, err := os.Stat("/proc/sys/net/ipv6/conf/all/disable_ipv6"); err != nil {
+		return nil
+	}
+	return []string{
+		"--sysctl", "net.ipv6.conf.all.disable_ipv6=1",
+		"--sysctl", "net.ipv6.conf.default.disable_ipv6=1",
+	}
+}
+
 // Run a reporter plugin container. Differs from RunPluginCommand in three ways:
 //   - binds two host directories (hostInDir → /input:ro, hostOutDir → /output:rw)
 //     instead of a single /artifacts mount;
@@ -448,6 +487,8 @@ func RunPluginReporter(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 	if network != "" {
 		commandLine = append(commandLine, "--network", network)
 	}
+	commandLine = append(commandLine, ForwardedPluginEnvArgs()...)
+	commandLine = append(commandLine, DisableContainerIPv6Args()...)
 	commandLine = append(commandLine, parsed.DockerOpt...)
 	commandLine = append(commandLine, plugin.Image)
 	commandLine = append(commandLine, parsed.Command...)
@@ -519,6 +560,8 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 	if network != "" {
 		commandLine = append(commandLine, "--network", network)
 	}
+	commandLine = append(commandLine, ForwardedPluginEnvArgs()...)
+	commandLine = append(commandLine, DisableContainerIPv6Args()...)
 	commandLine = append(commandLine, parsed.DockerOpt...)
 	commandLine = append(commandLine, plugin.Image)
 	commandLine = append(commandLine, parsed.Command...)

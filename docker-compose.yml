@@ -212,6 +212,7 @@ services:
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_UPLOAD_TTL
       - G3_LOG_LEVEL
+      - G3_ENV_IPV6_SUPPORTED
 
   # Scanner and worker instances auto-derive their MQTT client ID from the
   # container's hostname (Docker assigns a unique container ID per replica).
@@ -256,6 +257,7 @@ services:
       - G3_SCANNER_MAX_PIPELINES
       - G3_SCANNER_MAX_DEPTH
       - G3_LOG_LEVEL
+      - G3_ENV_IPV6_SUPPORTED
 
   ############################################################################
 
@@ -303,6 +305,7 @@ services:
       - G3_DOCKER_NETWORK
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
+      - G3_ENV_IPV6_SUPPORTED
 
   # The following workers are all identical and run all plugins *except* the ones above.
   # Use deploy.replicas to grow or shrink the generic worker pool.
@@ -345,5 +348,6 @@ services:
       - G3_DOCKER_NETWORK
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
+      - G3_ENV_IPV6_SUPPORTED
   
   ############################################################################

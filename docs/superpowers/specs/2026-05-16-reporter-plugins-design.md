@@ -338,19 +338,21 @@ on G3ReportTask:
     err    := RunPluginReporter(ctx, plugin, parsed,
                                 hostIn, hostOut, stdinReader, stderr)
 
-    // 4. Write manifest, same path as today's tool tasks.
-    files := EnumerateSlot(outSlot)
-    WriteManifest(outSlot, G3Manifest{
-        ScanID: scanID, TaskID: reportertaskID,
-        Plugin: plugin.Name, Tool: plugin.Name,
-        ExitStatus: statusFromErr(err),
-        Files: files,
-        Work: [{ Cmd: shellquote.Join(parsed.Command), Artifacts: nil }],
-    })
-
-    // 5. Mark terminal, send empty response (no MongoDB data flows back).
+    // 4. Mark terminal, send empty response (no MongoDB data flows back).
     markTerminal(...); SendEmptyResponse(...)
 ```
+
+### Manifests for reporter tasks
+
+Reporter tasks do NOT write `manifest.json`. The manifest exists to encode
+the useful-vs-forensic distinction (the `Work[].Artifacts` field), which
+reporters have no need for — everything the reporter container writes to
+`/output` is the report. The worker code path for reporter tasks skips
+`WriteManifest` entirely; the slot contains only what the reporter wrote.
+
+Tool tasks continue to write manifests as documented above. The
+asymmetry is principled: tool tasks have a useful/forensic distinction
+to encode, reporter tasks do not.
 
 ### New g3lib functions
 

@@ -54,6 +54,7 @@ func (sd *ScanDetail) SetSize(w, h int) {
 	contentHeight := max(1, h-chrome-titleRow-spacerRow-headerRow)
 	sd.viewport.Width = inner
 	sd.viewport.Height = contentHeight
+	sd.applyContent()
 }
 
 // SelectedTaskID returns the TaskID of the currently-highlighted row,
@@ -78,6 +79,7 @@ func (sd ScanDetail) Update(msg tea.Msg) (ScanDetail, tea.Cmd) {
 		sd.tasks = nil
 		sd.scanStatus = ""
 		sd.cursor = 0
+		sd.applyContent()
 		sd.viewport.GotoTop()
 		if sd.scanID == "" {
 			return sd, nil
@@ -119,6 +121,7 @@ func (sd ScanDetail) Update(msg tea.Msg) (ScanDetail, tea.Cmd) {
 		if sd.cursor < 0 {
 			sd.cursor = 0
 		}
+		sd.applyContent()
 		sd.ensureCursorVisible()
 		if isTerminal(sd.scanStatus) {
 			return sd, nil
@@ -134,23 +137,29 @@ func (sd ScanDetail) Update(msg tea.Msg) (ScanDetail, tea.Cmd) {
 			if sd.cursor > 0 {
 				sd.cursor--
 			}
+			sd.applyContent()
 			sd.ensureCursorVisible()
 		case key.Matches(m, Keys.Down):
 			if sd.cursor < len(sd.tasks)-1 {
 				sd.cursor++
 			}
+			sd.applyContent()
 			sd.ensureCursorVisible()
 		case key.Matches(m, Keys.PgUp):
 			sd.cursor = max(0, sd.cursor-sd.viewport.Height/2)
+			sd.applyContent()
 			sd.ensureCursorVisible()
 		case key.Matches(m, Keys.PgDn):
 			sd.cursor = min(len(sd.tasks)-1, sd.cursor+sd.viewport.Height/2)
+			sd.applyContent()
 			sd.ensureCursorVisible()
 		case key.Matches(m, Keys.GotoTop):
 			sd.cursor = 0
+			sd.applyContent()
 			sd.viewport.GotoTop()
 		case key.Matches(m, Keys.GotoBottom):
 			sd.cursor = len(sd.tasks) - 1
+			sd.applyContent()
 			sd.viewport.GotoBottom()
 		}
 		return sd, nil
@@ -259,22 +268,33 @@ func (sd ScanDetail) View() string {
 			lipgloss.JoinVertical(lipgloss.Left, header, "", body),
 		)
 	}
-	layout := pickTaskLayout(innerW)
+	return border.Width(sd.width - 2).Height(sd.height - 2).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			header,
+			"",
+			taskTableHeader(pickTaskLayout(innerW)),
+			sd.viewport.View(),
+		),
+	)
+}
 
+// applyContent rebuilds viewport content from sd.tasks/cursor/width.
+// Lives outside View so the persisted (not value-receiver-copy) viewport
+// gets its `lines` slice populated — viewport.SetYOffset() clamps against
+// len(lines) via maxYOffset(), so if Update sets the offset before
+// content exists, every scroll request clamps to 0 and the cursor moves
+// without the viewport following.
+func (sd *ScanDetail) applyContent() {
+	if len(sd.tasks) == 0 {
+		sd.viewport.SetContent("")
+		return
+	}
+	layout := pickTaskLayout(sd.width - 4)
 	rows := make([]string, 0, len(sd.tasks))
 	for i, t := range sd.tasks {
 		rows = append(rows, taskTableRow(t, i == sd.cursor, layout))
 	}
 	sd.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, rows...))
-
-	return border.Width(sd.width - 2).Height(sd.height - 2).Render(
-		lipgloss.JoinVertical(lipgloss.Left,
-			header,
-			"",
-			taskTableHeader(layout),
-			sd.viewport.View(),
-		),
-	)
 }
 
 // Column geometry. Order is the visual order. Priority 0 columns

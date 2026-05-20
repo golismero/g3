@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
@@ -104,6 +106,12 @@ func main() {
 	}
 	log.Debugf("Loaded %d plugins.", len(plugins))
 
+	// Load plugin i18n templates and the main i18n strings. Both feed the
+	// in-process MarkdownReporter when a script declares a bare `report`
+	// directive (see runBuiltinReport). Cached once per scanner process.
+	pluginTemplatesCache := g3lib.LoadPluginTemplates()
+	i18nStrings := g3lib.LoadG3Strings()
+
 	// Resolve the scanner ID.
 	scannerID, err := g3lib.ResolveInstanceID("G3_SCANNER_ID")
 	if err != nil {
@@ -150,7 +158,7 @@ func main() {
 			case msg := <-scanChannel:
 				currentScanID = msg.ScanID
 				runningTasks.Clear()
-				ScanRunner(responseChannel, plugins, msg, scannerID)
+				ScanRunner(responseChannel, plugins, pluginTemplatesCache, i18nStrings, msg, scannerID)
 				currentScanID = ""
 				runningTasks.Clear()
 			}
@@ -315,7 +323,7 @@ func main() {
 
 // Handle an incoming scan request.
 // This function will be running within a goroutine.
-func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMetadata, msg g3lib.G3Scan, scannerID string) {
+func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMetadata, pluginTemplatesCache g3lib.G3PluginTemplatesCache, i18nStrings g3lib.G3TranslatedStrings, msg g3lib.G3Scan, scannerID string) {
 
 	// Log the start and stop of the scan.
 	defer log.Info("Finished scan: " + msg.ScanID)
@@ -1152,6 +1160,64 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		return
 	}
 
+	// If the scan script declared a reporter, run/dispatch it now. The reporter
+	// task runs independently of the scan completion — the scan transitions to
+	// FINISHED regardless of reporter state. Clients observe the reporter task
+	// in /scan/tasks/status with its own DISPATCHED → RUNNING → DONE lifecycle.
+	//
+	// Two paths:
+	//   msg.Report.Tool == ""  → built-in MarkdownReporter, run in-process here.
+	//                            No docker container is launched, so the trust-
+	//                            surface concern that motivated "scanner is the
+	//                            sole dispatcher" doesn't apply. g3api's legacy
+	//                            /scan/report endpoint also runs the built-in
+	//                            reporter in-process, so this isn't a new
+	//                            architectural sin — it's matching an existing
+	//                            pattern. When the built-in reporter is
+	//                            extracted into a separate binary (g3report or
+	//                            equivalent) or removed in favor of plugin
+	//                            parity, drop this branch and the legacy
+	//                            /scan/report endpoint together.
+	//   msg.Report.Tool != ""  → plugin reporter, dispatched to a worker via
+	//                            the canonical dispatchTask helper.
+	if msg.Report != nil {
+		reporterTaskID := uuid.NewString()
+		if msg.Report.Tool == "" {
+			if err := runBuiltinReport(
+				rdb_client, scan_sql_db, mdb_client,
+				plugins, pluginTemplatesCache, i18nStrings,
+				scannerID, msg.ScanID, reporterTaskID,
+			); err != nil {
+				// Non-fatal: scan still completes. Built-in report failure
+				// is logged but does not flip the scan to ERROR — pipeline
+				// work succeeded.
+				log.Error("Failed to run built-in report: " + err.Error())
+			}
+		} else {
+			// TODO: ScanRunner's defer DeleteTaskStates wipes Redis hashes for
+			// all tasks in this scan, including the reporter task we're about
+			// to dispatch. The worker's SetTaskRunning then writes an orphan
+			// hash (not in the scan's task set), so /scan/tasks/status sees
+			// the reporter task only via the SQL log fallback
+			// (ReconstructTaskStates), never via the live Redis path.
+			// Lifecycle is observable end-to-end — just through SQL, not
+			// Redis. Acceptable per the Tier 3 spec ("reporter task is
+			// independent of scan completion"); revisit if a real workload
+			// needs sub-second reporter-state visibility.
+			if err := dispatchTask(
+				mq_client, rdb_client, scan_sql_db,
+				msg.ScanID, reporterTaskID, "report", msg.Report.Tool,
+				"", 0, msg.Report.Preset,
+			); err != nil {
+				// Non-fatal: scan still completes. Reporter dispatch failure
+				// is logged but does not flip the scan to ERROR — pipeline
+				// work succeeded; the reporter is a downstream artifact that
+				// can be re-requested via /scan/task/dispatch.
+				log.Error("Failed to dispatch script-declared reporter: " + err.Error())
+			}
+		}
+	}
+
 	// Send a message to indicate the scan has finished.
 	if err := g3lib.SendScanCompleted(mq_client, msg.ScanID); err != nil {
 		log.Error(err.Error())
@@ -1193,6 +1259,150 @@ func dispatchTask(
 	default:
 		return fmt.Errorf("unknown dispatch kind: %s", kind)
 	}
+}
+
+// runBuiltinReport executes the in-process MarkdownReporter for a script-
+// declared bare `report` directive (the no-tool case). Mirrors the
+// dispatched-reporter lifecycle (Redis state + SQL log markers + per-task
+// artifact slot) so the resulting task is observable via /scan/tasks/status
+// and downloadable via /scan/task/artifacts identically to a plugin reporter.
+// The task's "tool" name is "g3" in all log markers and Redis state — the
+// canonical name for the built-in reporter; that's what the SQL log fallback
+// surfaces and what BundleTaskSlot uses for the bundle filename.
+//
+// This runs in-process rather than dispatching to a worker because:
+//   - The built-in reporter is fast and we wrote it; no docker overhead is
+//     warranted.
+//   - g3api's legacy /scan/report endpoint also runs the built-in reporter
+//     in-process; the duplication is parallel to an existing pattern.
+//   - No docker container is launched, so the "scanner is sole dispatcher"
+//     trust-surface concern doesn't apply here.
+//
+// When the built-in reporter is extracted into a separate binary or removed
+// in favor of plugin parity, drop this function and the legacy /scan/report
+// endpoint together.
+func runBuiltinReport(
+	rdb g3lib.KeyValueStoreClient,
+	sql g3lib.SQLDBClient,
+	mdb g3lib.DatastoreClient,
+	plugins g3lib.G3PluginMetadata,
+	pluginTemplates g3lib.G3PluginTemplatesCache,
+	i18nStrings g3lib.G3TranslatedStrings,
+	scannerID, scanID, taskID string,
+) error {
+	const builtinTool = "g3"
+
+	// Dispatch bookkeeping (Redis hash + SQL log marker). Order matches
+	// dispatchTask so /scan/tasks/status and /scan/task/artifacts see this
+	// task identically to a plugin-dispatched one.
+	dispatchTS := time.Now().Unix()
+	if err := g3lib.SetTaskDispatched(rdb, scanID, taskID, builtinTool, dispatchTS); err != nil {
+		log.Error("Redis SetTaskDispatched (builtin report) failed: " + err.Error())
+	}
+	if err := g3lib.SaveLogLine(sql, scanID, taskID, "[g3:dispatch] task="+taskID+" tool="+builtinTool); err != nil {
+		log.Error("SaveLogLine (builtin report dispatch) failed: " + err.Error())
+	}
+
+	// Running bookkeeping. We use the scanner ID as the "worker" identity
+	// since the report executes here.
+	startTS := time.Now().Unix()
+	if err := g3lib.SetTaskRunning(rdb, scanID, taskID, scannerID, startTS); err != nil {
+		log.Error("Redis SetTaskRunning (builtin report) failed: " + err.Error())
+	}
+	if err := g3lib.SaveLogLine(sql, scanID, taskID, "[g3:start] task="+taskID+" tool="+builtinTool+" worker="+scannerID); err != nil {
+		log.Error("SaveLogLine (builtin report start) failed: " + err.Error())
+	}
+
+	// Helper for any failure path: write ERROR terminal state with a reason.
+	markErr := func(reason string) {
+		if err := g3lib.SetTaskTerminal(rdb, scanID, taskID, "ERROR", time.Now().Unix(), reason); err != nil {
+			log.Error("Redis SetTaskTerminal (builtin report) failed: " + err.Error())
+		}
+		if err := g3lib.SaveLogLine(sql, scanID, taskID, "[g3:done] task="+taskID+" state=ERROR"); err != nil {
+			log.Error("SaveLogLine (builtin report done/error) failed: " + err.Error())
+		}
+	}
+
+	// Materialize the task's artifact slot under the standard tree.
+	artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
+	if artifactsRoot == "" {
+		artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
+	}
+	slotDir := filepath.Join(artifactsRoot, scanID, taskID)
+	if err := os.MkdirAll(slotDir, 0o755); err != nil {
+		markErr("mkdir slot: " + err.Error())
+		return err
+	}
+
+	// Resolve the issue ID list and corresponding G3Data, mirroring the
+	// legacy /scan/report handler in g3api so the output is bit-identical.
+	var issues []string
+	info, err := g3lib.LoadReportInfo(rdb, scanID)
+	if err != nil {
+		// No deduped info; fall back to all issues for this scan.
+		log.Debug("LoadReportInfo (builtin report) returned no info, falling back to all issues: " + err.Error())
+		ids, qerr := g3lib.GetIssueIDs(mdb, scanID, "*")
+		if qerr != nil {
+			markErr("load issue ids: " + qerr.Error())
+			return qerr
+		}
+		issues = ids
+	} else {
+		issues = info.Issues
+	}
+
+	inputJson, err := g3lib.LoadData(mdb, scanID, issues)
+	if err != nil {
+		markErr("load issue data: " + err.Error())
+		return err
+	}
+
+	// Tools list: filter by issue-producing tools if we have a deduped list,
+	// else all tools (matches the legacy endpoint).
+	var tools []string
+	if len(issues) > 0 {
+		tools, err = g3lib.GetScanIssueTools(mdb, scanID)
+	} else {
+		tools, err = g3lib.GetScanTools(mdb, scanID)
+	}
+	if err != nil {
+		markErr("load tools list: " + err.Error())
+		return err
+	}
+
+	// Build the report. errArr collects non-fatal warnings; logged but
+	// don't fail the task as long as we got non-empty output.
+	reporter := g3lib.NewMarkdownReporter(g3lib.DefaultConfig, plugins, pluginTemplates, i18nStrings)
+	textOutput, errArr := reporter.Build("en", "Golismero3 Scan Report", inputJson, tools)
+	for _, e := range errArr {
+		log.Warning("Built-in report warning: " + e.Error())
+	}
+	if textOutput == "" {
+		reason := "no report content produced"
+		if len(errArr) > 0 {
+			reason = errArr[0].Error()
+		}
+		markErr(reason)
+		return errors.New(reason)
+	}
+
+	// Write the markdown to the slot. The artifacts endpoint serves this
+	// via BundleTaskSlot's single-file path (no manifest written, so
+	// non-sentinel file count is 1 → clean download as report-<taskid>.md).
+	outputPath := filepath.Join(slotDir, "report.md")
+	if err := os.WriteFile(outputPath, []byte(textOutput), 0o644); err != nil {
+		markErr("write report: " + err.Error())
+		return err
+	}
+
+	// Terminal: DONE.
+	if err := g3lib.SetTaskTerminal(rdb, scanID, taskID, "DONE", time.Now().Unix(), ""); err != nil {
+		log.Error("Redis SetTaskTerminal (builtin report) failed: " + err.Error())
+	}
+	if err := g3lib.SaveLogLine(sql, scanID, taskID, "[g3:done] task="+taskID+" state=DONE"); err != nil {
+		log.Error("SaveLogLine (builtin report done) failed: " + err.Error())
+	}
+	return nil
 }
 
 // dispatchHandler is registered via SubscribeAsDispatcher. Runs at the

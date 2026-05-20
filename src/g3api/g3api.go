@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -518,8 +517,10 @@ func Main() int {
 				}
 			}
 
-			// Send the new scan message.
-			err = g3lib.SendNewScan(mq_client, request.ScanID, parsed.Mode, parsed.Pipelines)
+			// Send the new scan message. parsed.Report is nil when the script
+			// has no report directive, non-nil with empty Tool for the built-in,
+			// non-nil with a Tool for a plugin reporter.
+			err = g3lib.SendNewScan(mq_client, request.ScanID, parsed.Mode, parsed.Pipelines, parsed.Report)
 			if err != nil {
 				log.Error(err)
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
@@ -916,12 +917,13 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Generic task-artifacts download. Disk-first: manifest.json presence in the slot is
-		// the authoritative durable terminal-state marker. Redis is consulted only to shape
-		// the 425 body message when the manifest is absent — Redis absence is NEVER a
-		// failure signal (Redis is transient by design; terminated scans have no entries).
+		// Generic task-artifacts download. Lifecycle-first: task state is read from Redis
+		// (fast path) or reconstructed from SQL log markers (durable fallback). Filesystem
+		// participates only in the bundling step. Redis absence is NEVER a failure signal;
+		// the endpoint falls through to SQL when Redis is silent. Tool name for the bundle
+		// filename comes from the SQL [g3:dispatch] marker — uniform across task kinds.
 		//
-		// See docs/superpowers/specs/2026-05-18-reporter-tier2-design.md (Component 1).
+		// See docs/superpowers/specs/2026-05-18-reporter-tier3-design.md (Component 3).
 		//
 		http.HandleFunc(apiPath + "/scan/task/artifacts", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/artifacts")
@@ -933,82 +935,97 @@ func Main() int {
 				return
 			}
 
-			// Compute the slot path.
+			// Lifecycle lookup — Redis fast path, SQL log fallback. Filesystem
+			// state never participates in the lifecycle decision. See
+			// docs/superpowers/specs/2026-05-18-reporter-tier3-design.md Component 3.
+			state, _ := g3lib.GetTaskState(rdb_client, request.ScanID, request.TaskID)
+			toolName := ""
+
+			switch state {
+			case "DISPATCHED", "RUNNING":
+				w.Header().Set("Retry-After", "2")
+				g3lib.SendApiError(w, http.StatusTooEarly, "task is still "+state)
+				return
+			case "DONE", "ERROR", "CANCELED":
+				// Terminal via Redis. Tool name lives in the same per-task hash
+				// (populated by SetTaskDispatched). For simplicity we always
+				// re-derive via SQL below so both paths share the same code —
+				// SQL call is cheap relative to bundling and avoids a special
+				// branch for the Redis-warm case.
+				fallthrough
+			default:
+				// Either terminal via Redis (fallthrough) or Redis silent (state=="").
+				// Consult SQL log markers for authoritative lifecycle and tool name.
+				sqlState, sqlTool, qerr := g3lib.ReconstructTaskStateFromLogs(sql_db, request.ScanID, request.TaskID)
+				if qerr != nil {
+					log.Error("ReconstructTaskStateFromLogs failed: " + qerr.Error())
+					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+					return
+				}
+				if sqlState == "" && state == "" {
+					// No record anywhere: task never existed in this scan.
+					g3lib.SendApiError(w, http.StatusNotFound, "task not found")
+					return
+				}
+				// If Redis was terminal, use that; if SQL is more authoritative
+				// (Redis silent), use that.
+				effectiveState := state
+				if effectiveState == "" {
+					effectiveState = sqlState
+				}
+				switch effectiveState {
+				case "DONE", "ERROR", "CANCELED", "FINISHED":
+					toolName = sqlTool
+					// Proceed to bundling.
+				case "WAITING", "RUNNING", "UNKNOWN":
+					w.Header().Set("Retry-After", "2")
+					g3lib.SendApiError(w, http.StatusTooEarly, "task is not yet complete")
+					return
+				default:
+					log.Error("Unexpected effective task state: " + effectiveState)
+					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+					return
+				}
+			}
+
+			// Terminal — bundle and stream.
 			artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
 			if artifactsRoot == "" {
 				artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
 			}
 			slotDir := filepath.Join(artifactsRoot, request.ScanID, request.TaskID)
-
-			// Step 1: slot dir absent → 404.
 			if _, err := os.Stat(slotDir); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
-					g3lib.SendApiError(w, http.StatusNotFound, "task not found")
+					g3lib.SendApiError(w, http.StatusNotFound, "task produced no output")
 					return
 				}
 				log.Error("stat slot dir failed: " + err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
-
-			// Step 2: manifest.json present → terminal, serve bundle.
-			manifestPath := filepath.Join(slotDir, g3lib.ManifestFilename)
-			manifestBytes, err := os.ReadFile(manifestPath)
-			if err == nil {
-				// Decode the manifest to recover the tool name. BundleTaskSlot uses
-				// `tool` to construct the multi-file zip filename (`<tool>-<taskid>.zip`);
-				// reading from the manifest avoids the generic endpoint having to know
-				// the tool out-of-band. Fall back to the task ID if the manifest field
-				// is unexpectedly empty (shouldn't happen but defended against).
-				var manifest g3lib.G3Manifest
-				toolName := request.TaskID
-				if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
-					log.Error("parse manifest failed: " + err.Error())
-					// Continue with the fallback; a malformed manifest shouldn't block
-					// the download — better to ship the bundle with a less-descriptive
-					// filename than to fail.
-				} else if manifest.Tool != "" {
-					toolName = manifest.Tool
-				}
-
-				var buf bytes.Buffer
-				filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, toolName, request.TaskID, &buf)
-				if bundleErr != nil {
-					if errors.Is(bundleErr, os.ErrNotExist) {
-						// Unreachable in practice (manifest counts as a file) but
-						// defended against for safety.
-						g3lib.SendApiError(w, http.StatusNotFound, "task produced no output")
-						return
-					}
-					log.Error("BundleTaskSlot failed: " + bundleErr.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
+			// Fallback tool name if SQL didn't have it (e.g. brand-new task that
+			// somehow lost its dispatch marker — pathological but defended).
+			if toolName == "" {
+				toolName = request.TaskID
+			}
+			var buf bytes.Buffer
+			filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, toolName, request.TaskID, &buf)
+			if bundleErr != nil {
+				if errors.Is(bundleErr, os.ErrNotExist) {
+					g3lib.SendApiError(w, http.StatusNotFound, "task produced no output")
 					return
 				}
-				w.Header().Set("Content-Type", contentType)
-				w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-				w.WriteHeader(http.StatusOK)
-				if _, err := w.Write(buf.Bytes()); err != nil {
-					log.Error("response write failed: " + err.Error())
-				}
-				return
-			} else if !errors.Is(err, os.ErrNotExist) {
-				log.Error("read manifest failed: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				log.Error("BundleTaskSlot failed: " + bundleErr.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
 				return
 			}
-
-			// Step 3: manifest absent — consult Redis only to shape the body.
-			// Redis presence is a positive "still running" signal; Redis absence
-			// is NOT a failure signal. Either way we return 425.
-			state, _ := g3lib.GetTaskState(rdb_client, request.ScanID, request.TaskID)
-			var msg string
-			if state == "DISPATCHED" || state == "RUNNING" {
-				msg = "task is still " + state
-			} else {
-				msg = "task is not yet complete"
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+			w.Header().Set("X-G3-Task-ID", request.TaskID)
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(buf.Bytes()); err != nil {
+				log.Error("response write failed: " + err.Error())
 			}
-			w.Header().Set("Retry-After", "2")
-			g3lib.SendApiError(w, http.StatusTooEarly, msg)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////

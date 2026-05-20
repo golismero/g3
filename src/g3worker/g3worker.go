@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	shellquote "github.com/kballard/go-shellquote"
 	"golismero.com/g3lib"
 	log "golismero.com/g3log"
 )
@@ -871,8 +870,9 @@ func main() {
 		ctx := context.Background()
 		ctx, cancel := context.WithCancel(ctx)
 
-		// Populated inside the cancel-tracker switch's case 2. All other cases
-		// return before WriteManifest runs, so a zero value never reaches the manifest.
+		// Populated inside the cancel-tracker switch's case 2 (the only branch
+		// that actually runs the task and reaches SetTaskRunning). All other
+		// cancel-tracker branches return early before startTS is read.
 		var startTS int64
 
 		switch cancelTracker.AddTaskIfNew(task.TaskID, cancel) {
@@ -956,38 +956,6 @@ func main() {
 			log.Error(e.Error())
 		}
 
-		// Write the per-task manifest, same as today's tool tasks.
-		files, enumErr := g3lib.EnumerateSlot(outSlot)
-		if enumErr != nil {
-			log.Error("Cannot enumerate reporter slot " + outSlot + ": " + enumErr.Error())
-			files = []g3lib.G3ManifestFile{}
-		}
-		exitStatus := "success"
-		if runErr != nil {
-			if errors.Is(runErr, context.Canceled) {
-				exitStatus = "canceled"
-			} else {
-				exitStatus = runErr.Error()
-			}
-		}
-		endTS := time.Now().Unix()
-		manifestWriteErr := g3lib.WriteManifest(outSlot, g3lib.G3Manifest{
-			ScanID:     task.ScanID,
-			TaskID:     task.TaskID,
-			Plugin:     plugin.Name,
-			Tool:       plugin.Name,
-			ExitStatus: exitStatus,
-			StartedAt:  startTS,
-			EndedAt:    endTS,
-			Files:      files,
-			Work: []g3lib.G3ManifestWork{{
-				Cmd:       shellquote.Join(parsed.Command...),
-				Artifacts: nil,
-			}},
-		})
-		if manifestWriteErr != nil {
-			log.Error("Cannot write reporter manifest for " + task.TaskID + ": " + manifestWriteErr.Error())
-		}
 
 		// Decide terminal state and notify.
 		terminal := "DONE"
@@ -999,9 +967,6 @@ func main() {
 				terminal = "ERROR"
 				terminalMsg = runErr.Error()
 			}
-		} else if manifestWriteErr != nil {
-			terminal = "ERROR"
-			terminalMsg = "manifest write failed: " + manifestWriteErr.Error()
 		}
 		markReportTerminal(task.ScanID, task.TaskID, terminal, terminalMsg)
 		if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
@@ -1020,8 +985,8 @@ func main() {
 // reporterLogWriter routes the reporter container's stdout/stderr to
 // SaveLogLine, one line at a time. Partial trailing lines are buffered
 // until the next Write; if the container exits without a trailing newline,
-// the last partial fragment is lost (acceptable — the manifest's ExitStatus
-// is the authoritative success/failure signal).
+// the last partial fragment is lost (acceptable — partial trailing output is
+// cosmetic; the terminal state is determined by the container exit code).
 type reporterLogWriter struct {
 	sql    g3lib.SQLDBClient
 	scanid string

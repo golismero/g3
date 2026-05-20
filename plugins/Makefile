@@ -1,4 +1,4 @@
-.PHONY: all attack debug misc recon pull help
+.PHONY: all attack debug misc recon report pull help
 
 # Default target — show help when invoked as bare `make`.
 .DEFAULT_GOAL := help
@@ -34,15 +34,17 @@ endif
 	@printf "  $(C_CYAN)debug$(C_RESET)    Build the debug-category plugin images\n"
 	@printf "  $(C_CYAN)misc$(C_RESET)     Build the misc-category plugin images\n"
 	@printf "  $(C_CYAN)recon$(C_RESET)    Build the recon-category plugin images\n"
+	@printf "  $(C_CYAN)report$(C_RESET)   Build the report-category plugin images\n"
 	@printf "  $(C_CYAN)pull$(C_RESET)     Pull every plugin image from ghcr.io\n"
 
-all: attack debug misc recon
+all: attack debug misc recon report
 
 pull:
 	cd attack && $(MAKE) pull
 	cd debug && $(MAKE) pull
 	cd misc && $(MAKE) pull
 	cd recon && $(MAKE) pull
+	cd report && $(MAKE) pull
 
 attack:
 	cd attack && $(MAKE) all
@@ -55,3 +57,6 @@ misc:
 
 recon:
 	cd recon && $(MAKE) all
+
+report:
+	cd report && $(MAKE) all

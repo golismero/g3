@@ -10,7 +10,7 @@ mode parallel
 # The target command can define simple objects to be used as starting points for a scan.
 # One or more arguments can be used.
 target 192.168.1.1
-target example.com
+target example.net
 
 # The import command allows loading output files from manually run tools.
 # The first argument is the tool that produced the output.
@@ -22,3 +22,10 @@ import testssl samples/testssl.csv
 nmap-fast | testssl
 dig | nmap-fast | testssl
 subfinder | dig | nmap-fast | testssl
+
+# Optionally, we can produce a report.
+# The "report" command can only be used at the end of the script.
+# With no arguments, it generates a Markdown report file using the built-in parser.
+# To specify a custom reporter use its name, and optionally its preset.
+# report custom_reporter:custom_preset
+report magenta

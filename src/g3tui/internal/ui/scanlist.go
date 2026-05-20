@@ -96,6 +96,7 @@ func (s *ScanList) SetSize(w, h int) {
 	contentHeight := max(1, h-chrome-titleAndSpacer-filterRows)
 	s.viewport.Width = inner
 	s.viewport.Height = contentHeight
+	s.applyContent()
 }
 
 // SetFocused toggles the focused-border style. Called by App.applyFocus.
@@ -110,6 +111,7 @@ func (s ScanList) Update(msg tea.Msg) (ScanList, tea.Cmd) {
 		s.entries = m.Entries
 		s.applyFilter()
 		s.reconcileSelection(prevLen)
+		s.applyContent()
 		s.ensureSelectionVisible()
 		return s, nil
 
@@ -118,6 +120,7 @@ func (s ScanList) Update(msg tea.Msg) (ScanList, tea.Cmd) {
 		needBackfill := s.applyUpdate(m)
 		s.applyFilter()
 		s.reconcileSelection(prevLen)
+		s.applyContent()
 		s.ensureSelectionVisible()
 		if needBackfill {
 			scanID := m.ScanID
@@ -130,6 +133,7 @@ func (s ScanList) Update(msg tea.Msg) (ScanList, tea.Cmd) {
 		s.entries = removeByScanID(s.entries, m.ScanID)
 		s.applyFilter()
 		s.reconcileSelection(prevLen)
+		s.applyContent()
 		s.ensureSelectionVisible()
 		return s, nil
 
@@ -152,11 +156,13 @@ func (s ScanList) Update(msg tea.Msg) (ScanList, tea.Cmd) {
 			if len(s.filtered) > 0 {
 				s.selectedID = s.filtered[0].ScanID
 			}
+			s.applyContent()
 			s.viewport.GotoTop()
 		case key.Matches(m, Keys.GotoBottom):
 			if len(s.filtered) > 0 {
 				s.selectedID = s.filtered[len(s.filtered)-1].ScanID
 			}
+			s.applyContent()
 			s.viewport.GotoBottom()
 		case key.Matches(m, Keys.Filter):
 			s.filtering = true
@@ -199,6 +205,7 @@ func (s *ScanList) moveSelection(delta int) {
 		} else {
 			s.selectedID = s.filtered[len(s.filtered)-1].ScanID
 		}
+		s.applyContent()
 		s.ensureSelectionVisible()
 		return
 	}
@@ -210,6 +217,7 @@ func (s *ScanList) moveSelection(delta int) {
 		newIdx = len(s.filtered) - 1
 	}
 	s.selectedID = s.filtered[newIdx].ScanID
+	s.applyContent()
 	s.ensureSelectionVisible()
 }
 
@@ -241,6 +249,7 @@ func (s ScanList) updateFiltering(msg tea.KeyMsg) (ScanList, tea.Cmd) {
 		prevLen := len(s.filtered)
 		s.applyFilter()
 		s.reconcileSelection(prevLen)
+		s.applyContent()
 		return s, nil
 	case "enter":
 		s.filtering = false
@@ -248,6 +257,7 @@ func (s ScanList) updateFiltering(msg tea.KeyMsg) (ScanList, tea.Cmd) {
 		prevLen := len(s.filtered)
 		s.applyFilter()
 		s.reconcileSelection(prevLen)
+		s.applyContent()
 		return s, nil
 	}
 	var cmd tea.Cmd
@@ -255,6 +265,7 @@ func (s ScanList) updateFiltering(msg tea.KeyMsg) (ScanList, tea.Cmd) {
 	prevLen := len(s.filtered)
 	s.applyFilter()
 	s.reconcileSelection(prevLen)
+	s.applyContent()
 	return s, cmd
 }
 
@@ -350,24 +361,6 @@ func (s *ScanList) applyFilter() {
 
 func (s ScanList) View() string {
 	title := AppTitle.Render("Scans")
-
-	// Available width for the UUID line, after the panel chrome and
-	// the 2-char cursor prefix.
-	idWidth := max(colTaskIDFloor, s.width-6)
-
-	var content string
-	if len(s.filtered) == 0 {
-		content = ListItemDimmed.Render("No scans yet — press [N] to start one")
-	} else {
-		rows := make([]string, 0, len(s.filtered)*2)
-		for _, e := range s.filtered {
-			idLine, statusLine := formatScanRow(e, e.ScanID == s.selectedID, idWidth)
-			rows = append(rows, idLine, statusLine)
-		}
-		content = lipgloss.JoinVertical(lipgloss.Left, rows...)
-	}
-	s.viewport.SetContent(content)
-
 	parts := []string{title, "", s.viewport.View()}
 	if s.filtering {
 		parts = append(parts, "", s.filter.View())
@@ -383,6 +376,25 @@ func (s ScanList) View() string {
 	return border.Width(s.width - 2).Height(s.height - 2).Render(
 		lipgloss.JoinVertical(lipgloss.Left, parts...),
 	)
+}
+
+// applyContent rebuilds viewport content from s.filtered/selectedID/width.
+// Must run in Update (not View) so the persisted viewport's `lines` slice
+// is populated — otherwise viewport.SetYOffset() in ensureSelectionVisible
+// clamps against len(lines)=0 and pins YOffset to 0, so the cursor moves
+// but the viewport never scrolls.
+func (s *ScanList) applyContent() {
+	idWidth := max(colTaskIDFloor, s.width-6)
+	if len(s.filtered) == 0 {
+		s.viewport.SetContent(ListItemDimmed.Render("No scans yet — press [N] to start one"))
+		return
+	}
+	rows := make([]string, 0, len(s.filtered)*2)
+	for _, e := range s.filtered {
+		idLine, statusLine := formatScanRow(e, e.ScanID == s.selectedID, idWidth)
+		rows = append(rows, idLine, statusLine)
+	}
+	s.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
 // formatScanRow returns two lines per scan: the full UUID (or its

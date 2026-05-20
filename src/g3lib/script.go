@@ -15,15 +15,110 @@ import (
 	"github.com/kballard/go-shellquote"
 )
 
+// Default ports per URI scheme, used for RFC 3986 §6.2.3 scheme-based
+// normalization (strip the default port so equivalent URLs canonicalize
+// identically). Stripping is safe because any conformant client re-applies
+// the scheme default when a port is absent. Add entries as new authority-based
+// schemes appear in scan targets. Schemes without an authority component
+// (mailto, data, javascript, file, urn, etc.) deliberately stay out, as do
+// schemes with no standardized default port (rediss, rtsps).
+var SchemeDefaultPorts = map[string]string{
+	// Web
+	"http":  "80",  // RFC 9110
+	"https": "443", // RFC 9110
+	"ws":    "80",  // RFC 6455
+	"wss":   "443", // RFC 6455
+
+	// Mail
+	"imap":   "143", // RFC 5092
+	"pop":    "110", // RFC 2384
+	"smtp":   "25",  // draft-melnikov-smime-msa-to-mda
+	"submit": "587", // SMTP submission
+
+	// Directory & naming
+	"ldap":  "389", // RFC 4516
+	"ldaps": "636", // de facto
+	"dns":   "53",  // RFC 4501
+	"acap":  "674", // RFC 2244
+
+	// News & messaging
+	"nntp": "119",  // RFC 5538
+	"irc":  "6667", // de facto — IANA assigns 194, but clients universally default to 6667
+	"ircs": "6697", // de facto (IANA service "ircs-u")
+	"xmpp": "5222", // RFC 5122 (IANA service "xmpp-client")
+
+	// File transfer & sharing
+	"ftp":   "21",   // RFC 1738
+	"sftp":  "22",   // SSH File Transfer; IANA "sftp" (115) is an unrelated legacy protocol
+	"ssh":   "22",   // de facto; scp shares this
+	"tftp":  "69",   // RFC 3617
+	"rsync": "873",  // RFC 5781
+	"nfs":   "2049", // RFC 2224
+
+	// Streaming & remote access
+	"rtsp":   "554",  // RFC 2326
+	"rtsps":  "322",  // IANA service registry (RTSPS over TLS)
+	"vnc":    "5900", // RFC 7869 (IANA service "rfb")
+	"telnet": "23",   // RFC 4248
+
+	// VoIP & realtime
+	"sip":   "5060", // RFC 3261
+	"sips":  "5061", // RFC 3261
+	"h323":  "1720", // de facto
+	"iax":   "4569", // RFC 5456
+	"stun":  "3478", // RFC 7064
+	"stuns": "5349", // RFC 7064
+	"turn":  "3478", // RFC 7065
+	"turns": "5349", // RFC 7065
+
+	// IoT / M2M
+	"coap":      "5683", // RFC 7252
+	"coaps":     "5684", // RFC 7252
+	"coap+tcp":  "5683", // RFC 8323
+	"coaps+tcp": "5684", // RFC 8323
+	"mqtt":      "1883", // de facto
+	"mqtts":     "8883", // de facto
+
+	// Misc protocols
+	"snmp":    "161",  // RFC 4088
+	"gopher":  "70",   // RFC 4266
+	"dict":    "2628", // RFC 2229
+	"finger":  "79",   // de facto
+	"icap":    "1344", // RFC 3507
+	"ipp":     "631",  // RFC 3510
+	"ipps":    "631",  // RFC 7472 (not 443 — keeps the IPP port)
+	"sieve":   "4190", // RFC 5804
+	"service": "427",  // RFC 2609 (SLP)
+
+	// Source control
+	"svn": "3690", // de facto
+	"git": "9418", // de facto
+
+	// Databases
+	"mongodb": "27017", // de facto
+	"redis":   "6379",  // de facto
+
+	// Diameter (IANA service names "diameter" / "diameters")
+	"aaa":  "3868", // RFC 6733
+	"aaas": "5868", // RFC 6733 (Diameter over TLS)
+}
+
 type ParsedImport struct {
 	Tool string             `json:"tool"                validate:"required"`
 	Path string             `json:"path"                validate:"required"`
 }
+
+type ParsedReport struct {
+	Tool   string             `json:"tool"                validate:"required"`
+	Preset string             `json:"preset,omitempty"`
+}
+
 type ParsedScript struct {
 	Targets []string        `json:"targets,omitempty"   validate:"omitempty"`
 	Imports []ParsedImport  `json:"imports,omitempty"   validate:"omitempty,dive"`
 	Mode string             `json:"mode,omitempty"      validate:"omitempty"`
 	Pipelines [][]string    `json:"pipelines,omitempty" validate:"omitempty"`
+	Report *ParsedReport    `json:"report,omitempty"    validate:"omitempty"`
 }
 func (parsed ParsedScript) String() string {
 	text := ""
@@ -52,6 +147,19 @@ func (parsed ParsedScript) String() string {
 		}
 		for _, pipeline := range parsed.Pipelines {
 			text = text + strings.Join(pipeline, " | ") + "\n"
+		}
+	}
+	if parsed.Report != nil {
+		if text != "" {
+			text = text + "\n"
+		}
+		switch {
+		case parsed.Report.Tool == "":
+			text = text + "report\n"
+		case parsed.Report.Preset != "":
+			text = text + "report " + parsed.Report.Tool + ":" + parsed.Report.Preset + "\n"
+		default:
+			text = text + "report " + parsed.Report.Tool + "\n"
 		}
 	}
 	return text
@@ -87,6 +195,13 @@ func ParseScript(plugins G3PluginMetadata, script string) (ParsedScript, error) 
 		}
 		if len(commands) == 0 {
 			continue
+		}
+
+		// Once a report directive has been parsed, no further directives are allowed
+		// — report must be the LAST line of the script.
+		if parsed.Report != nil {
+			err = fmt.Errorf("syntax error on line %d: report directive must be the last line of the script", lineno+1)
+			return ParsedScript{}, err
 		}
 
 		// The "target" command adds a target for scanning.
@@ -174,6 +289,70 @@ func ParseScript(plugins G3PluginMetadata, script string) (ParsedScript, error) 
 				err = fmt.Errorf("syntax error on line %d: unknown mode", lineno+1)
 				return ParsedScript{}, err
 			}
+			continue
+		}
+
+		// The "report" command declares a reporter to invoke after the pipeline finishes.
+		// Must be the LAST directive in the script. At most one per script.
+		// Syntax:
+		//   report                      → built-in MarkdownReporter (run in-process by g3scanner)
+		//   report <tool>[:<preset>]    → reporter plugin (dispatched to a worker)
+		if commands[0] == "report" {
+			if parsed.Report != nil {
+				err = fmt.Errorf("syntax error on line %d: only one report directive per script is allowed", lineno+1)
+				return ParsedScript{}, err
+			}
+			if len(commands) > 2 {
+				err = fmt.Errorf("syntax error on line %d: report directive takes at most one argument: <tool>[:<preset>]", lineno+1)
+				return ParsedScript{}, err
+			}
+			// Bare "report" → built-in (Tool stays empty); no plugin validation needed.
+			if len(commands) == 1 {
+				parsed.Report = &ParsedReport{}
+				continue
+			}
+			// Split <tool>:<preset>
+			toolArg := commands[1]
+			tool := toolArg
+			preset := ""
+			if i := strings.Index(toolArg, ":"); i >= 0 {
+				tool = toolArg[:i]
+				preset = toolArg[i+1:]
+				if tool == "" {
+					err = fmt.Errorf("syntax error on line %d: missing tool name in report directive", lineno+1)
+					return ParsedScript{}, err
+				}
+			}
+			// Plugin validation (mirrors /scan/task/dispatch validation in g3api).
+			if plugins != nil {
+				plugin, ok := plugins[tool]
+				if !ok {
+					err = fmt.Errorf("runtime error on line %d: tool not found: %s", lineno+1, tool)
+					return ParsedScript{}, err
+				}
+				if plugin.Reporter == nil {
+					err = fmt.Errorf("runtime error on line %d: tool %s does not implement a reporter", lineno+1, tool)
+					return ParsedScript{}, err
+				}
+				if preset != "" {
+					if len(plugin.Reporter.Commands) == 0 {
+						err = fmt.Errorf("runtime error on line %d: tool %s declares no reporter presets", lineno+1, tool)
+						return ParsedScript{}, err
+					}
+					found := false
+					for _, c := range plugin.Reporter.Commands {
+						if c.Name == preset {
+							found = true
+							break
+						}
+					}
+					if !found {
+						err = fmt.Errorf("runtime error on line %d: unknown preset for tool %s: %s", lineno+1, tool, preset)
+						return ParsedScript{}, err
+					}
+				}
+			}
+			parsed.Report = &ParsedReport{Tool: tool, Preset: preset}
 			continue
 		}
 
@@ -299,6 +478,19 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			}
 			url.Fragment = ""
 			url.RawFragment = ""
+
+			// Scheme-based normalization (RFC 3986 §6.2.3): strip the default
+			// port so equivalent URLs canonicalize identically. Go's net/url
+			// preserves whatever port was in the input, unlike JavaScript's URL.
+			if defaultPort, ok := SchemeDefaultPorts[url.Scheme]; ok && url.Port() == defaultPort {
+				hostname := url.Hostname()
+				if strings.Contains(hostname, ":") {
+					url.Host = "[" + hostname + "]" // IPv6 literal needs brackets
+				} else {
+					url.Host = hostname
+				}
+			}
+
 			target = url.String()
 			data["_type"] = "url"
 			data["url"] = target

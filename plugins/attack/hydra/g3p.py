@@ -27,6 +27,10 @@ def ip_slug(ip):
         return None
     return slug
 
+# Disable IPv6 unless explicitly enabled.
+is_ipv6_enabled = os.getenv("G3_ENV_IPV6_SUPPORTED")
+is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true" )
+
 # Here we will have the output data.
 output_data = []
 
@@ -37,7 +41,7 @@ input_data = json.load(sys.stdin)
 # We should be getting either an IPv4 or an IPv6 address, but not both.
 # If g3 ever starts mixing them up on the same object, this logic needs to change.
 # It's written as a loop to make it more future-proof (at least it'll do something right-ish).
-for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "")):
+for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_enabled else ""):
     if not ip: continue
     slug = ip_slug(ip)
     if slug is None:
