@@ -20,7 +20,7 @@ try:
         sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
         sys.exit(1)
     for item in json_input:
-        if set(["url", "detected", "firewall", "manufacturer"]).issubset(set(item.keys())):
+        if not set(["url", "detected", "firewall", "manufacturer"]).issubset(set(item.keys())):
             sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
             sys.exit(1)
 except Exception:
