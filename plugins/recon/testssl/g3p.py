@@ -155,9 +155,9 @@ else:
             # Parse the output file as JSON.
             artifacts = []
             if os.path.exists(txt_path):
-                artifacts.append(txt_path)
+                artifacts.append(os.path.basename(txt_path))
             if os.path.exists(json_path):
-                artifacts.append(json_path)
+                artifacts.append(os.path.basename(json_path))
             new_data = json.loads(stdout)
             for g3d in new_data:
                 g3d["_artifacts"] = artifacts
