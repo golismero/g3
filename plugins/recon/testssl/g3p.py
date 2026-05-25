@@ -32,6 +32,11 @@ is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true"
 # Here we will have the output data.
 output_data = []
 
+# Worst exit code seen across all testssl invocations (URL branch or the
+# per-target host loop). testssl exits 0 on a normal run even when sub-tests
+# fail; a non-zero code is a genuine failure. Fold: any non-zero → non-zero.
+worst_rc = 0
+
 # Get the G3 data object.
 input_data = json.load(sys.stdin)
 
@@ -54,6 +59,8 @@ if "url" in input_data:
                     sys.stderr.buffer.flush()
                     logfile.write(line)
                 proc.wait()
+            if proc.returncode and not worst_rc:
+                worst_rc = proc.returncode
             process = subprocess.Popen(["/usr/bin/g3i", tmp], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
             stdout, stderr = process.communicate()
             if stderr:
@@ -142,6 +149,8 @@ else:
                     sys.stderr.buffer.flush()
                     logfile.write(line)
                 proc.wait()
+            if proc.returncode and not worst_rc:
+                worst_rc = proc.returncode
 
             # Call the importer on the output file.
             # Capture stdout so we can parse it later.
@@ -165,3 +174,9 @@ else:
 
 # Send the JSON output array over stdout.
 json.dump(output_data, sys.stdout)
+sys.stdout.flush()
+
+# Propagate testssl's exit code (folded across all invocations). 0 = clean;
+# non-zero = a genuine failure. The worker turns non-zero + data → WARNING,
+# non-zero + no data → ERROR.
+sys.exit(1 if worst_rc else 0)

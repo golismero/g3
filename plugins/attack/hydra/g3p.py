@@ -34,6 +34,11 @@ is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true"
 # Here we will have the output data.
 output_data = []
 
+# Worst exit code seen across all hydra invocations. hydra returns 0 on a
+# clean run whether or not creds were found; non-zero (255 = errors/disabled
+# targets, 2 = killed by signal) is a real problem. Fold: any non-zero → non-zero.
+worst_rc = 0
+
 # Get the G3 data object.
 input_data = json.load(sys.stdin)
 
@@ -104,8 +109,11 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_ena
 
         # Run Hydra, piping stdout and stderr directly to our stderr.
         # This will send all of the text output into the G3 logs.
-        # On error an exception is raised.
-        subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
+        result = subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
+        # hydra returns 0 on a clean run (creds found OR none); any non-zero
+        # (255 = errors, 2 = signal) is a real failure worth flagging.
+        if result.returncode and not worst_rc:
+            worst_rc = result.returncode
 
         # Call the importer on the output file.
         # Capture stdout so we can parse it later.
@@ -121,3 +129,9 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_ena
 
 # Send the JSON output array over stdout.
 json.dump(output_data, sys.stdout)
+sys.stdout.flush()
+
+# Propagate hydra's exit code (folded across all targets). 0 = clean (creds
+# found or legitimately none); non-zero = a real failure. The worker turns
+# non-zero + data → WARNING, non-zero + no data → ERROR.
+sys.exit(1 if worst_rc else 0)
