@@ -538,7 +538,7 @@ func taskTimeFields(t g3lib.TaskStatusEntry) (timeStr, lastSeenStr string) {
 			timeStr = "-"
 		}
 		lastSeenStr = humanAgo(t.LastLogTS)
-	case "DONE", "ERROR", "CANCELED", "FINISHED":
+	case "DONE", "WARNING", "ERROR", "CANCELED", "FINISHED":
 		switch {
 		case t.StartTS > 0 && t.CompleteTS > 0:
 			timeStr = humanDurationFromDur(time.Duration(t.CompleteTS-t.StartTS) * time.Second)
@@ -575,6 +575,8 @@ func taskStateGlyph(state string) string {
 		return "▶"
 	case "DONE", "FINISHED":
 		return "✓"
+	case "WARNING":
+		return "⚠"
 	case "ERROR":
 		return "✗"
 	case "CANCELED":
@@ -642,6 +644,8 @@ func taskStateStyle(state string) lipgloss.Style {
 		return StatusRunning
 	case "DONE", "FINISHED":
 		return StatusFinished
+	case "WARNING":
+		return StatusWarning
 	case "ERROR":
 		return StatusError
 	case "CANCELED":

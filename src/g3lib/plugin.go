@@ -614,18 +614,23 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 	case e := <-c:
 		err = e
 	}
-	if cancelled || err != nil {
+	// Cancellation short-circuits: propagate ctx.Err() and discard any output.
+	if cancelled {
 		return outputArray, err
 	}
 	endTime := time.Now().Unix()
 
-	// Parse the output JSON array and add some needed properties.
-	// On error we will try to return the malformed data anyway.
-	// If the output array is empty, add a dummy object to generate a valid fingerprint.
+	// Parse stdout regardless of the container's exit code, so a tool that
+	// failed but still produced data can be classified downstream (WARNING).
+	// A parse error must not clobber a non-nil exit error: keep the exit error.
 	raw := stdout.Bytes()
 	//fmt.Println(string(raw))		// XXX DEBUG
-	err = json.Unmarshal(raw, &outputArray)
-	if err == nil && len(outputArray) == 0 {
+	if perr := json.Unmarshal(raw, &outputArray); perr != nil && err == nil {
+		err = perr
+	}
+	// Inject a nil placeholder for any empty result (success OR error) so the
+	// worker can seed the negative-result cache. Cancellation already returned.
+	if len(outputArray) == 0 {
 		dummy := G3Data{}
 		dummy["_type"] = "nil"
 		outputArray = append(outputArray, dummy)
@@ -643,7 +648,9 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 				var errorArray []error
 				fingerprint, errorArray = BuildPluginFingerprint(parsed.Fingerprint, data)
 				if len(errorArray) > 0 {
-					err = errorArray[0]
+					if err == nil {
+						err = errorArray[0]
+					}
 					fingerprint = parsed.Fingerprint	// still better than nothing
 				}
 			}

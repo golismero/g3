@@ -946,7 +946,7 @@ func Main() int {
 				w.Header().Set("Retry-After", "2")
 				g3lib.SendApiError(w, http.StatusTooEarly, "task is still "+state)
 				return
-			case "DONE", "ERROR", "CANCELED":
+			case "DONE", "WARNING", "ERROR", "CANCELED":
 				// Terminal via Redis. Tool name lives in the same per-task hash
 				// (populated by SetTaskDispatched). For simplicity we always
 				// re-derive via SQL below so both paths share the same code —
@@ -974,7 +974,7 @@ func Main() int {
 					effectiveState = sqlState
 				}
 				switch effectiveState {
-				case "DONE", "ERROR", "CANCELED", "FINISHED":
+				case "DONE", "WARNING", "ERROR", "CANCELED", "FINISHED":
 					toolName = sqlTool
 					// Proceed to bundling.
 				case "WAITING", "RUNNING", "UNKNOWN":

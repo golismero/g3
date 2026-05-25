@@ -36,6 +36,7 @@ var (
 	StatusWaiting    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	StatusFinished   = lipgloss.NewStyle().Foreground(lipgloss.Color("63"))
 	StatusError      = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	StatusWarning    = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
 	StatusCanceled   = lipgloss.NewStyle().Faint(true)
 	StatusDispatched = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
 	StatusUnknown    = lipgloss.NewStyle().Faint(true).Italic(true)
