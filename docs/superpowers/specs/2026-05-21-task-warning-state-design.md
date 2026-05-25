@@ -432,29 +432,64 @@ The user-facing payoff: spot tasks needing log attention at a glance.
 
 ## Tier 4 — Per-wrapper exit-code normalization (outline)
 
-Each wrapper decides which native tool conditions deserve a non-zero
-exit. Without this, no plugin ever produces WARNING (the always-`exit 0`
-wrappers) or produces it noisily (whatever the tool's raw codes happen to
-mean). Per-plugin authoring; audit all wrappers:
+A wrapper has exactly **two binary levers and chooses neither the
+terminal state nor WARNING-vs-ERROR** — the worker derives those (Tier 1):
 
-- **Shell, piped** (`nmap`, `subfinder`, `wafw00f`): exit code is
-  currently `tee`'s; capture the tool's real status (`PIPESTATUS`/
-  `set -o pipefail` or restructure) and map it.
-- **Shell, non-piped** (`nikto`, `dig`): `set -e` already propagates;
-  decide which non-zero codes are benign and suppress them to 0.
-- **Python** (`testssl`, `hydra`): stop ignoring `returncode`; fold the
-  per-target loop outcomes into one exit code (any noteworthy target →
-  non-zero, while still emitting collected G3Data so the run lands as
-  WARNING not ERROR). This is where the motivating testssl case is
-  adjudicated: a `scanProblem` (target unreachable, no data) → ERROR; a
-  benign sub-test failure like the CAA-DNS probe → exit 0 (or non-zero +
-  data → WARNING if judged worth attention).
+1. **Exit code** — `0` (nothing to flag) or non-zero (a soft signal worth
+   the user's attention). This is the only active decision a wrapper makes
+   for this feature.
+2. **Whether it emits actionable data** — normally just whatever the
+   importer yields; a wrapper suppresses output only when it deliberately
+   wants a hard stop.
+
+The worker turns the pair into a state: `0` → DONE (data or not);
+`non-zero + data` → WARNING; `non-zero + no data` → ERROR. So WARNING vs
+ERROR is never a wrapper decision — it falls out of whether any data
+survived. "Force a hard stop" is the deliberate `non-zero + suppress
+output` combo, and nothing else needs per-wrapper state logic.
+
+Without this tier, no plugin produces WARNING (the always-`exit 0`
+wrappers) or it fires noisily (whatever the tool's raw codes happen to
+mean). Per-plugin authoring; audit all wrappers for the **exit-code
+decision only**:
+
+- **Shell, piped** (`nmap`, `subfinder`, `wafw00f`): the exit code is
+  currently `tee`'s, masking the tool; recover the tool's real status
+  (`PIPESTATUS` / `set -o pipefail` or restructure) before deciding 0 vs
+  non-zero. All three exit `0` even on negative results (host down / zero
+  subdomains / no WAF), so any recovered non-zero is a genuine failure.
+- **Shell, non-piped** (`dig`): `set -e` already propagates, and dig's
+  codes are clean (0 = answer incl. NXDOMAIN; 1/8/9/10 = real failure,
+  9 = no reply), so it is already correct — leave as-is (optionally make
+  the rule explicit rather than `set -e`-implicit).
+- **`nikto` — split into its own plan, NOT in this Tier 4.** Its exit
+  code was a 2020–2024 regression (exit 1 on any findings) fixed only in
+  nikto 2.6.0 (2026-02). Relying on it requires pinning ≥2.6.0, which the
+  current `apk add nikto` (floating, likely 2.5.0) doesn't do — so the
+  nikto work is a Dockerfile refactor (install from the 2.6.0 source tag,
+  since Alpine's image lags/maintained inconsistently) **plus** importer
+  compatibility (2.6.0's release notes flag JSON/XML report-format changes;
+  our wrapper uses CSV, so confirm CSV is unaffected or adapt) **plus** the
+  exit-code mapping. Too large for this mechanical tier; tracked as a
+  separate plan (see Future work).
+- **Python** (`testssl`, `hydra`): stop forcing `exit 0`; capture each
+  invocation's `returncode` and fold the per-target loop as "any non-zero
+  → non-zero", while emitting whatever results the importer yields. Both
+  tools' exit codes are already well-behaved (0 = clean, non-zero = real
+  failure), so no per-code threshold is needed — just propagate. The
+  wrapper does not aggregate states; WARNING vs ERROR falls out of whether
+  any data survived. Note the motivating testssl case was a red herring:
+  testssl exits 0 even when a sub-test like the CAA-DNS probe fails (the
+  original ERROR was a manifest-generation bug, not the exit code), so it
+  lands as DONE — exactly right. hydra likewise returns 0 whether or not
+  credentials were found.
 - **debug plugins** (`error`, `force-exec`, `passthrough`): `error`
-  stays a hard ERROR; the others need no change. Useful as manual
-  exercises for the new states.
+  already exits non-zero with no output → ERROR; the others need no
+  change. Useful as manual exercises for the new states.
 
-The audit output is a per-wrapper table of "native code/condition →
-{DONE, WARNING, ERROR}", which becomes the Tier 4 implementation plan.
+The audit output is a per-wrapper table of **"native condition → {exit 0,
+exit non-zero}"** (plus, for the rare hard-stop case, whether to suppress
+output) — not a state table. That becomes the Tier 4 implementation plan.
 
 ## Configuration and deployment
 
@@ -474,6 +509,15 @@ endpoint can encounter an unhandled WARNING state.
 
 ## Future work (out of scope)
 
+- **Nikto exit-code adoption (own plan).** Three coupled changes: (1)
+  refactor `plugins/attack/nikto/Dockerfile` to install nikto from the
+  2.6.0 source tag (the version where the exit-1-on-findings regression
+  is fixed) instead of the floating `apk add nikto`; (2) verify/adapt the
+  importer for nikto 2.6.0's report format (release notes flag JSON/XML
+  changes — our wrapper uses CSV, confirm it still parses); (3) then map
+  the now-reliable exit code (0 → benign, non-zero → real error) and drop
+  the `set -e`-aborts-clean-scans behavior. Larger than this tier's
+  mechanical scope; deliberately carved out of Tier 4.
 - **Scan-level WARNING aggregation / indicator.** Would require giving
   the scanner visibility into per-task states it currently never receives
   (a new field on `G3Response` or a separate aggregation pass). Not
