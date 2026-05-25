@@ -15,6 +15,7 @@ try:
     assert html
 except Exception:
     url = "https://cve.mitre.org/data/refs/refmap/source-OSVDB.html"
+    url = "https://web.archive.org/web/20250812063133/" + url
     r = urlopen(url)
     try:
         html = r.read()

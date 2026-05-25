@@ -147,7 +147,7 @@ def parse_nikto_xml(input_data):
 
             # Convert the OSVDB to CVE.
             try:
-                cvelist = osvdb2cve.get(osvdb, [osvdb])
+                cvelist = osvdb2cve.get(osvdb.replace("-", ":"), [osvdb])
                 if not cvelist:
                     cvelist = [osvdb]
             except Exception:
