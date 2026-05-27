@@ -2,4 +2,5 @@ private/
 .remember/
 *-report.md
 *-export.json
+*-logs.log
 __pycache__/

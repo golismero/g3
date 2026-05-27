@@ -1,322 +1,398 @@
 #!/usr/local/bin/python3
 
+# Nikto importer: parse Nikto CSV output into G3Data issue objects.
+#
+# Ported from the Magenta Nikto parser (parsers/nikto/nikto.py): the reference
+# classifier and CSV reader are shared logic; only the final emit step differs,
+# producing G3Data (severity int, _cmd/_fp/_artifacts) instead of Magenta's
+# issue contract. JSON and XML readers are added in later tiers; this tier
+# handles the live CSV wrapper output only.
+
 import io
 import re
 import csv
 import sys
 import json
 import shlex
+from collections import namedtuple
 
-from datetime import datetime
-
-from lxml import etree
-from lxml.objectify import deannotate
-
-# TODO get the severity of the issue from the CVEs, maybe even provide info from CVE too
-
-# Set to True to include informational issues found by Nikto in the report.
+# Set to True to include informational findings (those with no specific
+# vulnerability tag) in the report. g3 uses Nikto to surface known (tagged)
+# vulnerabilities only; tag-less findings (missing headers, BREACH, etc.) are
+# dropped by default. Mirrors the old OSVDB-0 behaviour.
 INCLUDE_INFO = False
-#INCLUDE_INFO = True
 
-# Load the OSVDB to CVE map.
-with open("osvdb2cve.json") as fd:
-    osvdb2cve = json.load(fd)
-del fd
+# Load the OSVDB to CVE map. Keys are colon-form: "OSVDB:<n>". The file is
+# generated at build time (misc/osvdb2cve.py) and copied next to the wrapper
+# (Dockerfile WORKDIR /app); load it relative to the current directory.
+osvdb2cve = {}
+try:
+    with open("osvdb2cve.json") as fd:
+        osvdb2cve = json.load(fd)
+    del fd
+except Exception:
+    sys.stderr.write(
+        "Warning: could not load osvdb2cve.json; OSVDB ids will not be translated.\n"
+    )
 
-# https://stackoverflow.com/a/71886208/426293
-def remove_namespaces(root):
-    for elem in root.getiterator():
-        if not (
-                isinstance(elem, etree._Comment)
-                or isinstance(elem, etree._ProcessingInstruction)
-        ):
-            localname = etree.QName(elem).localname
-            if elem.tag != localname:
-                elem.tag = etree.QName(elem).localname
-            for attr_name in elem.attrib:
-                local_attr_name = etree.QName(attr_name).localname
-                if attr_name != local_attr_name:
-                    attr_value = elem.attrib[attr_name]
-                    del elem.attrib[attr_name]
-                    elem.attrib[local_attr_name] = attr_value
-    deannotate(root, cleanup_namespaces=True)
+# A normalized finding produced by every format reader.
+Finding = namedtuple(
+    "Finding", ["host_url", "path", "method", "refs_str", "nikto_id", "msg"]
+)
 
-# Entry point.
+# --- reference token patterns -------------------------------------------------
+# Specific-vulnerability identifiers (go in the per-finding "cve" column).
+_CVE_RE = re.compile(r"^CVE-\d{4}-\d+$")
+_MS_RE = re.compile(r"^MS\d{2}-\d+$")  # Microsoft bulletins, e.g. MS00-078
+_CNVD_RE = re.compile(r"^CNVD(?:-C)?-\d{4}-\d+$")  # incl. the -C- sub-series
+_OSVDB_RE = re.compile(r"^OSVDB-(\d+)$", re.I)
+# General-concept / other taxonomy (go in issue-level taxonomy only).
+_CWE_RE = re.compile(r"^CWE-\d+$")
+_CAPEC_RE = re.compile(r"^CAPEC-\d+$")
+_RFC_RE = re.compile(r"^RFC-(\d+)$", re.I)
+_MSKB_RE = re.compile(r"^MSKB:Q?(\d+)$", re.I)
+_BID_RE = re.compile(r"^BID-\d+$", re.I)
+_URL_RE = re.compile(r"^https?://", re.I)
+
+# Unicode hyphens/dashes Nikto's DB occasionally uses inside ids (e.g.
+# "CVE‑2002‑1929" with U+2011). Normalized to ASCII "-" before matching so the
+# id regexes above still fire instead of dropping a real CVE as "unknown".
+_UNICODE_HYPHENS = re.compile("[‐-―−]")
+
+# Taxonomy-derived URLs: a URL that is merely a linkified id collapses to that
+# id (the reporter linkifies tags itself), instead of becoming a standalone
+# reference. Order matters; host-specific patterns avoid CWE/CAPEC confusion.
+# Each entry: (compiled regex, bucket, prefix) where bucket is
+# "cve"/"taxonomy"/"osvdb"; the captured group is the id payload.
+_URL_TAXONOMY_PATTERNS = [
+    (re.compile(r"^https?://cwe\.mitre\.org/data/definitions/(\d+)\.html", re.I),
+     "taxonomy", "CWE-"),
+    (re.compile(r"^https?://capec\.mitre\.org/data/definitions/(\d+)\.html", re.I),
+     "taxonomy", "CAPEC-"),
+    (re.compile(r"^https?://(?:[\w.-]+\.)?vulners\.com/osvdb/OSVDB:(\d+)", re.I),
+     "osvdb", ""),
+    (re.compile(
+        r"^https?://(?:nvd\.nist\.gov|(?:www\.)?cve\.(?:mitre\.org|org))/\S*?"
+        r"(CVE-\d{4}-\d+)", re.I),
+     "cve", ""),
+]
+
+
+def _url_to_tag(url):
+    """Return (bucket, value) if url is a linkified taxonomy id, else None."""
+    for pattern, bucket, prefix in _URL_TAXONOMY_PATTERNS:
+        m = pattern.match(url)
+        if m:
+            return bucket, prefix + m.group(1).upper()
+    return None
+
+
+# Token-keyed overrides for known-bad upstream references. Each maps a token to
+# (cve, taxonomy, references) contributions. Keyed on the token (not nikto_id),
+# because CSV output carries no id column. Each token is unique to its test.
+_TOKEN_OVERRIDES = {
+    # Phorum 3.3.2a admin GLOBALS[message] XSS. main corrupted OSVDB-11144 into
+    # OSVCVE-2011-339244 and mis-tagged the companion test with CVE-2011-3392
+    # (a different, later Phorum 5.2.17 vuln). Correct CVE for both: CVE-2002-0764.
+    "OSVCVE-2011-339244": (["CVE-2002-0764"], [], []),
+    "CVE-2011-3392": (["CVE-2002-0764"], [], []),
+}
+# Concept-only hardcodes (no specific CVE exists). CA-2000-02 is the 2000 CERT
+# advisory that introduced XSS as a concept; the only tests using it
+# (000767/768/769) are ASP/ASP.NET reflected XSS -> CWE-79.
+_CONCEPT_HARDCODE = {"CA-2000-02": "CWE-79"}
+# Known DB-bug junk tokens: token -> the only nikto_id it legitimately appears on.
+_KNOWN_JUNK = {"WS_FTP.LOG": "001353"}
+
+# OSVDB lookup hit-rate counters (drift guard). Reset per run in main().
+_osvdb_stats = {"mapped": 0, "unmapped": 0}
+
+
+def reset_osvdb_stats():
+    _osvdb_stats["mapped"] = 0
+    _osvdb_stats["unmapped"] = 0
+
+
+def _resolve_osvdb(num):
+    # OSVDB-0 is Nikto's "no specific vulnerability" marker (informational),
+    # not a real id. Drop it so the finding is treated as untagged.
+    if num == "0":
+        return []
+    mapped = osvdb2cve.get("OSVDB:" + num)
+    if mapped:
+        _osvdb_stats["mapped"] += 1
+        return list(mapped)
+    _osvdb_stats["unmapped"] += 1
+    return ["OSVDB-" + num]
+
+
+def osvdb_hitrate_warning():
+    total = _osvdb_stats["mapped"] + _osvdb_stats["unmapped"]
+    if total >= 10 and _osvdb_stats["mapped"] == 0:
+        sys.stderr.write(
+            "WARNING: %d OSVDB ids seen but none mapped to a CVE; the "
+            "osvdb2cve.json key format may have drifted (expected 'OSVDB:<n>').\n"
+            % total
+        )
+
+
+def _dedup(seq):
+    seen = set()
+    out = []
+    for x in seq:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+def classify_references(refs_str, nikto_id=None):
+    """Split a Nikto references string into:
+      - cve:        specific-vulnerability ids (CVE, MS bulletin, CNVD, OSVDB->CVE)
+      - taxonomy:   general-concept tags (CWE, CAPEC, RFC, KB)
+      - references: external URLs
+    Tokens are split on whitespace and commas. Unknown tokens warn loudly."""
+    cve, taxonomy, references = [], [], []
+    if refs_str:
+        for raw in re.split(r"[\s,]+", refs_str.strip()):
+            tok = raw.strip().strip("\"'")
+            if tok:
+                _classify_token(tok, nikto_id, cve, taxonomy, references)
+    return {
+        "cve": _dedup(cve),
+        "taxonomy": _dedup(taxonomy),
+        "references": _dedup(references),
+    }
+
+
+def _classify_token(tok, nikto_id, cve, taxonomy, references):
+    # URLs first — never strip trailing punctuation from a URL.
+    if _URL_RE.match(tok):
+        collapsed = _url_to_tag(tok)
+        if collapsed is None:
+            references.append(tok)
+        elif collapsed[0] == "cve":
+            cve.append(collapsed[1])
+        elif collapsed[0] == "taxonomy":
+            taxonomy.append(collapsed[1])
+        elif collapsed[0] == "osvdb":
+            cve.extend(_resolve_osvdb(collapsed[1]))
+        return
+
+    # Strip trailing sentence punctuation before any matching, so that e.g.
+    # "CVE-2011-3392." still hits the overrides below and "CA-2000-02:" the
+    # hardcodes. (None of the known special tokens end in . ; or :.)
+    tok = tok.rstrip(".;:")
+    if not tok:
+        return
+
+    # Normalize Unicode hyphens to ASCII "-" so ids like "CVE‑2002‑1929"
+    # (U+2011) match the scheme regexes instead of being dropped as unknown.
+    tok = _UNICODE_HYPHENS.sub("-", tok)
+
+    # Token-keyed overrides for known-bad upstream references.
+    if tok in _TOKEN_OVERRIDES:
+        c, t, r = _TOKEN_OVERRIDES[tok]
+        cve.extend(c)
+        taxonomy.extend(t)
+        references.extend(r)
+        return
+
+    # Known DB-bug junk tokens. Silent on the test that legitimately carries
+    # them; loud anywhere else (we may have a new bug).
+    if tok in _KNOWN_JUNK:
+        expected = _KNOWN_JUNK[tok]
+        if nikto_id is not None and nikto_id != expected:
+            sys.stderr.write(
+                "WARNING: junk reference token %r on unexpected nikto_id=%s; dropping.\n"
+                % (tok, nikto_id)
+            )
+        return
+
+    # Concept-only hardcodes (e.g. CA-2000-02 -> CWE-79).
+    if tok in _CONCEPT_HARDCODE:
+        taxonomy.append(_CONCEPT_HARDCODE[tok])
+        return
+
+    if _CVE_RE.match(tok) or _MS_RE.match(tok) or _CNVD_RE.match(tok):
+        cve.append(tok)
+        return
+    if _CWE_RE.match(tok) or _CAPEC_RE.match(tok):
+        taxonomy.append(tok)
+        return
+    m = _OSVDB_RE.match(tok)
+    if m:
+        cve.extend(_resolve_osvdb(m.group(1)))
+        return
+    m = _RFC_RE.match(tok)
+    if m:
+        taxonomy.append("RFC " + m.group(1))  # normalize dash->space for url_from_tag
+        return
+    m = _MSKB_RE.match(tok)
+    if m:
+        taxonomy.append("KB" + m.group(1))  # normalize MSKB:Q<n> -> KB<n>
+        return
+    if _BID_RE.match(tok):
+        return  # dead taxonomy, no shipped map; drop (known class)
+
+    # Anything else: do not guess. Warn loudly (future-version safety).
+    sys.stderr.write(
+        "WARNING: unrecognized Nikto reference token %r (nikto_id=%s); dropping.\n"
+        % (tok, nikto_id)
+    )
+
+
+def _host_url(hostname, ip, port):
+    host = hostname or ip
+    use_ssl = str(port) == "443"
+    scheme = "https" if use_ssl else "http"
+    return "%s://%s:%s" % (scheme, host, port)
+
+
+def _fp_host(host_url):
+    """Fingerprint form of a host URL: drop the default port, add trailing /.
+    "https://h:443" -> "https://h/"; "http://h:8080" -> "http://h:8080/"."""
+    m = re.match(r"^(https?)://(.*):(\d+)$", host_url)
+    if not m:
+        return host_url.rstrip("/") + "/"
+    scheme, host, port = m.group(1), m.group(2), m.group(3)
+    default = "443" if scheme == "https" else "80"
+    if port == default:
+        return "%s://%s/" % (scheme, host)
+    return "%s://%s:%s/" % (scheme, host, port)
+
+
+def _strip_csv_injection(cell):
+    # Nikto prefixes a "'" to cells starting with = + @ - (CSV-injection guard).
+    if cell[:1] == "'" and cell[1:2] in ("=", "+", "@", "-"):
+        return cell[1:]
+    return cell
+
+
+def read_csv(input_data):
+    fd = io.StringIO(input_data)
+    fd.readline()  # discard the '"Nikto - v..."' header line
+    findings = []
+    # Most recent host-start row's (ip, port). Used to recover the port for the
+    # 2.1.5 6-field finding rows, where a runtime bug merged ip+SCALAR(...)+port
+    # into one cell and dropped the port column from finding rows.
+    last_host = None
+    for row in csv.reader(fd):
+        n = len(row)
+        if n >= 7:
+            hostname, ip, port, col_ref, method, uri, msg = (
+                row[0], row[1], row[2], row[3], row[4], row[5], row[6],
+            )
+            # Host-start rows have empty method+uri (banner sits in col7).
+            if not method and not uri:
+                last_host = (ip, port)
+                continue
+        elif n == 6:
+            # 2.1.5 port-merge bug: hostname, ip+junk+port, OSVDB, method, uri, msg.
+            hostname, _ip_junk, col_ref, method, uri, msg = (
+                row[0], row[1], row[2], row[3], row[4], row[5],
+            )
+            if not method and not uri:
+                continue
+            ip, port = last_host if last_host else ("", "80")
+        else:
+            continue  # blank/short line
+        col_ref = _strip_csv_injection(col_ref)
+        # SSL-info rows (2.6.0+) use the pseudo test id 000137 in the ref cell.
+        if col_ref == "000137":
+            continue
+        findings.append(
+            Finding(
+                host_url=_host_url(hostname, ip, port),
+                path=uri,
+                method=method,
+                refs_str=col_ref,
+                nikto_id=None,  # CSV has no id column
+                msg=msg,
+            )
+        )
+    return findings
+
+
+def build_issues(findings):
+    by_host = {}  # host_url -> list[ {path, cve, msg} ]
+    all_taxonomy = []
+    all_references = []
+    affects = []
+    for f in findings:
+        cls = classify_references(f.refs_str, f.nikto_id)
+        tags = cls["cve"] + cls["taxonomy"]
+        # Inclusion rule: report only findings carrying >=1 taxonomy tag.
+        # Tag-less findings are informational (old OSVDB-0 behaviour).
+        if not tags and not INCLUDE_INFO:
+            continue
+        entry = {"path": f.path, "cve": cls["cve"], "msg": f.msg}
+        host_list = by_host.setdefault(f.host_url, [])
+        if entry not in host_list:
+            host_list.append(entry)
+        affects.append(f.host_url + f.path)
+        all_taxonomy.extend(tags)
+        all_references.extend(cls["references"])
+    if not by_host:
+        return []
+
+    # g3 provenance. When run from the wrapper (g3p), sys.argv carries the Nikto
+    # command line and the artifacts exist on disk; standalone there is no cmd.
+    if len(sys.argv) > 1:
+        cmd = shlex.join(["nikto.pl"] + sys.argv[1:])
+        artifacts = ["nikto.txt", "nikto.csv"]
+    else:
+        cmd = None
+        artifacts = []
+
+    issue = {
+        "_fp": ["nikto " + _fp_host(h) for h in sorted(by_host)],
+        "_artifacts": artifacts,
+        "severity": 2,  # high
+        "affects": sorted(set(affects)),
+        "taxonomy": sorted(set(all_taxonomy)),
+        "references": sorted(set(all_references + ["https://github.com/sullo/nikto"])),
+        "issues": by_host,
+    }
+    if cmd is not None:
+        issue["_cmd"] = cmd
+    if not issue["taxonomy"]:
+        del issue["taxonomy"]
+    return [issue]
+
+
 def main():
-
-    # Load the input file in memory all at once.
-    # Not ideal, but it's the easiest way to parse it without knowing the format beforehand.
     input_data = sys.stdin.read()
 
     # Trivial case: the file is empty.
-    if not input_data:
+    if not input_data.strip():
         json.dump([], sys.stdout)
         return
 
-    # If it's an XML file, we can expect an XML header to be in the first line.
-    if input_data.startswith("<?xml version=\"1.0\" ?>"):
-        output = parse_nikto_xml(input_data)
+    reset_osvdb_stats()
+    stripped = input_data.lstrip()
 
-    # If it's a CSV file, we can expect the first line to be the Nikto version,
-    # and the second line to contain the target host and port.
-    elif re.match("\"Nikto - v.*\"\\n", input_data):
-        output = parse_nikto_csv(input_data)
-
-    # If we got here, we were sent the wrong file type.
+    # CSV: the first line is the Nikto version banner.
+    if re.match(r'"Nikto - v.*"', stripped):
+        findings = read_csv(input_data)
+    # JSON / XML readers arrive in later tiers; the live wrapper emits CSV.
+    elif stripped[:1] in ("[", "{") or stripped.startswith("<?xml") or stripped.startswith("<niktoscan"):
+        sys.stderr.write(
+            "Nikto JSON/XML parsing is not supported yet; only CSV is handled.\n"
+        )
+        json.dump([], sys.stdout)
+        return
     else:
-        sys.stderr.write("Invalid file type, are you sure this was generated by nikto.pl?\n")
-        output = []
+        sys.stderr.write(
+            "Invalid file type, are you sure this was generated by nikto.pl?\n"
+        )
+        json.dump([], sys.stdout)
+        return
 
-    # Convert the output array to JSON and send it over stdout.
+    output = build_issues(findings)
+    osvdb_hitrate_warning()
     json.dump(output, sys.stdout)
 
-def parse_nikto_xml(input_data):
-
-    # We will report a single issue object with all findings.
-    issue = {
-        "severity": 2,  # high
-        "affects": [],
-        "taxonomy": [],
-        "references": ["https://github.com/sullo/nikto"],
-        "issues": {},
-    }
-
-    # Parse the XML file.
-    root = etree.fromstring(input_data)
-    remove_namespaces(root)
-
-    # The root element should always be the <niktoscan> tag.
-    # Get the command line options from here.
-    # Do not get the start and end times from here, they are unreliable.
-    niktoscan = root
-    assert niktoscan.tag == "niktoscan", niktoscan.tag
-    assert niktoscan.attrib["nxmlversion"] == "1.2", niktoscan.attrib["nxmlversion"]
-    options = niktoscan.attrib.get("options")
-    if options:
-        issue["_cmd"] = "nikto.pl " + options
-
-    # The first and only child should always be the <scandetails> tag.
-    # Get the target host and the start time of the scan here.
-    children = root.getchildren()
-    assert len(children) == 1, len(children)
-    scandetails = children[0]
-    assert scandetails.tag == "scandetails", scandetails.tag
-    starttime = scandetails.attrib.get("starttime")
-    if starttime:
-        try:
-            ut = datetime.strptime(starttime, "%Y-%m-%d %H:%M:%S")
-            issue["_start"] = ut
-        except Exception:
-            pass
-    targethostname = scandetails.attrib.get("targethostname")
-    targetip = scandetails.attrib.get("targetip")
-    targetport = scandetails.attrib.get("targetport")
-    if options:
-        use_ssl = "-ssl" in shlex.split(options)
-        if not targetport:
-            targetport = "443" if use_ssl else "80"
-    else:
-        use_ssl = targetport == "443"
-    if not targetport:
-        targetport = "443" if use_ssl else "80"
-    baseurl = "%s://%s:%s" % ("https" if use_ssl else "http", targethostname if targethostname else targetip, targetport)
-
-    # Add the fingerprint.
-    fp = "nikto %s://%s%s/" % (
-        "https" if use_ssl else "http",
-        targethostname if targethostname else targetip,
-        (":" + targetport) if (use_ssl and targetport != "443") or (not use_ssl and targetport != "80") else ""
-    )
-    issue["_fp"] = [fp]
-
-    # The remaining children are <item> tags with each finding,
-    # up until the last tag <statistics>.
-    collected = []
-    for child in scandetails.getchildren():
-
-        # We found a vulnerability.
-        if child.tag == "item":
-            item = child
-
-            # Skip if the item is just informational.
-            osvdblink = item.attrib["osvdblink"]
-            assert osvdblink.startswith("http://osvdb.org/")
-            osvdb = "OSVDB-" + osvdblink[17:]
-            if osvdb == "OSVDB-0" and not INCLUDE_INFO:
-                continue
-
-            # Convert the OSVDB to CVE.
-            try:
-                cvelist = osvdb2cve.get(osvdb.replace("-", ":"), [osvdb])
-                if not cvelist:
-                    cvelist = [osvdb]
-            except Exception:
-                cvelist = [osvdb]
-            issue["taxonomy"].extend(cvelist)
-
-            # Get the description of the issue.
-            description = item.find("description").text
-
-            # Get the affected path.
-            if targethostname:
-                namelink = item.find("namelink").text
-                assert namelink.startswith(baseurl)
-                affects = namelink
-            else:
-                iplink = item.find("iplink").text
-                assert iplink.startswith(baseurl)
-                affects = iplink
-            issue["affects"].append(affects)
-            path = affects[len(baseurl):]
-
-            # Add the issue to the list of collected issues.
-            found = (path, cvelist, description)
-            if found not in collected:
-                collected.append(found)
-
-        # We reached the end of the file.
-        # Get the scan end time.
-        if child.tag == "statistics":
-            statistics = child
-            endtime = statistics.attrib.get("endtime")
-            if endtime:
-                try:
-                    ut = datetime.strptime(endtime, "%Y-%m-%d %H:%M:%S")
-                    issue["_end"] = ut
-                except Exception:
-                    endtime = None
-            if not endtime:
-                elapsed = statistics.attrib.get("elapsed")
-                if elapsed:
-                    try:
-                        ut = issue["_start"] + int(elapsed)
-                        issue["_end"] = ut
-                    except Exception:
-                        elapsed = None
-
-    # Return an empty list if we found nothing.
-    if not collected:
-        return []
-
-    # Add the collected issues to the g3 issue object.
-    issue["issues"] = {
-        baseurl: [{
-            "path": x[0],
-            "cve": x[1],
-            "msg": x[2],
-        } for x in collected]
-    }
-
-    # Clean up the g3 issue object and return it.
-    issue["affects"] = sorted(set(issue["affects"]))
-    issue["taxonomy"] = sorted(set(issue["taxonomy"]))
-    issue["references"] = sorted(set(issue["references"]))
-    assert issue["affects"], issue
-    if not issue["taxonomy"]:
-        del issue["taxonomy"]
-    if not issue["references"]:
-        del issue["references"]
-    if "_start" not in issue and "_end" in issue:
-        del issue["_end"]
-    if "_end" not in issue and "_start" in issue:
-        del issue["_start"]
-    return [issue]
-
-def parse_nikto_csv(input_data):
-
-    # Convert the input string to a pseudo-file.
-    fd = io.StringIO(input_data)
-
-    # Read the first line and discard it.
-    fd.readline()
-
-    # Pass the pseudo-file to the CSV parser.
-    reader = csv.reader(fd)
-
-    # Read the second line and get the host and port.
-    try:
-        row = next(reader)
-    except StopIteration:
-        return []       # EOF due to empty scan
-    hostname = row[0]
-    ipv4 = row[1]
-    port = row[2]
-
-    # Keep all of the issues found here.
-    issues = []
-
-    # If we are being called from g3p, we have the Nikto command line.
-    # If not, sadly, that information is lost. Nikto does not preserve it in CSV files.
-    if len(sys.argv) > 1:
-        cmdline = ["nikto.pl"] + sys.argv[1:]
-        use_ssl = "-ssl" in sys.argv[1:]
-        artifacts = ["nikto.csv"]
-    else:
-        artifacts = []
-        if port == 443:
-            cmdline = ["nikto.pl", "-host", hostname, "-port", port, "-ssl"]
-            use_ssl = True
-        else:
-            cmdline = ["nikto.pl", "-host", hostname, "-port", port]
-            use_ssl = False
-
-    # Calculate the fingerprint.
-    fp = "nikto %s://%s%s/" % (
-        "https" if use_ssl else "http",
-        hostname if hostname else ipv4,
-        (":" + port) if (use_ssl and port != "443") or (not use_ssl and port != "80") else ""
-    )
-
-    # The rest of the lines contain the vulnerabilities.
-    for row in reader:
-
-        # The OSVDB-0 ID is used to informational lines. We can ignore those.
-        osvdb = row[2]
-        if osvdb == "OSVDB-0" and not INCLUDE_INFO:
-            continue
-
-        # Get the affected URI.
-        path = row[4]
-
-        # Convert the OSVDB to CVE.
-        cvelist = osvdb2cve.get(osvdb, [osvdb])
-
-        # Get the message.
-        msg = row[5]
-
-        # Add the issue to the list.
-        item = (path, cvelist, msg)
-        if item not in issues:
-            issues.append(item)
-
-    # If we didn't find any actual issues, just return an empty array.
-    if not issues:
-        return []
-
-    # Return a G3 issue object.
-    issues.sort()
-    taxonomy = []
-    for x in issues:
-        taxonomy.extend(x[1])
-    return [{
-        "_cmd": shlex.join(cmdline),
-        "_fp": [fp],
-        "_artifacts": artifacts,
-        "severity": 2,  # high
-        "affects": sorted(set(
-            "%s://%s:%s%s" % ("https" if use_ssl else "http", hostname, port, x[0])
-            for x in issues
-        )),
-        "taxonomy": sorted(set(taxonomy)),
-        "references": ["https://github.com/sullo/nikto"],
-        "issues": {
-            ("%s://%s:%s" % ("https" if use_ssl else "http", hostname, port)): [{
-                "path": x[0],
-                "cve": x[1],
-                "msg": x[2],
-            } for x in issues],
-        },
-    }]
 
 if __name__ == "__main__":
     main()

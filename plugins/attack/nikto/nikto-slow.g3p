@@ -11,7 +11,7 @@
         {
             condition: "{{if and .url (eq .scheme \"http\")}} true {{else}} false {{end}}",
             fingerprint: ["nikto {{.host}}"],
-            command: ["-host", "{{.host}}"],
+            command: ["-Pause", "1", "-host", "{{.host}}"],
             returns: "issue",
         },
 
@@ -19,7 +19,7 @@
         {
             condition: "{{if and .url (eq .scheme \"https\")}} true {{else}} false {{end}}",
             fingerprint: ["nikto {{.host}}"],
-            command: ["-ssl", "-host", "{{.host}}"],
+            command: ["-Pause", "1", "-ssl", "-host", "{{.host}}"],
             returns: "issue",
         },
 
