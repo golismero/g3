@@ -1,0 +1,8 @@
+"Nikto - v2.6.0/"
+"victim.example","203.0.113.10","443","","","",""
+"victim.example","203.0.113.10","443","CVE-2003-1418","GET","/","Server may leak inodes via ETags, header found with file /."
+"victim.example","203.0.113.10","443","CVE-2006-6133,CVE-2002-1845","GET","/admin/","Multiple known vulnerabilities reported in the admin interface."
+"victim.example","203.0.113.10","443","OSVDB-3268","GET","/icons/","Directory indexing found."
+"victim.example","203.0.113.10","443","https://cwe.mitre.org/data/definitions/79.html","GET","/search","Reflected cross-site scripting in the search parameter."
+"victim.example","203.0.113.10","443","000137","GET","/","SSL Certificate Subject: /CN=victim.example"
+"victim.example","203.0.113.10","443","https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP","GET","/","Suggested security header missing: content-security-policy."
