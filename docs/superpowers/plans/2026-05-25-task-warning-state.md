@@ -171,7 +171,7 @@ Replace everything from the manifest-build comment (`// Build and write the per-
 			log.Error(e.Error())
 		}
 
-		// CANCELED (per-task cancel via context, or worker SIGTERM mid-run) is
+		// CANCELED (per-task cancel via context, or worker SIGINT mid-run) is
 		// orthogonal to result quality and short-circuits everything: no save,
 		// no cache seed, empty response.
 		canceled := errors.Is(err, context.Canceled) || cancelled
@@ -321,8 +321,8 @@ Replace everything from the manifest-build comment (`// Build and write the per-
 ```
 
 Notes for the executor:
-- This **removes** the old standalone branches it supersedes: the `manifestStatus` switch, the early `if errors.Is(err, context.Canceled)`, the `if err != nil`, the `if validationErr != nil`, the `if manifestWriteErr != nil`, and the `if cancelled` (SIGTERM-after-success) block. Their behavior is folded into the new `canceled` short-circuit and the state switch.
-- `cancelled` (worker SIGTERM, declared ~line 322) and `errors.Is(err, context.Canceled)` (per-task cancel) are both folded into `canceled`.
+- This **removes** the old standalone branches it supersedes: the `manifestStatus` switch, the early `if errors.Is(err, context.Canceled)`, the `if err != nil`, the `if validationErr != nil`, the `if manifestWriteErr != nil`, and the `if cancelled` (SIGINT-after-success) block. Their behavior is folded into the new `canceled` short-circuit and the state switch.
+- `cancelled` (worker SIGINT, declared ~line 322) and `errors.Is(err, context.Canceled)` (per-task cancel) are both folded into `canceled`.
 - A hard-ERROR task with actionable data now **still sends its data** (`persistentOutput` non-empty → `SendResponse`), unlike the old code which sent empty on every error. This is the intended decoupling.
 
 - [ ] **Step 3: Build the module, then sweep all binaries**

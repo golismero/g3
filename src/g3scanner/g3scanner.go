@@ -19,21 +19,22 @@ import (
 )
 
 // Environment variables with the scanner configuration.
-const G3_SCANNER_PARALLEL_MODE = "G3_SCANNER_PARALLEL_MODE"		// Set this always to true unless you've got concurrency issues and are desperate.
-const G3_SCANNER_MAX_PIPELINES = "G3_SCANNER_MAX_PIPELINES"		// Defaults to 0 for no limit (danger!) or set to a reasonable value like, say, 20.
-const G3_SCANNER_MAX_DEPTH = "G3_SCANNER_MAX_DEPTH"				// Defaults to 0 for no limit (danger!) or set to a reasonable value like, say, 20.
+const G3_SCANNER_PARALLEL_MODE = "G3_SCANNER_PARALLEL_MODE" // Set this always to true unless you've got concurrency issues and are desperate.
+const G3_SCANNER_MAX_PIPELINES = "G3_SCANNER_MAX_PIPELINES" // Defaults to 0 for no limit (danger!) or set to a reasonable value like, say, 20.
+const G3_SCANNER_MAX_DEPTH = "G3_SCANNER_MAX_DEPTH"         // Defaults to 0 for no limit (danger!) or set to a reasonable value like, say, 20.
 
 // This structure preserves the state of a single pipeline. Stored in an array.
 type PipelineState struct {
-	StepIndex int						// Current step in the pipeline.
-	CommandIndex int					// Current subcommand in the plugin.
-	PendingTasks g3lib.StringSet		// Task IDs we are waiting for in this step. Could be from another pipeline.
-	CurrentData g3lib.StringSet			// Currently held data in the pipeline that's been saved to the database.
-	NewData g3lib.StringSet				// Data being collected in this step that's been saved to the database.
+	StepIndex    int             // Current step in the pipeline.
+	CommandIndex int             // Current subcommand in the plugin.
+	PendingTasks g3lib.StringSet // Task IDs we are waiting for in this step. Could be from another pipeline.
+	CurrentData  g3lib.StringSet // Currently held data in the pipeline that's been saved to the database.
+	NewData      g3lib.StringSet // Data being collected in this step that's been saved to the database.
 }
 
 // This structure correlates the pending task IDs and the fingerprints for the data we are waiting for.
 type FPToPendingTasks map[string]g3lib.StringSet
+
 func (pending FPToPendingTasks) Add(taskid string, fingerprint []string) {
 	for _, fp := range fingerprint {
 		if _, ok := pending[fp]; !ok {
@@ -88,7 +89,7 @@ func main() {
 	go func() {
 		select {
 		case <-signalChan: // first signal, cancel context
-			log.Critical("\nSIGTERM received!")
+			log.Critical("\nSIGINT received!")
 			cancel()
 			wg.Done()
 		case <-ctx.Done():
@@ -120,7 +121,7 @@ func main() {
 	}
 
 	// Get the maximum number of pipelines.
-	maxPipelines := 0	// 0 means no limit
+	maxPipelines := 0 // 0 means no limit
 	if maxPipelinesStr := os.Getenv(G3_SCANNER_MAX_PIPELINES); maxPipelinesStr != "" {
 		if i, err := strconv.Atoi(maxPipelinesStr); err == nil && i >= 0 {
 			maxPipelines = i
@@ -133,7 +134,7 @@ func main() {
 	}
 
 	// Get the maximum depth for the pipelines.
-	maxPipeDepth := 0	// 0 means no limit
+	maxPipeDepth := 0 // 0 means no limit
 	if maxPipeDepthStr := os.Getenv(G3_SCANNER_MAX_DEPTH); maxPipeDepthStr != "" {
 		if i, err := strconv.Atoi(maxPipeDepthStr); err == nil && i >= 0 {
 			maxPipeDepth = i
@@ -201,7 +202,6 @@ func main() {
 		log.Debug("Disconnected from SQL database.")
 	}()
 	log.Debug("Connected to SQL database.")
-
 
 	// Handle the responses for the tools run by the new scans.
 	// We cannot easily subscribe to single scan responses, it's easier to
@@ -543,7 +543,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					plugin, ok := plugins[tool]
 					if !ok {
 						log.Error("Missing plugin: " + tool)
-						if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Missing plugin: " + tool); err != nil {
+						if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Missing plugin: "+tool); err != nil {
 							log.Error(err.Error())
 						}
 						return
@@ -787,7 +787,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 								log.Warningf("Plugin %s has ended with an error condition, check logs", msg.Pipelines[pipeidx][state.StepIndex])
 							}
 							state.NewData.AddMulti(response.Response)
-							if len(state.PendingTasks) == 0 {	// last subcommand has ended
+							if len(state.PendingTasks) == 0 { // last subcommand has ended
 								state.CurrentData = state.NewData
 								state.NewData = g3lib.StringSet{}
 								state.StepIndex++
@@ -799,9 +799,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 				}
 			}
 
-		// Sequential mode just runs each command in each pipeline one by one.
-		// This is considerably slower since we need to wait for each command to finish.
-		// It is also a lot less error prone, so it can be useful in some circumstances.
+			// Sequential mode just runs each command in each pipeline one by one.
+			// This is considerably slower since we need to wait for each command to finish.
+			// It is also a lot less error prone, so it can be useful in some circumstances.
 		} else {
 
 			// Run the commands for each pipeline sequentially.
@@ -846,7 +846,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					plugin, ok := plugins[tool]
 					if !ok {
 						log.Error("Missing plugin: " + tool)
-						if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Missing plugin: " + tool); err != nil {
+						if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Missing plugin: "+tool); err != nil {
 							log.Error(err.Error())
 						}
 						return
@@ -972,7 +972,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							log.Debug("New task ID: " + taskid)
 
 							// Update the scan progress before waiting for the response.
-							if err := g3lib.SendScanProgress(mq_client, msg.ScanID, currentScanStep - 1, totalScanSteps); err != nil {
+							if err := g3lib.SendScanProgress(mq_client, msg.ScanID, currentScanStep-1, totalScanSteps); err != nil {
 								log.Error(err.Error())
 							}
 
@@ -1154,7 +1154,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	err = g3lib.SaveReportInfo(rdb_client, info)
 	if err != nil {
 		log.Error("Error saving report info: " + err.Error())
-		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Error saving report info: " + err.Error()); err != nil {
+		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Error saving report info: "+err.Error()); err != nil {
 			log.Error(err.Error())
 		}
 		return
@@ -1236,12 +1236,12 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 // Callers are responsible for upstream validation (plugin exists, kind/fields
 // are valid). This helper assumes well-formed inputs.
 func dispatchTask(
-	mq  g3lib.MessageQueueClient,
+	mq g3lib.MessageQueueClient,
 	rdb g3lib.KeyValueStoreClient,
 	sql g3lib.SQLDBClient,
 	scanID, taskID, kind, tool string,
 	dataID string, // tool kind only
-	index  int,    // tool kind only
+	index int, // tool kind only
 	preset string, // report kind only
 ) error {
 	dispatchTS := time.Now().Unix()
@@ -1419,7 +1419,7 @@ func runBuiltinReport(
 // to update (SetTaskTerminal is a no-op if the hash is absent — see
 // kvstore.go).
 func dispatchHandler(
-	mq  g3lib.MessageQueueClient,
+	mq g3lib.MessageQueueClient,
 	rdb g3lib.KeyValueStoreClient,
 	sql g3lib.SQLDBClient,
 	plugins g3lib.G3PluginMetadata,

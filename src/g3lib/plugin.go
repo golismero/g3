@@ -62,6 +62,22 @@ type G3ReporterPhase struct {
 	Commands []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"` // (Optional) Named presets. Empty means "entrypoint runs with no args".
 }
 
+// G3LLMCommandNote is an optional per-command note for LLM consumers. Its
+// position in the slice corresponds to the same index in G3Plugin.Commands.
+type G3LLMCommandNote struct {
+	Description string `json:"description,omitempty"` // What this command variant does.
+}
+
+// G3LLMMetadata is optional, additive metadata describing a plugin's tool
+// contract for LLM/MCP consumers (served by /plugin/describe). It is absent for
+// plugins that have not been annotated; consumers fall back to other fields.
+type G3LLMMetadata struct {
+	Summary  string             `json:"summary,omitempty"`  // LLM-specific one-line explanation of the tool.
+	Accepts  []string           `json:"accepts,omitempty"`  // G3Data _type(s) this plugin consumes.
+	Produces string             `json:"produces,omitempty"` // Primary G3Data _type produced.
+	Commands []G3LLMCommandNote `json:"commands,omitempty"` // (Optional) Per-command notes, indexed to Commands[].
+}
+
 type G3Plugin struct {
 	Name        string              `json:"name"`                                           // Tool name. Must be unique.
 	Description map[string]string   `json:"description"`                                    // Description for humans, translated.
@@ -71,6 +87,7 @@ type G3Plugin struct {
 	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty"`       // (Optional) Command for importing files.
 	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty"`       // (Optional) Command for merging issues.
 	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty"`       // (Optional) Phase for generating downloadable reports.
+	LLM         *G3LLMMetadata      `json:"llm,omitempty"       validate:"omitempty"`       // (Optional) Additive metadata for LLM/MCP consumers.
 }
 func (plugin G3Plugin) String() string {
 	output := ""

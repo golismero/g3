@@ -19,6 +19,16 @@
     // These are images prepared especially for use with Golismero3.
     image: "ghcr.io/golismero/nmap",
 
+    llm: {
+        summary: "Network discovery and security auditing scanner.",
+        accepts: ["host"],
+        produces: "host",
+        commands: [
+            { description: "Scan an IPv4 host for open services and OS details." },
+            { description: "Scan an IPv6 host for open services and OS details (requires G3_ENV_IPV6_SUPPORTED)." },
+        ],
+    },
+
     // Command definitions for this tool.
     //
     // This is an array of objects that define a condition for a command to run,

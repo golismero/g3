@@ -1,0 +1,54 @@
+[
+  {
+    "host": "victim.example",
+    "ip": "203.0.113.10",
+    "port": "443",
+    "server_banner": "nginx",
+    "start_time": "2026-05-29 12:00:00 +0000",
+    "end_time": "2026-05-29 12:00:05 +0000",
+    "ssl_info": {
+      "ciphers": "TLS_AES_256_GCM_SHA384",
+      "issuer": "/CN=Example CA",
+      "subject": "/CN=victim.example",
+      "cn": "victim.example",
+      "altnames": "victim.example"
+    },
+    "vulnerabilities": [
+      {
+        "id": "000079",
+        "references": "CVE-2003-1418",
+        "method": "GET",
+        "url": "https://victim.example:443/",
+        "msg": "Server may leak inodes via ETags, header found with file /."
+      },
+      {
+        "id": "001234",
+        "references": "CVE-2006-6133,CVE-2002-1845",
+        "method": "GET",
+        "url": "https://victim.example:443/admin/",
+        "msg": "Multiple known vulnerabilities reported in the admin interface."
+      },
+      {
+        "id": "000456",
+        "references": "OSVDB-3268",
+        "method": "GET",
+        "url": "https://victim.example:443/icons/",
+        "msg": "Directory indexing found."
+      },
+      {
+        "id": "000767",
+        "references": "https://cwe.mitre.org/data/definitions/79.html",
+        "method": "GET",
+        "url": "https://victim.example:443/search",
+        "msg": "Reflected cross-site scripting in the search parameter."
+      },
+      {
+        "id": "013587",
+        "references": "https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP",
+        "method": "GET",
+        "url": "https://victim.example:443/",
+        "msg": "Suggested security header missing: content-security-policy."
+      }
+    ]
+  }
+]

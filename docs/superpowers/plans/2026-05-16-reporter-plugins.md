@@ -793,7 +793,7 @@ Immediately after the `SubscribeAsWorker` call returns (and its closing `})`), a
 ```go
 reporterTopics := g3lib.SubscribeAsReporter(mq_client, reporterSelected, func(client g3lib.MessageQueueClient, task g3lib.G3ReportTask) {
 
-	// SIGTERM drain: matches the tool handler's first guard.
+	// SIGINT drain: matches the tool handler's first guard.
 	if cancelled {
 		markReportTerminal(task.ScanID, task.TaskID, "CANCELED", "")
 		if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {

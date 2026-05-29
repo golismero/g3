@@ -95,6 +95,20 @@ func GetEnvironmentMap() map[string]string {
 	return m
 }
 
+// GetSharedEnv returns the subset of environment variables whose names begin
+// with the "G3_ENV_" prefix. These are the deployment-wide capability flags
+// g3worker injects into every plugin container (e.g. G3_ENV_IPV6_SUPPORTED).
+// Exposed read-only via the g3api /config/env endpoint.
+func GetSharedEnv() map[string]string {
+	shared := make(map[string]string)
+	for name, value := range GetEnvironmentMap() {
+		if strings.HasPrefix(name, "G3_ENV_") {
+			shared[name] = value
+		}
+	}
+	return shared
+}
+
 // resolveInstanceID computes the MQTT client ID for this g3scanner or g3worker
 // process. Three modes, in precedence order:
 //

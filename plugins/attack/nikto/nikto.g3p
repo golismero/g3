@@ -5,6 +5,16 @@
     },
     image: "ghcr.io/golismero/nikto",
 
+    llm: {
+        summary: "Web server vulnerability scanner.",
+        accepts: ["url"],
+        produces: "issue",
+        commands: [
+            { description: "Scan an HTTP URL." },
+            { description: "Scan an HTTPS URL (TLS)." },
+        ],
+    },
+
     commands: [
 
         // Run against http:// urls.

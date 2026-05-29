@@ -247,10 +247,10 @@ plumbing. They are not the same signal.
 
 ### Scanner-initiated worker shutdown ack
 
-When a worker receives `SIGTERM` while running a task, it still has to tell the
+When a worker receives `SIGINT` while running a task, it still has to tell the
 scanner the task is over so the scan can progress (or be marked stopped). The
 worker uses the same `SendEmptyResponse` for this — see
-[g3worker.go SIGTERM handling](../../src/g3worker/g3worker.go#L686) — because
+[g3worker.go SIGINT handling](../../src/g3worker/g3worker.go#L686) — because
 the *message* the scanner cares about is "task is terminal," not how it
 terminated. The Redis `markTerminal("CANCELED")` records the *how*.
 

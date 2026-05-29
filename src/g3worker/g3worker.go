@@ -30,18 +30,18 @@ const G3_HOLD_CANCEL_DEFAULT = "5m"
 // Helper function to read a whole line without buffer size limits.
 // https://devmarkpro.com/working-big-files-golang
 func read(r *bufio.Reader) ([]byte, error) {
-    var (
-        isPrefix = true
-        err      error
-        line, ln []byte
-    )
+	var (
+		isPrefix = true
+		err      error
+		line, ln []byte
+	)
 
-    for isPrefix && err == nil {
-        line, isPrefix, err = r.ReadLine()
-        ln = append(ln, line...)
-    }
+	for isPrefix && err == nil {
+		line, isPrefix, err = r.ReadLine()
+		ln = append(ln, line...)
+	}
 
-    return ln, err
+	return ln, err
 }
 
 // This object tracks which currently running tasks can be cancelled,
@@ -49,22 +49,22 @@ func read(r *bufio.Reader) ([]byte, error) {
 // while the task start message was still in the queue.
 type CancelTracker struct {
 	sync.RWMutex
-	stateFile string
+	stateFile    string
 	holdDuration time.Duration
-	rejectTasks map[string]time.Time			// Task ID -> time to hold
-	cancelFunc map[string]context.CancelFunc	// Task ID -> cancel()
+	rejectTasks  map[string]time.Time          // Task ID -> time to hold
+	cancelFunc   map[string]context.CancelFunc // Task ID -> cancel()
 }
 
 func NewCancelTracker(workerid string, duration time.Duration) *CancelTracker {
 	stateFile := ""
 	if workerid != "" {
-		stateFile = filepath.Join(g3lib.GetHomeDirectory(), g3lib.G3CONFIG, workerid + "-state.json")
+		stateFile = filepath.Join(g3lib.GetHomeDirectory(), g3lib.G3CONFIG, workerid+"-state.json")
 	}
 	return &CancelTracker{
-		stateFile: stateFile,
+		stateFile:    stateFile,
 		holdDuration: duration,
-		rejectTasks: make(map[string]time.Time),
-		cancelFunc: make(map[string]context.CancelFunc),
+		rejectTasks:  make(map[string]time.Time),
+		cancelFunc:   make(map[string]context.CancelFunc),
 	}
 }
 
@@ -146,7 +146,7 @@ func (tracker *CancelTracker) LoadState() {
 			log.Errorf("Error parsing file %s: %s", tracker.stateFile, err.Error())
 			duration, err = time.ParseDuration(G3_HOLD_CANCEL_DEFAULT)
 			if err != nil {
-				panic(err)		// should not happen in production
+				panic(err) // should not happen in production
 			}
 		}
 		tracker.rejectTasks[taskid] = now.Add(duration)
@@ -166,20 +166,20 @@ func (tracker *CancelTracker) AddTaskIfNew(taskid string, cancel context.CancelF
 
 	// Reject the task if it's currently running.
 	if _, ok := tracker.cancelFunc[taskid]; ok {
-		return 0		// means ignore
+		return 0 // means ignore
 	}
 
 	// Reject the task if it's pending cancellation.
 	if _, ok := tracker.rejectTasks[taskid]; ok {
 		delete(tracker.rejectTasks, taskid)
-		return 1		// means rejected
+		return 1 // means rejected
 	}
 
 	// Save the cancel function.
 	tracker.cancelFunc[taskid] = cancel
 
 	// Return the context so it can be passed to the plugin runner.
-	return 2			// means accepted
+	return 2 // means accepted
 }
 
 // Call this method when an unhandled task cancellation request arrives.
@@ -333,7 +333,7 @@ func main() {
 	go func() {
 		select {
 		case <-signalChan: // first signal, cancel context
-			log.Critical("\nSIGTERM received!")
+			log.Critical("\nSIGINT received!")
 			cancelled = true
 			cancelTracker.CancelAllTasks()
 			cancel()
@@ -361,17 +361,17 @@ func main() {
 	workerPluginsList := strings.TrimSpace(os.Getenv(G3_WORKER_PLUGINS))
 	if workerPluginsList == "" {
 		selected = slices.Sorted(maps.Keys(plugins))
-	} else if workerPluginsList[0:1] != "!" {			// allowlist
-		selected = strings.Fields(strings.ReplaceAll(workerPluginsList, ",", " ", ))
+	} else if workerPluginsList[0:1] != "!" { // allowlist
+		selected = strings.Fields(strings.ReplaceAll(workerPluginsList, ",", " "))
 		for _, name := range selected {
 			if _, ok := plugins[name]; !ok {
 				log.Critical("Missing plugin: " + name)
 				os.Exit(1)
 			}
 		}
-	} else {											// denylist
+	} else { // denylist
 		workerPluginsList = workerPluginsList[1:]
-		denylist := strings.Fields(strings.ReplaceAll(workerPluginsList, ",", " ", ))
+		denylist := strings.Fields(strings.ReplaceAll(workerPluginsList, ",", " "))
 		for _, name := range denylist {
 			if _, ok := plugins[name]; !ok {
 				log.Critical("Unknown plugin: " + name)
@@ -470,9 +470,9 @@ func main() {
 		}
 		mq_client, err := g3lib.ConnectToBroker(workercancelid)
 		if err != nil {
-				log.Critical("Internal error: " + err.Error())
-				cancel()
-				return
+			log.Critical("Internal error: " + err.Error())
+			cancel()
+			return
 		}
 		defer g3lib.DisconnectFromBroker(mq_client)
 
@@ -480,7 +480,7 @@ func main() {
 		// Cancel requests are sent on broadcast to all workers,
 		// since we don't know which one picked up our task.
 		// When a worker does handle the request, it notifies the others.
-		topic := g3lib.SubscribeToCancel(mq_client, func (client g3lib.MessageQueueClient, cancelRequest g3lib.G3CancelTask) {
+		topic := g3lib.SubscribeToCancel(mq_client, func(client g3lib.MessageQueueClient, cancelRequest g3lib.G3CancelTask) {
 			if cancelRequest.Handled && cancelRequest.SenderID != g3lib.GetClientID(client) {
 				log.Debugf("Received notification of %d tasks handled by another worker.", len(cancelRequest.Tasks))
 				for _, taskid := range cancelRequest.Tasks {
@@ -542,9 +542,9 @@ func main() {
 	}
 
 	// Subscribe to the topics for the plugins we support.
-	topics := g3lib.SubscribeAsWorker(mq_client, selected, func (client g3lib.MessageQueueClient, task g3lib.G3Task) {
+	topics := g3lib.SubscribeAsWorker(mq_client, selected, func(client g3lib.MessageQueueClient, task g3lib.G3Task) {
 
-		// If we received SIGTERM, just drop incoming messages. Mark as CANCELED —
+		// If we received SIGINT, just drop incoming messages. Mark as CANCELED —
 		// the task didn't execute because this worker is going away, not because
 		// it failed on its own merits.
 		if cancelled {
@@ -719,7 +719,7 @@ func main() {
 			log.Error(e.Error())
 		}
 
-		// CANCELED (per-task cancel via context, or worker SIGTERM mid-run) is
+		// CANCELED (per-task cancel via context, or worker SIGINT mid-run) is
 		// orthogonal to result quality and short-circuits everything: no save,
 		// no cache seed, empty response.
 		canceled := errors.Is(err, context.Canceled) || cancelled
@@ -870,7 +870,7 @@ func main() {
 
 	reporterTopics := g3lib.SubscribeAsReporter(mq_client, reporterSelected, func(client g3lib.MessageQueueClient, task g3lib.G3ReportTask) {
 
-		// SIGTERM drain: matches the tool handler's first guard.
+		// SIGINT drain: matches the tool handler's first guard.
 		if cancelled {
 			markReportTerminal(task.ScanID, task.TaskID, "CANCELED", "")
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
@@ -969,7 +969,6 @@ func main() {
 			log.Error(e.Error())
 		}
 
-
 		// Decide terminal state and notify.
 		terminal := "DONE"
 		terminalMsg := ""
@@ -989,7 +988,7 @@ func main() {
 	topics = append(topics, reporterTopics...)
 	defer g3lib.Unsubscribe(mq_client, topics...)
 
-	// Listen for incoming tasks until we get a SIGTERM.
+	// Listen for incoming tasks until we get a SIGINT.
 	log.Info("Waiting for incoming tasks...")
 	wg.Wait()
 	log.Info("Quitting...")

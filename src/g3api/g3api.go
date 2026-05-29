@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -48,6 +49,120 @@ func requireToken(expected string, h http.HandlerFunc) http.HandlerFunc {
 		}
 		h(w, r)
 	}
+}
+
+// requireManagedScan looks up the scan's progress row and returns nil when its
+// status is STATUS_MANAGED. On any other state — including missing scan or
+// non-managed scan — it writes the appropriate API error to w and returns a
+// non-nil error so the caller can return early.
+func requireManagedScan(w http.ResponseWriter, db g3lib.SQLDBClient, scanid string) error {
+	entry, err := g3lib.GetScanStatus(db, scanid)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			g3lib.SendApiError(w, http.StatusNotFound, "Scan does not exist.")
+			return err
+		}
+		log.Error(err)
+		g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+		return err
+	}
+	if entry.Status != g3lib.STATUS_MANAGED {
+		g3lib.SendApiError(w, http.StatusConflict, "Operation requires a managed scan.")
+		return errors.New("scan is not managed: " + scanid)
+	}
+	return nil
+}
+
+// runImport relocates an uploaded file (identified by fileid) into the scan's
+// imports/ directory, runs the plugin's importer container, and saves the
+// resulting data objects into the scan. Returns the inserted Mongo IDs.
+//
+// The returned httpStatus tells callers which HTTP code to send on error:
+//   - 400 when the request is bad (unknown tool, no importer phase, missing file)
+//   - 500 when setup/run/save fails for internal reasons
+//
+// httpStatus is meaningful only when err != nil; on success it is 0.
+func runImport(plugins g3lib.G3PluginMetadata, mdb g3lib.DatastoreClient, artifactsRoot, scanid, tool, fileid string) (ids []string, httpStatus int, err error) {
+	plugin, ok := plugins[tool]
+	if !ok || plugin.Importer == nil {
+		return nil, http.StatusBadRequest, errors.New("tool not found or has no importer: " + tool)
+	}
+
+	if !govalidator.IsUUIDv4(fileid) {
+		return nil, http.StatusBadRequest, errors.New("invalid file ID: " + fileid)
+	}
+
+	importsDir := filepath.Join(artifactsRoot, scanid, "imports")
+	if err := os.MkdirAll(importsDir, 0o755); err != nil {
+		return nil, http.StatusInternalServerError, errors.New("cannot create imports dir " + importsDir + ": " + err.Error())
+	}
+	srcBin := filepath.Join(artifactsRoot, "_uploads", fileid+".bin")
+	srcTxt := filepath.Join(artifactsRoot, "_uploads", fileid+".txt")
+	inputfile := filepath.Join(importsDir, fileid+".bin")
+	dstTxt := filepath.Join(importsDir, fileid+".txt")
+	if err := os.Rename(srcBin, inputfile); err != nil {
+		return nil, http.StatusBadRequest, errors.New("cannot relocate upload " + fileid + ": " + err.Error())
+	}
+	if err := os.Rename(srcTxt, dstTxt); err != nil {
+		log.Error("Cannot relocate upload metadata " + fileid + ": " + err.Error())
+	}
+	stdin, openErr := os.Open(inputfile)
+	if openErr != nil {
+		return nil, http.StatusBadRequest, errors.New("cannot open file " + inputfile + ": " + openErr.Error())
+	}
+	defer stdin.Close()
+
+	parsedCommand, errA := g3lib.BuildImporterCommand(plugin)
+	if len(errA) > 0 {
+		for _, e := range errA {
+			log.Error(" - " + e.Error())
+		}
+		return nil, http.StatusInternalServerError, errors.New("error building importer command for " + plugin.Name)
+	}
+	ctx := context.Background() // FIXME this may have to be run as a task after all...
+	stderr := os.Stderr         // FIXME send this log to the database
+	targetData, runErr := g3lib.RunPluginImporter(ctx, plugin, parsedCommand, stdin, stderr)
+	if runErr != nil {
+		return nil, http.StatusInternalServerError, errors.New("error running importer " + plugin.Name + ": " + runErr.Error())
+	}
+
+	ids, saveErr := g3lib.SaveData(mdb, scanid, g3lib.NIL_TASKID, targetData)
+	if saveErr != nil {
+		return nil, http.StatusInternalServerError, errors.New("error saving imported data for " + plugin.Name + ": " + saveErr.Error())
+	}
+	log.Debug("Imported file: " + fileid)
+	return ids, 0, nil
+}
+
+// buildPluginContract assembles the LLM-facing contract for one plugin,
+// falling back gracefully when the optional LLM block is absent.
+func buildPluginContract(plugin g3lib.G3Plugin) g3lib.PluginContract {
+	contract := g3lib.PluginContract{Name: plugin.Name}
+
+	if plugin.LLM != nil && plugin.LLM.Summary != "" {
+		contract.Summary = plugin.LLM.Summary
+	} else if desc, ok := plugin.Description["en"]; ok {
+		contract.Summary = desc
+	}
+
+	if plugin.LLM != nil {
+		contract.Accepts = plugin.LLM.Accepts
+		contract.Produces = plugin.LLM.Produces
+	}
+
+	contract.Operations = make([]g3lib.PluginContractOperation, 0, len(plugin.Commands))
+	for i, cmd := range plugin.Commands {
+		op := g3lib.PluginContractOperation{
+			Index:    i,
+			Produces: cmd.Returns,
+		}
+		if plugin.LLM != nil && i < len(plugin.LLM.Commands) {
+			op.Description = plugin.LLM.Commands[i].Description
+		}
+		contract.Operations = append(contract.Operations, op)
+	}
+
+	return contract
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -233,7 +348,7 @@ func Main() int {
 	go func() {
 		select {
 		case <-signalChan: // first signal, cancel context
-			log.Critical("\nSIGTERM received!")
+			log.Critical("\nSIGINT received!")
 			cancel()
 			srv.Shutdown(context.Background())
 			wg.Done()
@@ -359,7 +474,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Start a scan.
 		//
-		http.HandleFunc(apiPath + "/scan/start", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/start", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/start")
 			var request g3lib.ReqStartScan
 			err := request.Decode(r)
@@ -376,7 +491,7 @@ func Main() int {
 			}
 			if err != nil {
 				log.Error(err)
-				g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script: "+err.Error())
 				return
 			}
 
@@ -414,18 +529,18 @@ func Main() int {
 			// Log the parsed script.
 			log.Debug(
 				"\n" +
-				"--------------------------------------------------------------------------------\n" +
-				"--- Running script:\n" +
-				"\n" +
-				parsed.String() +
-				"--------------------------------------------------------------------------------\n")
+					"--------------------------------------------------------------------------------\n" +
+					"--- Running script:\n" +
+					"\n" +
+					parsed.String() +
+					"--------------------------------------------------------------------------------\n")
 
 			// Add the targets to the database.
 			if len(parsed.Targets) > 0 {
 				targetData, err := g3lib.BuildTargets(parsed.Targets)
 				if err != nil {
 					log.Error(err)
-					g3lib.SendApiError(w, http.StatusBadRequest, "Runtime error in script: " + err.Error())
+					g3lib.SendApiError(w, http.StatusBadRequest, "Runtime error in script: "+err.Error())
 					return
 				}
 				_, err = g3lib.SaveData(mdb_client, request.ScanID, g3lib.NIL_TASKID, targetData)
@@ -440,75 +555,16 @@ func Main() int {
 			// closure so the `defer stdin.Close()` fires per-iteration rather
 			// than accumulating open file descriptors until the handler returns.
 			importOne := func(parsedImport g3lib.ParsedImport) bool {
-
-				// Get the requested importer plugin.
-				plugin, ok := plugins[parsedImport.Tool]
-				if !ok || plugin.Importer == nil {
-					log.Error("Tool not found: " + parsedImport.Tool)
-					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, tool not found.")
-					return false
-				}
-
-				// Pipe the input file.
-				if ! govalidator.IsUUIDv4(parsedImport.Path) {
-					log.Error("Invalid file ID: " + parsedImport.Path)
-					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, imported file not found.")
-					return false
-				}
-				importsDir := filepath.Join(artifactsRoot, request.ScanID, "imports")
-				if err := os.MkdirAll(importsDir, 0o755); err != nil {
-					log.Error("Cannot create imports dir " + importsDir + ": " + err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-					return false
-				}
-				srcBin := filepath.Join(artifactsRoot, "_uploads", parsedImport.Path+".bin")
-				srcTxt := filepath.Join(artifactsRoot, "_uploads", parsedImport.Path+".txt")
-				inputfile := filepath.Join(importsDir, parsedImport.Path+".bin")
-				dstTxt := filepath.Join(importsDir, parsedImport.Path+".txt")
-				if err := os.Rename(srcBin, inputfile); err != nil {
-					log.Error("Cannot relocate upload " + parsedImport.Path + ": " + err.Error())
-					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, imported file not found.")
-					return false
-				}
-				if err := os.Rename(srcTxt, dstTxt); err != nil {
-					log.Error("Cannot relocate upload metadata " + parsedImport.Path + ": " + err.Error())
-				}
-				stdin, err := os.Open(inputfile)
-				if err != nil {
-					log.Critical("Cannot open file " + inputfile + ": " + err.Error())
-					g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, imported file not found.")
-					return false
-				}
-				defer stdin.Close()
-
-				// Importers don't support conditions nor command templates.
-				// The command is run directly and the raw data piped to it.
-				parsedCommand, errA := g3lib.BuildImporterCommand(plugin)
-				if len(errA) > 0 {
-					log.Error("Error executing importer " + plugin.Name + ":")
-					for _, err := range errA {
-						log.Error(" - " + err.Error())
-					}
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Error while running importer: " + plugin.Name)
-					return false
-				}
-				ctx := context.Background() // FIXME this may have to be run as a task after all...
-				stderr := os.Stderr         // FIXME send this log to the database
-				targetData, err := g3lib.RunPluginImporter(ctx, plugin, parsedCommand, stdin, stderr)
-				if err != nil {
-					log.Error("Error executing importer " + plugin.Name + ": " + err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Error while running importer: " + plugin.Name)
-					return false
-				}
-
-				// Save the imported data into the database.
-				_, err = g3lib.SaveData(mdb_client, request.ScanID, g3lib.NIL_TASKID, targetData)
+				_, status, err := runImport(plugins, mdb_client, artifactsRoot, request.ScanID, parsedImport.Tool, parsedImport.Path)
 				if err != nil {
 					log.Error(err)
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Error while running importer: " + plugin.Name)
+					if status == http.StatusBadRequest {
+						g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, "+err.Error())
+					} else {
+						g3lib.SendApiError(w, http.StatusInternalServerError, "Error while running importer: "+parsedImport.Tool)
+					}
 					return false
 				}
-				log.Debug("Imported file: " + parsedImport.Path)
 				return true
 			}
 			for _, parsedImport := range parsed.Imports {
@@ -532,9 +588,150 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
+		// Create a new externally-managed scan. The scan exists in the progress
+		// table with STATUS_MANAGED so the orchestrator never claims it; no
+		// G3Scan is published, no pipelines run. Used by external clients (e.g.
+		// the Python g3client) to host on-demand task dispatch.
+		http.HandleFunc(apiPath+"/scan/create", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: scan/create")
+			var request g3lib.ReqCreateScan
+			if err := request.Decode(r); err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+
+			scanid := uuid.NewString()
+
+			// Write the progress row first so subsequent managed-only calls find
+			// the scan via GetScanStatus, then mark it MANAGED.
+			if err := g3lib.InsertScanProgress(sql_db, scanid); err != nil {
+				log.Error(err)
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				return
+			}
+			if err := g3lib.UpdateScanProgress(sql_db, scanid, g3lib.STATUS_MANAGED, nil, "Externally managed."); err != nil {
+				log.Error(err)
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				return
+			}
+
+			// g3api owns _uploads/, <scanid>/imports/, and <scanid> deletion;
+			// owning <scanid> creation for managed scans is consistent.
+			if err := os.MkdirAll(filepath.Join(artifactsRoot, scanid), 0o755); err != nil {
+				log.Error("Cannot create scan dir: " + err.Error())
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				return
+			}
+
+			g3lib.SendApiResponse(w, scanid)
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
+		// Add targets to a managed scan. Reuses BuildTargets so canonicalization
+		// (URL parsing, loopback rejection, _type/_fp synthesis) stays identical
+		// to the existing `target X` script directive. Returns the inserted
+		// Mongo IDs so the caller can immediately dispatch tasks against them.
+		http.HandleFunc(apiPath+"/scan/target/add", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: scan/target/add")
+			var request g3lib.ReqAddTargets
+			if err := request.Decode(r); err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+
+			if err := requireManagedScan(w, sql_db, request.ScanID); err != nil {
+				return
+			}
+
+			targetData, err := g3lib.BuildTargets(request.Targets)
+			if err != nil {
+				log.Error(err)
+				g3lib.SendApiError(w, http.StatusBadRequest, "Invalid target: "+err.Error())
+				return
+			}
+
+			ids, err := g3lib.SaveData(mdb_client, request.ScanID, g3lib.NIL_TASKID, targetData)
+			if err != nil {
+				log.Error(err)
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				return
+			}
+
+			g3lib.SendApiResponse(w, ids)
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
+		// Insert raw G3Data objects into a managed scan. Each object is validated
+		// server-side via IsValidData; malformed objects are rejected with 400
+		// before any write occurs. Returns the inserted Mongo IDs.
+		http.HandleFunc(apiPath+"/scan/data/insert", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: scan/data/insert")
+			var request g3lib.ReqInsertData
+			if err := request.Decode(r); err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+
+			if err := requireManagedScan(w, sql_db, request.ScanID); err != nil {
+				return
+			}
+
+			for i, obj := range request.Data {
+				if _, err := g3lib.IsValidData(obj); err != nil {
+					log.Error(err)
+					g3lib.SendApiError(w, http.StatusBadRequest, fmt.Sprintf("Invalid data at index %d: %s", i, err.Error()))
+					return
+				}
+			}
+
+			ids, err := g3lib.SaveData(mdb_client, request.ScanID, g3lib.NIL_TASKID, request.Data)
+			if err != nil {
+				log.Error(err)
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				return
+			}
+
+			g3lib.SendApiResponse(w, ids)
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
+		// Import an uploaded file into a managed scan. The file must already
+		// have been uploaded via /file/upload; the caller supplies its UUID.
+		// Reuses the same runImport helper that drives /scan/start's imports.
+		http.HandleFunc(apiPath+"/scan/import", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: scan/import")
+			var request g3lib.ReqImport
+			if err := request.Decode(r); err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+
+			if err := requireManagedScan(w, sql_db, request.ScanID); err != nil {
+				return
+			}
+
+			ids, status, err := runImport(plugins, mdb_client, artifactsRoot, request.ScanID, request.Tool, request.FileID)
+			if err != nil {
+				log.Error(err)
+				if status == http.StatusBadRequest {
+					g3lib.SendApiError(w, http.StatusBadRequest, err.Error())
+				} else {
+					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				}
+				return
+			}
+
+			g3lib.SendApiResponse(w, ids)
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
 		// Show the progress of the currently running scans.
 		//
-		http.HandleFunc(apiPath + "/scan/progress", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/progress", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/progress")
 			var request g3lib.ReqGetScanProgressTable
 			err := request.Decode(r)
@@ -557,7 +754,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Get the list of tasks for a scan
 		//
-		http.HandleFunc(apiPath + "/scan/tasks", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/tasks", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/tasks")
 			var request g3lib.ReqQueryScanTaskList
 			err := request.Decode(r)
@@ -580,7 +777,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Show the logs of a scan or task
 		//
-		http.HandleFunc(apiPath + "/scan/logs", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/logs", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/logs")
 			var request g3lib.ReqQueryLog
 			err := request.Decode(r)
@@ -621,7 +818,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Show per-task status summary for a scan (first/last log timestamps, age, line count).
 		//
-		http.HandleFunc(apiPath + "/scan/tasks/status", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/tasks/status", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/tasks/status")
 			var request g3lib.ReqQueryScanTaskStatus
 			err := request.Decode(r)
@@ -715,7 +912,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Stop a scan.
 		//
-		http.HandleFunc(apiPath + "/scan/stop", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/stop", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/stop")
 			var request g3lib.ReqStopScan
 			err := request.Decode(r)
@@ -738,7 +935,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// List every scan known to the engine.
 		//
-		http.HandleFunc(apiPath + "/scan/list", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/list", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/list")
 			var request g3lib.ReqEnumerateScans
 			err := request.Decode(r)
@@ -761,7 +958,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Delete a scan.
 		//
-		http.HandleFunc(apiPath + "/scan/delete", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/delete", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/delete")
 			var request g3lib.ReqDeleteScan
 			err := request.Decode(r)
@@ -839,7 +1036,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Generate a report.
 		//
-		http.HandleFunc(apiPath + "/scan/report", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/report", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/report")
 			var request g3lib.ReqReport
 			err := request.Decode(r)
@@ -925,7 +1122,7 @@ func Main() int {
 		//
 		// See docs/superpowers/specs/2026-05-18-reporter-tier3-design.md (Component 3).
 		//
-		http.HandleFunc(apiPath + "/scan/task/artifacts", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/task/artifacts", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/artifacts")
 			var request g3lib.ReqTaskArtifacts
 			err := request.Decode(r)
@@ -1036,7 +1233,7 @@ func Main() int {
 		//
 		// See docs/superpowers/specs/2026-05-18-reporter-tier2-design.md (Component 3).
 		//
-		http.HandleFunc(apiPath + "/scan/task/cancel", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/task/cancel", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/cancel")
 			var request g3lib.ReqTaskCancel
 			err := request.Decode(r)
@@ -1067,7 +1264,7 @@ func Main() int {
 		// outputs (for reporter tasks). See
 		// docs/superpowers/specs/2026-05-18-scanner-as-dispatcher-design.md.
 		//
-		http.HandleFunc(apiPath + "/scan/task/dispatch", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/task/dispatch", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/dispatch")
 			var request g3lib.ReqTaskDispatch
 			err := request.Decode(r)
@@ -1160,7 +1357,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Enumerate the data objects.
 		//
-		http.HandleFunc(apiPath + "/scan/datalist", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/datalist", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/datalist")
 			var request g3lib.ReqGetScanDataIDs
 			err := request.Decode(r)
@@ -1183,7 +1380,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Load the data objects.
 		//
-		http.HandleFunc(apiPath + "/scan/data", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/scan/data", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/data")
 			var request g3lib.ReqLoadData
 			err := request.Decode(r)
@@ -1200,8 +1397,15 @@ func Main() int {
 				return
 			}
 
-			// Get the requested data objects.
-			data, err := g3lib.LoadData(mdb_client, request.ScanID, request.DataIDs)
+			// Get the requested data objects. When taskid is set, the call is
+			// "fetch the output of one specific task"; otherwise it's by ID
+			// list (or all data when the list is empty).
+			var data []g3lib.G3Data
+			if request.TaskID != "" {
+				data, err = g3lib.LoadDataByTask(mdb_client, request.ScanID, request.TaskID)
+			} else {
+				data, err = g3lib.LoadData(mdb_client, request.ScanID, request.DataIDs)
+			}
 			if err != nil {
 				log.Errorf("Error fetching data for scan %s: %s", request.ScanID, err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Could not fetch data objects for scan.")
@@ -1213,7 +1417,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Get the list of available plugins.
 		//
-		http.HandleFunc(apiPath + "/plugin/list", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/plugin/list", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: plugin/list")
 			var request g3lib.ReqListPlugins
 			err := request.Decode(r)
@@ -1248,9 +1452,53 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
+		// LLM-facing tool contract: per-plugin Summary/Accepts/Produces/Operations
+		// sourced from optional .g3p `llm:` metadata, with graceful fallback when
+		// the block is absent. Excludes Description/URL/Image (those stay on
+		// /plugin/list for humans and GUIs).
+		http.HandleFunc(apiPath+"/plugin/describe", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: plugin/describe")
+			var request g3lib.ReqListPlugins
+			if err := request.Decode(r); err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+
+			pluginNames := make([]string, 0, len(plugins))
+			for key := range plugins {
+				pluginNames = append(pluginNames, key)
+			}
+			sort.Strings(pluginNames)
+
+			contracts := make([]g3lib.PluginContract, 0, len(plugins))
+			for _, name := range pluginNames {
+				contracts = append(contracts, buildPluginContract(plugins[name]))
+			}
+
+			g3lib.SendApiResponse(w, contracts)
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
+		// Read-only deployment-wide capability flags: the subset of environment
+		// variables prefixed G3_ENV_*, which g3worker injects into every plugin
+		// container. The operator owns the values; this endpoint just surfaces
+		// them so consumers can reason about capabilities (e.g. IPv6 support).
+		http.HandleFunc(apiPath+"/config/env", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
+			log.Debug("Handling: config/env")
+			var request g3lib.ReqGetEnv
+			if err := request.Decode(r); err != nil {
+				log.Error("Error decoding payload: " + err.Error())
+				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				return
+			}
+			g3lib.SendApiResponse(w, g3lib.GetSharedEnv())
+		}))
+
+		///////////////////////////////////////////////////////////////////////////////////////////
 		// File upload handler.
 		//
-		http.HandleFunc(apiPath + "/file/upload", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/file/upload", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: file/upload")
 			if r.Method != http.MethodPost {
 				log.Error("Method not allowed: " + r.Method)
@@ -1306,7 +1554,7 @@ func Main() int {
 			}
 			binPath := filepath.Join(uploadsDir, filename+".bin")
 			txtPath := filepath.Join(uploadsDir, filename+".txt")
-			fd, err := os.OpenFile(binPath, os.O_WRONLY | os.O_CREATE, 0600)
+			fd, err := os.OpenFile(binPath, os.O_WRONLY|os.O_CREATE, 0600)
 			if err != nil {
 				log.Error("Error creating upload file: " + err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
@@ -1335,7 +1583,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Websocket handler.
 		//
-		http.HandleFunc(apiPath + "/ws", requireToken(apiToken, func (w http.ResponseWriter, r *http.Request) {
+		http.HandleFunc(apiPath+"/ws", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: /ws")
 
 			// Upgrade from HTTP to websocket.

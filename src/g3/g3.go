@@ -179,7 +179,7 @@ func main() {
 	go func() {
 		select {
 		case <-signalChan: // first signal, cancel context
-			log.Critical("\nSIGTERM received!")
+			log.Critical("\nSIGINT received!")
 			cancel()
 			cancelled = true
 		case <-ctx.Done():
@@ -238,7 +238,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 		log.Critical(err)
 		return err
 	}
-	if len(parsed.Targets) == 0 { 		// TODO change the logic here so we can pass targets via cmdline
+	if len(parsed.Targets) == 0 { // TODO change the logic here so we can pass targets via cmdline
 		log.Critical("Script does not specify any targets, aborting.")
 		return errors.New("script does not specify any targets, aborting")
 	}
@@ -250,11 +250,11 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 	}
 	log.Debug(
 		"\n" +
-		"--------------------------------------------------------------------------------\n" +
-		"--- Running script:\n" +
-		"\n" +
-		parsed.String() + "\n" +
-		"--------------------------------------------------------------------------------\n")
+			"--------------------------------------------------------------------------------\n" +
+			"--- Running script:\n" +
+			"\n" +
+			parsed.String() + "\n" +
+			"--------------------------------------------------------------------------------\n")
 
 	// Build the target objects.
 	var targetData []g3lib.G3Data
@@ -445,14 +445,14 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 
 						// Run the plugin command.
 						log.Infof(
-							"\n" +
-							"--------------------------------------------------------------------------------\n" +
-							"--- Progress: %d%% (completed %d steps out of %d)\n" +
-							"--- Running tool: %s\n" +
-							"--- %s\n" +
-							"--- %s\n" +
-							"--------------------------------------------------------------------------------\n",
-							int(((currentScanStep - 1) * 100) / totalScanSteps), currentScanStep - 1, totalScanSteps,
+							"\n"+
+								"--------------------------------------------------------------------------------\n"+
+								"--- Progress: %d%% (completed %d steps out of %d)\n"+
+								"--- Running tool: %s\n"+
+								"--- %s\n"+
+								"--- %s\n"+
+								"--------------------------------------------------------------------------------\n",
+							int(((currentScanStep-1)*100)/totalScanSteps), currentScanStep-1, totalScanSteps,
 							plugin.Name, plugin.Description["en"], plugin.URL)
 						slot, slotErr := g3lib.CreateEphemeralArtifactSlot()
 						if slotErr != nil {
@@ -645,11 +645,11 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 				// Run the plugin.
 				log.Debug(
 					"\n" +
-					"--------------------------------------------------------------------------------\n" +
-					"--- Running tool: " + plugin.Name + "\n" +
-					"--- " + plugin.Description["en"] + "\n" +
-					"--- " + plugin.URL + "\n" +
-					"--------------------------------------------------------------------------------\n")
+						"--------------------------------------------------------------------------------\n" +
+						"--- Running tool: " + plugin.Name + "\n" +
+						"--- " + plugin.Description["en"] + "\n" +
+						"--- " + plugin.URL + "\n" +
+						"--------------------------------------------------------------------------------\n")
 				slot, slotErr := g3lib.CreateEphemeralArtifactSlot()
 				if slotErr != nil {
 					log.Warningf("Cannot create ephemeral artifact slot, plugin will run without /artifacts: %s", slotErr.Error())

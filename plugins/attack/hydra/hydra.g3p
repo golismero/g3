@@ -4,6 +4,16 @@
         en: "Hydra is a parallelized login cracker which supports numerous protocols to attack. It is very fast and flexible, and new modules are easy to add."
     },
 
+    llm: {
+        summary: "Parallelized network login cracker.",
+        accepts: ["host"],
+        produces: "issue",
+        commands: [
+            { description: "Brute-force logins on an IPv4 host's discovered services." },
+            { description: "Brute-force logins on an IPv6 host's discovered services (requires G3_ENV_IPV6_SUPPORTED)." },
+        ],
+    },
+
     commands: [
 
         // Run against host objects that have discovered services.

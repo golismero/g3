@@ -855,7 +855,7 @@ In `src/g3worker/g3worker.go`, locate the existing error-handling branches that 
 		// Per-task cancel from the scanner: RunPluginCommand propagates
 		// the cancelled context as context.Canceled. Treat as CANCELED
 		// (not ERROR — the task didn't fail, it was stopped on request).
-		// Worker-level SIGTERM also cancels the context, so this branch
+		// Worker-level SIGINT also cancels the context, so this branch
 		// covers both per-task cancel and shutdown-while-running.
 		if errors.Is(err, context.Canceled) {
 			markTerminal(task.ScanID, task.TaskID, "CANCELED")
@@ -1143,7 +1143,7 @@ Find this block in `Main()` (≈ lines 156-169 — the signal-handler goroutine)
 	go func() {
 		select {
 		case <-signalChan: // first signal, cancel context
-			log.Critical("\nSIGTERM received!")
+			log.Critical("\nSIGINT received!")
 			cancel()
 			srv.Shutdown(context.Background())
 			wg.Done()

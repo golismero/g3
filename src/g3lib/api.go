@@ -185,6 +185,45 @@ func (req *ReqStartScan) Decode(r *http.Request) error {
 	return validator.New().Struct(req)
 }
 
+type ReqCreateScan struct {
+}
+func (req *ReqCreateScan) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
+type ReqAddTargets struct {
+	ScanID  string   `json:"scanid"              validate:"uuid"`
+	Targets []string `json:"targets"             validate:"required,min=1,dive,required"`
+}
+func (req *ReqAddTargets) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
+type ReqInsertData struct {
+	ScanID string   `json:"scanid"              validate:"uuid"`
+	Data   []G3Data `json:"data"                validate:"required,min=1"`
+}
+func (req *ReqInsertData) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
+type ReqImport struct {
+	ScanID string `json:"scanid"              validate:"uuid"`
+	Tool   string `json:"tool"                validate:"required"`
+	FileID string `json:"fileid"              validate:"required,uuid4"`
+}
+func (req *ReqImport) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
 type ReqStopScan struct {
 	ScanID string               `json:"scanid"              validate:"uuid"`
 }
@@ -229,8 +268,9 @@ func (req *ReqGetScanDataIDs) Decode(r *http.Request) error {
 }
 
 type ReqLoadData struct {
-	ScanID string               `json:"scanid"              validate:"uuid"`
-	DataIDs []string            `json:"dataids"             validate:"omitempty,dive,mongodb"`
+	ScanID  string   `json:"scanid"              validate:"uuid"`
+	DataIDs []string `json:"dataids"             validate:"omitempty,dive,mongodb"`
+	TaskID  string   `json:"taskid,omitempty"    validate:"omitempty,uuid4"`
 }
 func (req *ReqLoadData) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
@@ -318,6 +358,32 @@ func (req *ReqListPlugins) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
 	return validator.New().Struct(req)
+}
+
+type ReqGetEnv struct {
+}
+func (req *ReqGetEnv) Decode(r *http.Request) error {
+	if err := ValidateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return validator.New().Struct(req)
+}
+
+// PluginContractOperation describes one command variant a plugin exposes
+// (`/scan/task/dispatch` selects a variant by Index).
+type PluginContractOperation struct {
+	Index       int    `json:"index"`
+	Description string `json:"description,omitempty"` // From G3LLMMetadata.Commands[Index].Description, if any.
+	Produces    string `json:"produces,omitempty"`    // From G3ToolCommand.Returns (per-command, always specific).
+}
+
+// PluginContract is the LLM-facing contract for one plugin. Served by
+// /plugin/describe. Excludes Description/URL/Image (those stay on /plugin/list).
+type PluginContract struct {
+	Name       string                    `json:"name"`
+	Summary    string                    `json:"summary,omitempty"`  // From G3LLMMetadata.Summary; falls back to Description["en"].
+	Accepts    []string                  `json:"accepts,omitempty"`  // From G3LLMMetadata.Accepts.
+	Produces   string                    `json:"produces,omitempty"` // From G3LLMMetadata.Produces (plugin-level).
+	Operations []PluginContractOperation `json:"operations,omitempty"`
 }
 
 type ReqCheckScriptSyntax struct {

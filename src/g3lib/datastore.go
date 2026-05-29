@@ -128,6 +128,17 @@ func LoadFingerprintMatches(dbclient DatastoreClient, scanid string, fingerprint
 	return jsonArray, err
 }
 
+// Fetch all data objects produced by a specific task within a scan.
+func LoadDataByTask(dbclient DatastoreClient, scanid, taskid string) ([]G3Data, error) {
+	query := bson.M{"_taskid": taskid}
+	var jsonArray []G3Data
+	err := LoadDataWithCallback(dbclient, scanid, query, func(data G3Data)(error) {
+		jsonArray = append(jsonArray, data)
+		return nil
+	})
+	return jsonArray, err
+}
+
 // Fetch data IDs that matches a specific fingerprint.
 func GetFingerprintMatchesIDs(dbclient DatastoreClient, scanid string, fingerprints []string) ([]string, error) {
 	query := bson.M{"_fp": bson.M{"$in": fingerprints}}

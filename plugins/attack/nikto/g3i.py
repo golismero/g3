@@ -314,6 +314,59 @@ def read_csv(input_data):
     return findings
 
 
+def _path_from_url(url, host_url):
+    if url and url.startswith(host_url):
+        return url[len(host_url):] or "/"
+    return url or "/"
+
+
+def _findings_from_json_hosts(hosts):
+    findings = []
+    for host in hosts:
+        host_url = _host_url(
+            host.get("host"), host.get("ip"), host.get("port") or "80"
+        )
+        for v in host.get("vulnerabilities", []):
+            url = v.get("url", "")
+            findings.append(
+                Finding(
+                    host_url=host_url,
+                    path=_path_from_url(url, host_url),
+                    method=v.get("method", ""),
+                    refs_str=v.get("references", "") or "",
+                    nikto_id=v.get("id"),
+                    msg=v.get("msg", "") or "",
+                )
+            )
+    return findings
+
+
+def read_json(input_data):
+    """Parse Nikto JSON output. 2.6.0+ emits a clean array of host objects;
+    2.5.0 emitted concatenated per-host objects (invalid JSON for >1 host),
+    which we repair by inserting commas and wrapping in an array."""
+    try:
+        data = json.loads(input_data)
+    except ValueError:
+        repaired = input_data.strip().replace("}{", "},{")
+        if not repaired.startswith("["):
+            repaired = "[" + repaired + "]"
+        try:
+            data = json.loads(repaired)
+        except ValueError:
+            sys.stderr.write(
+                "WARNING: could not parse Nikto JSON (and 2.5.0 fragment "
+                "repair failed); skipping.\n"
+            )
+            return []
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        sys.stderr.write("WARNING: unexpected Nikto JSON shape; skipping.\n")
+        return []
+    return _findings_from_json_hosts(data)
+
+
 def build_issues(findings):
     by_host = {}  # host_url -> list[ {path, cve, msg} ]
     all_taxonomy = []
@@ -375,10 +428,13 @@ def main():
     # CSV: the first line is the Nikto version banner.
     if re.match(r'"Nikto - v.*"', stripped):
         findings = read_csv(input_data)
-    # JSON / XML readers arrive in later tiers; the live wrapper emits CSV.
-    elif stripped[:1] in ("[", "{") or stripped.startswith("<?xml") or stripped.startswith("<niktoscan"):
+    # JSON: 2.6.0 array of host objects, or 2.5.0 concatenated-fragment.
+    elif stripped[:1] in ("[", "{"):
+        findings = read_json(input_data)
+    # XML reader arrives in Tier 4; the live wrapper emits CSV.
+    elif stripped.startswith("<?xml") or stripped.startswith("<niktoscan"):
         sys.stderr.write(
-            "Nikto JSON/XML parsing is not supported yet; only CSV is handled.\n"
+            "Nikto XML parsing is not supported yet (Tier 4); only CSV and JSON are handled.\n"
         )
         json.dump([], sys.stdout)
         return

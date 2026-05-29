@@ -108,14 +108,14 @@ var CLI struct {
 	Quiet   bool             `short:"q" default:"false" help:"Quiet mode."`
 	Version kong.VersionFlag `                          help:"Show version and exit."`
 
-	Scan     ScanCmd     `cmd:"" aliases:"s" help:"Start a new scan or re-start an existing stopped scan."`
-	Progress ProgressCmd `cmd:"" aliases:"w" help:"Show the progress of each running scan in real time."`
-	Logs     LogsCmd     `cmd:"" aliases:"f" help:"Show the execution logs of a scan."`
-	Ls       LsCmd       `cmd:"" aliases:"l" help:"Show the list of all scans."`
-	Ps       PsCmd       `cmd:"" aliases:"t" help:"Show the list of currently running scans."`
-	Cancel   CancelCmd   `cmd:"" aliases:"c" help:"Cancel a running scan."`
-	Report   ReportCmd   `cmd:"" aliases:"o" help:"Produce a Markdown report for a completed scan."`
-	Export   ExportCmd   `cmd:"" aliases:"x" help:"Export the JSON data for a scan."`
+	Scan        ScanCmd        `cmd:"" aliases:"s" help:"Start a new scan or re-start an existing stopped scan."`
+	Progress    ProgressCmd    `cmd:"" aliases:"w" help:"Show the progress of each running scan in real time."`
+	Logs        LogsCmd        `cmd:"" aliases:"f" help:"Show the execution logs of a scan."`
+	Ls          LsCmd          `cmd:"" aliases:"l" help:"Show the list of all scans."`
+	Ps          PsCmd          `cmd:"" aliases:"t" help:"Show the list of currently running scans."`
+	Cancel      CancelCmd      `cmd:"" aliases:"c" help:"Cancel a running scan."`
+	Report      ReportCmd      `cmd:"" aliases:"o" help:"Produce a Markdown report for a completed scan."`
+	Export      ExportCmd      `cmd:"" aliases:"x" help:"Export the JSON data for a scan."`
 	Tools       ToolsCmd       `cmd:"" aliases:"p" help:"Show the list of tools supported by the server."`
 	Rm          RmCmd          `cmd:"" aliases:"d" help:"Delete all information of a scan."`
 	Completions CompletionsCmd `cmd:"" help:"Emit shell completion registration snippet."`
@@ -206,7 +206,7 @@ func main() {
 	go func() {
 		select {
 		case <-signalChan: // first signal, cancel context
-			log.Critical("\nSIGTERM received!")
+			log.Critical("\nSIGINT received!")
 			cancel()
 		case <-ctx.Done():
 		}
@@ -257,12 +257,12 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 	}
 	log.Debug(
 		"\n" +
-		"--------------------------------------------------------------------------------\n" +
-		"--- Server: " + baseUrl + "\n" +
-		"--- Running script:\n" +
-		"\n" +
-		parsed.String() + "\n" +
-		"--------------------------------------------------------------------------------\n")
+			"--------------------------------------------------------------------------------\n" +
+			"--- Server: " + baseUrl + "\n" +
+			"--- Running script:\n" +
+			"\n" +
+			parsed.String() + "\n" +
+			"--------------------------------------------------------------------------------\n")
 
 	// Upload the imported files to the server.
 	for index, parsedImport := range parsed.Imports {
@@ -284,13 +284,13 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 		defer writer.Close()
 
 		// Upload the file in a multipart post request.
-		req, err := http.NewRequest("POST", baseUrl + "/file/upload", bodyReader)
+		req, err := http.NewRequest("POST", baseUrl+"/file/upload", bodyReader)
 		if err != nil {
 			log.Critical("Internal error: " + err.Error())
 			return err
 		}
 		req.Header.Add("Content-Type", writer.FormDataContentType())
-		req.Header.Set("Authorization", "Bearer " + token)
+		req.Header.Set("Authorization", "Bearer "+token)
 		go func() {
 			part, err := writer.CreateFormFile("file", filepath.Base(parsedImport.Path))
 			if err != nil {
@@ -388,7 +388,7 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 	if output == "-" {
 		fmt.Println(scanid)
 	} else {
-		err = os.WriteFile(output, []byte(scanid + "\n"), 0644)
+		err = os.WriteFile(output, []byte(scanid+"\n"), 0644)
 		if err != nil {
 			log.Critical("Error writing to file " + output + ": " + err.Error())
 			return err
@@ -406,7 +406,7 @@ func (cmd *ProgressCmd) Run(vars CmdContext) error {
 
 	// Connect to the websocket API.
 	headers := http.Header{}
-	headers.Set("Authorization", "Bearer " + token)
+	headers.Set("Authorization", "Bearer "+token)
 	c, _, err := websocket.DefaultDialer.Dial(vars.WebSocketURL, headers)
 	if err != nil {
 		log.Critical(err.Error())
@@ -644,7 +644,7 @@ func (cmd *LogsCmd) Run(vars CmdContext) error {
 	if output == "-" {
 		fd = os.Stdout
 	} else {
-		fd, err = os.OpenFile(output, os.O_RDWR | os.O_CREATE | os.O_TRUNC, 0600)
+		fd, err = os.OpenFile(output, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {
 			log.Critical("Error writing to file " + output + ": " + err.Error())
 			return err
@@ -655,10 +655,10 @@ func (cmd *LogsCmd) Run(vars CmdContext) error {
 	// Output the logs.
 	for _, tasklog := range allLogs {
 		fmt.Fprintln(fd, "\033[1m--------------------------------------------------------------------------------\033[0m")
-		fmt.Fprintln(fd, "\033[1m--- Scan ID: " + tasklog.ScanID + "\033[0m")
-		fmt.Fprintln(fd, "\033[1m--- Task ID: " + tasklog.TaskID + "\033[0m")
-		fmt.Fprintln(fd, "\033[1m--- Started: " + time.Unix(tasklog.Start, 0).Format(time.RFC850) + "\033[0m")
-		fmt.Fprintln(fd, "\033[1m--- Ended:   " + time.Unix(tasklog.End, 0).Format(time.RFC850) + "\033[0m")
+		fmt.Fprintln(fd, "\033[1m--- Scan ID: "+tasklog.ScanID+"\033[0m")
+		fmt.Fprintln(fd, "\033[1m--- Task ID: "+tasklog.TaskID+"\033[0m")
+		fmt.Fprintln(fd, "\033[1m--- Started: "+time.Unix(tasklog.Start, 0).Format(time.RFC850)+"\033[0m")
+		fmt.Fprintln(fd, "\033[1m--- Ended:   "+time.Unix(tasklog.End, 0).Format(time.RFC850)+"\033[0m")
 		fmt.Fprintln(fd, "\033[1m--------------------------------------------------------------------------------\033[0m")
 		for _, logline := range tasklog.Lines {
 			fmt.Fprintf(fd, "\033[1m%s:\033[0m %s\033[0m\n", time.Unix(logline.Timestamp, 0).String(), logline.Text)
@@ -752,11 +752,26 @@ func (cmd *PsCmd) Run(vars CmdContext) error {
 				var tmp6 float64
 				var tmp7 string
 
-				tmp4, ok = tmp2.(map[string]interface{});   if !ok { break }
-				tmp5, ok = tmp4["scanid"];                  if !ok { break }
-				tmp3.ScanID, ok = tmp5.(string);            if !ok { break }
-				tmp5, ok = tmp4["status"];                  if !ok { break }
-				tmp7, ok = tmp5.(string);                   if !ok { break }
+				tmp4, ok = tmp2.(map[string]interface{})
+				if !ok {
+					break
+				}
+				tmp5, ok = tmp4["scanid"]
+				if !ok {
+					break
+				}
+				tmp3.ScanID, ok = tmp5.(string)
+				if !ok {
+					break
+				}
+				tmp5, ok = tmp4["status"]
+				if !ok {
+					break
+				}
+				tmp7, ok = tmp5.(string)
+				if !ok {
+					break
+				}
 
 				found := false
 				for _, status := range g3lib.VALID_STATUS {
@@ -771,11 +786,23 @@ func (cmd *PsCmd) Run(vars CmdContext) error {
 					break
 				}
 
-				tmp5, ok = tmp4["progress"];                if !ok { break }
-				tmp6, ok = tmp5.(float64);                  if !ok { break }
+				tmp5, ok = tmp4["progress"]
+				if !ok {
+					break
+				}
+				tmp6, ok = tmp5.(float64)
+				if !ok {
+					break
+				}
 				tmp3.Progress = int(tmp6)
-				tmp5, ok = tmp4["message"];                 if !ok { break }
-				tmp3.Message, ok = tmp5.(string);           if !ok { break }
+				tmp5, ok = tmp4["message"]
+				if !ok {
+					break
+				}
+				tmp3.Message, ok = tmp5.(string)
+				if !ok {
+					break
+				}
 
 				scanprogress = append(scanprogress, tmp3)
 			}
@@ -806,7 +833,7 @@ func (cmd *PsCmd) Run(vars CmdContext) error {
 			},
 		}
 		for _, entry := range scanprogress {
-			msg := strings.ReplaceAll(entry.Message, "\n", " ", )
+			msg := strings.ReplaceAll(entry.Message, "\n", " ")
 			if len(msg) > 80 {
 				msg = msg[:77] + "..."
 			}
@@ -945,13 +972,13 @@ func (cmd *PsCmd) runTaskView(vars CmdContext) error {
 				worker = "-"
 			}
 			r := []*simpletable.Cell{
-				{Align: simpletable.AlignLeft,   Text: entry.TaskID},
+				{Align: simpletable.AlignLeft, Text: entry.TaskID},
 				{Align: simpletable.AlignCenter, Text: state},
-				{Align: simpletable.AlignLeft,   Text: tool},
-				{Align: simpletable.AlignLeft,   Text: worker},
+				{Align: simpletable.AlignLeft, Text: tool},
+				{Align: simpletable.AlignLeft, Text: worker},
 				{Align: simpletable.AlignCenter, Text: lastSeen},
-				{Align: simpletable.AlignRight,  Text: age},
-				{Align: simpletable.AlignRight,  Text: fmt.Sprintf("%d", entry.LineCount)},
+				{Align: simpletable.AlignRight, Text: age},
+				{Align: simpletable.AlignRight, Text: fmt.Sprintf("%d", entry.LineCount)},
 			}
 			table.Body.Cells = append(table.Body.Cells, r)
 		}
@@ -1157,7 +1184,7 @@ func (cmd *ExportCmd) Run(vars CmdContext) error {
 					log.Critical(err.Error())
 					return err
 				}
-				if idx < len(tmp) - 1 || sliceEnd < len(dataidlist) - 1 {
+				if idx < len(tmp)-1 || sliceEnd < len(dataidlist)-1 {
 					if cmd.Beautify {
 						fmt.Fprintf(fd, ",\n")
 					} else {
@@ -1239,7 +1266,7 @@ func (cmd *ToolsCmd) Run(vars CmdContext) error {
 	if output == "-" {
 		fd = os.Stdout
 	} else {
-		fd, err = os.OpenFile(output, os.O_RDWR | os.O_CREATE | os.O_TRUNC, 0600)
+		fd, err = os.OpenFile(output, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {
 			log.Critical("Error writing to file " + output + ": " + err.Error())
 			return err
@@ -1256,9 +1283,9 @@ func (cmd *ToolsCmd) Run(vars CmdContext) error {
 		if CLI.Quiet {
 			fmt.Fprintln(fd, pluginData["name"])
 		} else {
-			fmt.Fprintln(fd, fmt.Sprint("Name:        " + pluginData["name"]))
-			fmt.Fprintln(fd, fmt.Sprint("Homepage:    " + pluginData["url"]))
-			fmt.Fprintln(fd, fmt.Sprint("Description: " + pluginData["description"]))
+			fmt.Fprintln(fd, fmt.Sprint("Name:        "+pluginData["name"]))
+			fmt.Fprintln(fd, fmt.Sprint("Homepage:    "+pluginData["url"]))
+			fmt.Fprintln(fd, fmt.Sprint("Description: "+pluginData["description"]))
 			fmt.Fprintln(fd, "")
 		}
 	}
@@ -1273,7 +1300,7 @@ func (cmd *RmCmd) Run(vars CmdContext) error {
 	arguments := cmd.ScanIDs
 
 	// Ask the user for confirmation, unless -f was used.
-	if ! force {
+	if !force {
 		var msg string
 		if len(arguments) == 1 {
 			msg = fmt.Sprintf("Do you really want to DELETE the scan %s? This is IRREVERSIBLE!", arguments[0])
@@ -1281,7 +1308,7 @@ func (cmd *RmCmd) Run(vars CmdContext) error {
 			msg = fmt.Sprintf("Do you really want to DELETE the selected %d scans? This is IRREVERSIBLE!", len(arguments))
 		}
 		confirm := g3lib.AskForConfirmation(msg)
-		if ! confirm {
+		if !confirm {
 			log.Error("User cancelled the operation.")
 			return errors.New("user cancelled the operation")
 		}
