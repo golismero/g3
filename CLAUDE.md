@@ -13,7 +13,7 @@ make all        # Build Go binaries, Docker image, plugins, and Python deps
 make bin        # Build only Go binaries to /bin/
 make docker     # Build g3 Docker image
 make plugins    # Build all plugin Docker images
-make install    # Install symlinks to /usr/bin/ (g3, g3api, g3cli, g3config, g3man, g3scanner, g3tui, g3worker)
+make install    # Install symlinks to /usr/bin/
 make clean      # Clean compiled binaries
 make misc       # Install Python dependencies from misc/requirements.txt
 ```
@@ -49,7 +49,7 @@ Configuration is driven by `.env` (multiplel documented environment variables co
 | `g3` | Local CLI — accepts scan commands, pipes JSON data through tools |
 | `g3api` | HTTP/WebSocket server — manages scan lifecycle, exposes REST API on :8080 |
 | `g3cli` | Client for g3api — remote scan operations |
-| `g3man` | Debug/inspection CLI for managed scans (LLM-agent and knife-client workflows) |
+| `g3tui` | Fully interactive terminal UI for remote scans |
 | `g3config` | Discovers and registers plugins into `config/` |
 | `g3scanner` | Orchestrates scan pipelines; monitors pending tasks across workers |
 | `g3worker` | Executes individual tools inside Docker containers; reads tasks from MQTT |

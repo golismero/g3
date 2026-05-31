@@ -122,7 +122,7 @@ jobs:
         run: |
           set -e
           mkdir -p "dist/${TARGET}"
-          for bin in g3tui g3cli g3man; do
+          for bin in g3tui g3cli; do
             ( cd "src/${bin}" && \
               go build \
                 -trimpath \

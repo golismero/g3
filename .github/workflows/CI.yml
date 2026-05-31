@@ -61,7 +61,6 @@ jobs:
       g3config: ${{ steps.filter.outputs.g3config }}
       g3lib: ${{ steps.filter.outputs.g3lib }}
       g3log: ${{ steps.filter.outputs.g3log }}
-      g3man: ${{ steps.filter.outputs.g3man }}
       g3scanner: ${{ steps.filter.outputs.g3scanner }}
       g3worker: ${{ steps.filter.outputs.g3worker }}
     steps:
@@ -93,10 +92,6 @@ jobs:
               - 'src/g3config/**'
               - 'src/g3lib/**'
               - 'src/g3log/**'
-            g3man:
-              - 'src/g3man/**'
-              - 'src/g3lib/**'
-              - 'src/g3log/**'
             g3scanner:
               - 'src/g3scanner/**'
               - 'src/g3lib/**'
@@ -115,7 +110,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [g3, g3api, g3cli, g3config, g3lib, g3log, g3man, g3scanner, g3worker]
+        module: [g3, g3api, g3cli, g3config, g3lib, g3log, g3scanner, g3worker]
     # `matrix` isn't available in job-level `if:`, but it is available in
     # job-level `env:`. Compose the gate here and each meaningful step
     # references SHOULD_RUN. Skip a matrix cell only when this is a push
