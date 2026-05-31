@@ -217,21 +217,24 @@ New optional `.g3p` block (parsed into a new optional field on `G3Plugin` in
 }
 ```
 
-`/plugin/describe` response per plugin — only the LLM contract, no presentation
-metadata:
+**Exposure is opt-in.** `/plugin/describe` returns *only* plugins whose `.g3p`
+declares an `llm:` block. The absence of the block is the opt-out signal — a
+plugin without `llm:` is considered not reachable to LLM consumers and is
+filtered out of the response entirely. (Block-present-but-empty, `llm: {}`,
+still counts as opt-in; declaring the block is the signal.) There is **no
+fallback** from `description` / `url` / `image` — those are presentation
+metadata for reports/GUIs, available via the existing `/plugin/list`.
+
+`/plugin/describe` response per opted-in plugin:
 - `name`: the identifier the caller uses to reference the tool in
   `/scan/task/dispatch`.
-- `summary`: the LLM-specific explanation from `llm.summary`. (Falls back to the
-  plugin's `description` *text* internally when `llm.summary` is absent, but the
-  field is always named `summary` — `description`, `url`, and `image` are **not**
-  returned; those are presentation metadata for reports/GUIs, available via the
-  existing `/plugin/list`.)
-- `accepts`, `produces`: from `llm` (fall back to per-command `Returns` for
-  `produces` when `llm` is absent).
+- `summary`: the LLM-specific explanation from `llm.summary`.
+- `accepts`, `produces`: from `llm.accepts` and `llm.produces`.
 - `operations`: one entry per command index — `{ index, description, produces }`
   — because `/scan/task/dispatch` selects a command by `index`. This lets the
   LLM/library pick the right variant (e.g. nikto http vs https) without g3
-  evaluating conditions at dispatch time.
+  evaluating conditions at dispatch time. Per-operation `produces` is sourced
+  from each command's `Returns` (always specific) regardless of `llm.produces`.
 
 Deliberately **no** `when_to_use` / condition guidance. knife already has
 agentic orchestration; encoding *when* to run a tool here would be opinionated

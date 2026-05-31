@@ -134,34 +134,28 @@ func runImport(plugins g3lib.G3PluginMetadata, mdb g3lib.DatastoreClient, artifa
 	return ids, 0, nil
 }
 
-// buildPluginContract assembles the LLM-facing contract for one plugin,
-// falling back gracefully when the optional LLM block is absent.
+// buildPluginContract assembles the LLM-facing contract for one plugin. The
+// caller MUST have ensured plugin.LLM != nil; plugins without the LLM block
+// are not reachable to LLM consumers and are filtered out at the handler
+// before reaching this function.
 func buildPluginContract(plugin g3lib.G3Plugin) g3lib.PluginContract {
-	contract := g3lib.PluginContract{Name: plugin.Name}
-
-	if plugin.LLM != nil && plugin.LLM.Summary != "" {
-		contract.Summary = plugin.LLM.Summary
-	} else if desc, ok := plugin.Description["en"]; ok {
-		contract.Summary = desc
+	contract := g3lib.PluginContract{
+		Name:     plugin.Name,
+		Summary:  plugin.LLM.Summary,
+		Accepts:  plugin.LLM.Accepts,
+		Produces: plugin.LLM.Produces,
 	}
-
-	if plugin.LLM != nil {
-		contract.Accepts = plugin.LLM.Accepts
-		contract.Produces = plugin.LLM.Produces
-	}
-
 	contract.Operations = make([]g3lib.PluginContractOperation, 0, len(plugin.Commands))
 	for i, cmd := range plugin.Commands {
 		op := g3lib.PluginContractOperation{
 			Index:    i,
 			Produces: cmd.Returns,
 		}
-		if plugin.LLM != nil && i < len(plugin.LLM.Commands) {
+		if i < len(plugin.LLM.Commands) {
 			op.Description = plugin.LLM.Commands[i].Description
 		}
 		contract.Operations = append(contract.Operations, op)
 	}
-
 	return contract
 }
 
@@ -1473,7 +1467,14 @@ func Main() int {
 
 			contracts := make([]g3lib.PluginContract, 0, len(plugins))
 			for _, name := range pluginNames {
-				contracts = append(contracts, buildPluginContract(plugins[name]))
+				plugin := plugins[name]
+				// Tools without an `llm:` block in their .g3p are not reachable
+				// to LLM consumers — the absence of the block is the opt-out
+				// signal. Present-but-empty (`llm: {}`) still counts as opt-in.
+				if plugin.LLM == nil {
+					continue
+				}
+				contracts = append(contracts, buildPluginContract(plugin))
 			}
 
 			g3lib.SendApiResponse(w, contracts)

@@ -38,7 +38,17 @@ if raw_input[0] == "{":
             ip = result["targetHost"] + "/" + result["ip"]
             port = result["port"]
             key = result["ip"] + ":" + result["port"]
-            for section in ("pretest", "protocols", "grease", "ciphers", "serverPreferences", "fs", "serverDefaults", "vulnerabilities", "rating"):
+            for section in (
+                "pretest",
+                "protocols",
+                "grease",
+                "ciphers",
+                "serverPreferences",
+                "fs",
+                "serverDefaults",
+                "vulnerabilities",
+                "rating",
+            ):
                 for item in result[section]:
                     item["ip"] = ip
                     item["port"] = port
@@ -66,16 +76,17 @@ elif raw_input[0] == "[":
             traceback.print_exc()
 
 # Parse an output generated with the -oC switch.
-elif raw_input[0] == "\"":
+elif raw_input[0] == '"':
     cmd = None
     start = None
     end = None
     reader = csv.reader(raw_input.split("\n")[1:])
     for row in reader:
-        if not row: continue
+        if not row:
+            continue
         row = list(row)
         if len(row) < 7:
-            row.extend( [""] * (7 - len(row)) )
+            row.extend([""] * (7 - len(row)))
         id, ip, port, severity, finding, cve, cwe = row[:7]
         item = {
             "id": id,
@@ -121,8 +132,10 @@ additional_references = {
     "TLS1_1": ["https://datatracker.ietf.org/doc/html/rfc8996"],
     "HTST": ["https://datatracker.ietf.org/doc/html/rfc6797"],
     "OSCP_stapling": ["https://www.rfc-editor.org/rfc/rfc6066#section-8"],
-    "DNS_CAArecord": ["https://en.wikipedia.org/wiki/DNS_Certification_Authority_Authorization",
-                      "https://docs.digicert.com/en/certcentral/manage-certificates/dns-caa-resource-record-check.html"],
+    "DNS_CAArecord": [
+        "https://en.wikipedia.org/wiki/DNS_Certification_Authority_Authorization",
+        "https://docs.digicert.com/en/certcentral/manage-certificates/dns-caa-resource-record-check.html",
+    ],
     "cipherlist_3DES_IDEA": ["https://en.wikipedia.org/wiki/Triple_DES"],
     "cipherlist_EXPORT": ["https://www.virtuesecurity.com/kb/export-ciphers-enabled"],
     "cipher_order": ["https://crashtest-security.com/configure-ssl-cipher-order/"],
@@ -132,21 +145,35 @@ additional_references = {
     "heartbleed": ["https://heartbleed.com/"],
     "ticketbleed": ["https://filippo.io/Ticketbleed/"],
     "ROBOT": ["https://robotattack.org/"],
-    "secure_client_renego": ["https://myakamai.force.com/customers/s/article/How-to-test-Client-TLS-Renegotiation",
-                             "https://www.kali.org/tools/thc-ssl-dos/"],
+    "secure_client_renego": [
+        "https://myakamai.force.com/customers/s/article/How-to-test-Client-TLS-Renegotiation",
+        "https://www.kali.org/tools/thc-ssl-dos/",
+    ],
     "CRIME_TLS": ["https://en.wikipedia.org/wiki/CRIME"],
-    "BEAST": ["https://www.acunetix.com/blog/web-security-zone/what-is-beast-attack/",
-              "https://web.archive.org/web/20140603102506/https://bug665814.bugzilla.mozilla.org/attachment.cgi?id=540839"],
-    "POODLE": ["https://www.acunetix.com/blog/web-security-zone/what-is-poodle-attack/"],
+    "BEAST": [
+        "https://www.acunetix.com/blog/web-security-zone/what-is-beast-attack/",
+        "https://web.archive.org/web/20140603102506/https://bug665814.bugzilla.mozilla.org/attachment.cgi?id=540839",
+    ],
+    "POODLE": [
+        "https://www.acunetix.com/blog/web-security-zone/what-is-poodle-attack/"
+    ],
     "SWEET32": ["https://sweet32.info/"],
-    "FREAK": ["https://www.cisa.gov/news-events/alerts/2015/03/06/freak-ssltls-vulnerability"],
-    "DROWN": ["https://drownattack.com/drown-attack-paper.pdf",
-              "https://censys.io/ipv4?q=5EF2F214260AB8F58E55EEA42E4AC04B0F171807D8D1185FDDD67470E9AB6096"],
+    "FREAK": [
+        "https://www.cisa.gov/news-events/alerts/2015/03/06/freak-ssltls-vulnerability"
+    ],
+    "DROWN": [
+        "https://drownattack.com/drown-attack-paper.pdf",
+        "https://censys.io/ipv4?q=5EF2F214260AB8F58E55EEA42E4AC04B0F171807D8D1185FDDD67470E9AB6096",
+    ],
     "LOGJAM": ["https://weakdh.org/"],
-    "LUCKY13": ["https://web.archive.org/web/20200324101422/http://www.isg.rhul.ac.uk/tls/Lucky13.html",
-                "https://en.wikipedia.org/wiki/Lucky_Thirteen_attack"],
-    "RC4": ["https://datatracker.ietf.org/doc/html/rfc7465",
-            "https://blog.cryptographyengineering.com/2013/03/attack-of-week-rc4-is-kind-of-broken-in.html"],
+    "LUCKY13": [
+        "https://web.archive.org/web/20200324101422/http://www.isg.rhul.ac.uk/tls/Lucky13.html",
+        "https://en.wikipedia.org/wiki/Lucky_Thirteen_attack",
+    ],
+    "RC4": [
+        "https://datatracker.ietf.org/doc/html/rfc7465",
+        "https://blog.cryptographyengineering.com/2013/03/attack-of-week-rc4-is-kind-of-broken-in.html",
+    ],
 }
 
 # These lists will be populated when parsing below.
@@ -159,7 +186,7 @@ hosts = []
 severity = 0
 
 # Severity rating names in testssl. They happen to be the same ones we use. ;)
-ratings = ("LOW", "MEDIUM", "HIGH", "CRITICAL")     # must be only low and above
+ratings = ("LOW", "MEDIUM", "HIGH", "CRITICAL")  # must be only low and above
 
 # This is the G3 object containing all vulnerabilities for this host.
 # Since testssl.sh detects a ton of vulnerabilities, but they're all intrinsically connected to SSL,
@@ -182,7 +209,6 @@ for key, results in items.items():
     rating_spec = None
     problems = {}
     for item in results:
-
         # We'll use the testssl.sh ID as additional properties we can look up later from the templates.
         # This should work nicely since we know for a fact they cannot collide.
         id = item["id"]
@@ -229,7 +255,6 @@ for key, results in items.items():
         # Possibly some of this data won't be used by the templates, but actually checking
         # is a bit more work than I feel is needed right now. Definitely doable though.
         elif item["severity"] in ratings:
-
             # Skip some redundant items.
             if id.startswith("BEAST_") or id.startswith("cipher_order-"):
                 continue
@@ -287,7 +312,9 @@ for key, results in items.items():
     if grade:
         host["grade"] = grade
         host["grade_cap"] = grade_cap
-        references.append("https://github.com/ssllabs/research/wiki/SSL-Server-Rating-Guide")
+        references.append(
+            "https://github.com/ssllabs/research/wiki/SSL-Server-Rating-Guide"
+        )
     if rating_spec:
         host["rating_spec"] = rating_spec
 
@@ -298,24 +325,30 @@ output_data = []
 
 # If we have vulnerable hosts...
 if hosts:
-
     # Sort the CVE, CWE and reference links alphabetically and remove duplicates.
     taxonomy = sorted(set(taxonomy))
     references = sorted(set(references))
 
     # Set the basic issue properties.
     issue["severity"] = severity
-    if cmd: issue["_cmd"] = cmd
-    if start: issue["_start"] = start
-    if end: issue["_end"] = end
+    if cmd:
+        issue["_cmd"] = cmd
+    if start:
+        issue["_start"] = start
+    if end:
+        issue["_end"] = end
 
     # Add the collected paragraphs to the issue.
-    if affects: issue["affects"] = affects
-    if taxonomy: issue["taxonomy"] = taxonomy
-    if references: issue["references"] = references
+    if affects:
+        issue["affects"] = affects
+    if taxonomy:
+        issue["taxonomy"] = taxonomy
+    if references:
+        issue["references"] = references
 
     # Add the hosts to the issue.
-    if hosts: issue["hosts"] = hosts
+    if hosts:
+        issue["hosts"] = hosts
 
     # Output the issue.
     output_data.append(issue)

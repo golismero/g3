@@ -3,8 +3,8 @@
 import sys
 import json
 
-def main():
 
+def main():
     # We must have a Golismero object array in stdin. Parse it.
     input_array = json.load(sys.stdin)
 
@@ -16,28 +16,45 @@ def main():
 
     # Trivial case, we were given a single object. This should not happen, realistically.
     if len(input_array) == 1:
-        sys.stderr.write("Warning, issue merger received a single issue to be merged!\n")
+        sys.stderr.write(
+            "Warning, issue merger received a single issue to be merged!\n"
+        )
         json.dump(input_array, sys.stdout)
         return
 
     # Some basic sanity checks.
     for issue in input_array:
-        assert "_type" in issue and issue["_type"] == "issue", "Wrong data type for object: " + json.dumps(issue)
-        for propname in ("_cmd", "_fp", "_start", "_end", "severity", "affects", "taxonomy", "references", "plaintext_ports"):
-            assert propname in issue, "Missing %s in data object: %s" % (propname, json.dumps(issue))
+        assert "_type" in issue and issue["_type"] == "issue", (
+            "Wrong data type for object: " + json.dumps(issue)
+        )
+        for propname in (
+            "_cmd",
+            "_fp",
+            "_start",
+            "_end",
+            "severity",
+            "affects",
+            "taxonomy",
+            "references",
+            "plaintext_ports",
+        ):
+            assert propname in issue, "Missing %s in data object: %s" % (
+                propname,
+                json.dumps(issue),
+            )
 
     # Since this plugin can only generate a single type of issue, we will output a single object.
     merged_issue = {
-            "_type": "issue",
-            "_fp": [],
-            "_start": 0,
-            "_end": 0,
-            "severity": 0,
-            "affects": [],
-            "taxonomy": [],
-            "references": [],
-            "plaintext_ports": [],
-        }
+        "_type": "issue",
+        "_fp": [],
+        "_start": 0,
+        "_end": 0,
+        "severity": 0,
+        "affects": [],
+        "taxonomy": [],
+        "references": [],
+        "plaintext_ports": [],
+    }
 
     # Collect all of the properties we want to merge.
     ids = []
@@ -69,11 +86,13 @@ def main():
     merged_issue["references"] = sorted(set(merged_issue["references"]))
     pp = sorted(set(pp))
     for x in pp:
-        merged_issue["plaintext_ports"].append({
-            "address": x[0],
-            "port": x[1],
-            "service": x[2],
-        })
+        merged_issue["plaintext_ports"].append(
+            {
+                "address": x[0],
+                "port": x[1],
+                "service": x[2],
+            }
+        )
 
     # Check if the resulting issue is identical to one of the issues in the input array.
     # This will happen if the merger was run more than once.
@@ -95,6 +114,7 @@ def main():
 
     # Write the output array to stdout.
     json.dump([merged_issue], sys.stdout)
+
 
 if __name__ == "__main__":
     main()

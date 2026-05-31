@@ -111,7 +111,7 @@ jobs:
       # `run:` blocks is a known workflow-injection vector — even when the
       # source looks safe (tag names, matrix values), env routing keeps the
       # value out of the shell parser.
-      - name: Build g3tui and g3cli
+      - name: Build client binaries
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -122,7 +122,7 @@ jobs:
         run: |
           set -e
           mkdir -p "dist/${TARGET}"
-          for bin in g3tui g3cli; do
+          for bin in g3tui g3cli g3man; do
             ( cd "src/${bin}" && \
               go build \
                 -trimpath \

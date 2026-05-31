@@ -1,9 +1,7 @@
-# DEPRECATION NOTE:
-This tool is something I (@MarioVilas) have been working on some years ago in private, but sadly had to abandon due to lack of time to develop it. I'm releasing it now in case it's interesting to anyone, but I won't be providing support, and I'm not sure when (or if) I'll be able to continue development on it in the future.
-
-EDIT: turns out I got tempted back :D but it's still far from ready...
-
 # Golismero3 -- The Pentesting Swiss Army Knife
+
+We're officially back!
+
 ![Golismero3 Logo](misc/logo_transparent_small.png "Golismero3 Logo")
 
 ## What is Golismero3?
@@ -16,6 +14,9 @@ The most interesting features of the framework are:
 * Can both run tools and collect the output files of previous runs.
 * Can be used locally from the command line, following a Unix philosophy.
 * Can be used remotely as a scan service, using an HTTP API.
+* Can be used from a terminal UI client, for extra simplicity.
+* Can be integrated with LLM agents and agentic frameworks.
+* Built-in report generation in MarkDown - but integrated with other reporting tools (see https://github.com/golismero/magenta)
 
 You can find the list of currently supported tools in the [plugins](../blob/master/plugins) folder.
 
@@ -27,7 +28,7 @@ The planned future features of Golismero3 are:
 * Export results in PDF and MS Word format, to keep the boss happy.
 * And more plugins of course!
 
-## Basic usage
+## Local usage
 There are two modes of operation: local and remote. When running locally, you can use the power of your favorite shell scripting language to integrate tools however you see fit. For example, the following command will run nmap against 192.168.1.1, then run testssl against any open ports that nmap detected are using SSL/TLS, then generate a report in Markdown format:
 
 ```
@@ -75,8 +76,12 @@ Commands:
 Run "g3 <command> --help" for more information on a command.
 ```
 
-## Advanced usage
-The local mode is fine if you're working by yourself and are doing simple tests, but what happens if you have an entire team and you all want to launch your scans from a server? Remote mode has you covered. There is a simple command line tool that you can use to talk to a Golismero3 server:
+## Remote usage
+The local mode is fine if you're working by yourself and are doing simple tests, but what happens if you have an entire team and you all want to launch your scans from a server? Remote mode has you covered.
+
+The easiest way to do it is by running the `g3tui` terminal UI - it connects to the Golismero3 server of your choice and is fully interactive.
+
+There is also simple command line tool that you can use to talk to a Golismero3 server:
 
 ```
 $ g3cli --help
@@ -202,201 +207,7 @@ After doing that, review the [.env](../blob/master/.env) and [docker-compose.yml
 
 The default `docker-compose.yml` only allows running two scans and four tools at a time, which is fine for a quick spin when trying on your laptop but may be too little for a proper server. Try adding extra services to support more concurrency, as specified in the comments.
 
-Note that Golismero3 does not by itself support SSL, so you will need to put a reverse proxy between the API and the clients, such as for example [lscr.io/linuxserver/swag](lscr.io/linuxserver/swag).
-
-<details>
-<summary>Example docker-compose.yml file</summary>
-
-This is what an example `docker-compose.yml` file might look like in production, allowing 4 consecutive scans, 4 concurrent nmap scans, and 12 concurrent executions for the rest of the supported tools:
-
-```
-version: '3.6'
-
-networks:
-  g3net:
-    name: g3net
-
-services:
-  swag:
-    image: lscr.io/linuxserver/swag
-    depends_on:
-      - g3api
-    cap_add:
-      - NET_ADMIN
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/London
-      - URL=putyourhostnamehere.com
-      - SUBDOMAINS=g3
-      - VALIDATION=http
-      - ONLY_SUBDOMAINS=false
-      - EXTRA_DOMAINS=
-      - STAGING=false
-    networks:
-      - g3net
-    volumes:
-      - ./volumes/swag:/config
-    ports:
-      - "443:443"
-      - "80:80"
-    restart: unless-stopped
-
-  mongo:
-    image: mongo:4.4.6
-    restart: unless-stopped
-    networks:
-      - g3net
-    volumes:
-      - ./volumes/mongo:/data/db
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: "${MONGO_USERNAME}"
-      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_PASSWORD}"
-
-  mosquitto:
-    image: eclipse-mosquitto
-    restart: unless-stopped
-    networks:
-      - g3net
-    volumes:
-      - ./volumes/mosquitto/config:/mosquitto/config/
-      - ./volumes/mosquitto/log:/mosquitto/log/
-      - ./volumes/mosquitto/data:/mosquitto/data/
-
-  mariadb:
-    image: mariadb
-    restart: unless-stopped
-    networks:
-      - g3net
-    volumes:
-      - ./volumes/mariadb/data:/var/lib/mysql
-      - ./volumes/mariadb/initdb.d:/docker-entrypoint-initdb.d:ro
-    environment:
-      MYSQL_ROOT_PASSWORD: "${SQL_ROOT_PASSWORD}"
-      MYSQL_DATABASE: "${SQL_DATABASE}"
-      MYSQL_USER: "${SQL_USERNAME}"
-      MYSQL_PASSWORD: "${SQL_PASSWORD}"
-
-  redis:
-    image: redis:latest
-    command: redis-server --port ${REDIS_PORT} --requirepass ${REDIS_PASSWORD}
-    restart: unless-stopped
-    networks:
-      - g3net
-    volumes:
-      - ./volumes/redis:/data
-
-  g3api:
-    image: ghcr.io/golismero/g3
-    entrypoint: /bin/g3api
-    restart: unless-stopped
-    depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - redis
-    networks:
-      - g3net
-    volumes:
-      - ./config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - G3HOME=/app
-      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-      - SQL_DRIVER=mysql
-      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
-      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
-      - G3_API_TOKEN
-      - G3_WS_ADDR=0.0.0.0
-      - G3_WS_PORT
-      - G3_WS_BUFFER
-      - G3_LOG_LEVEL
-
-  g3scanner1:
-    image: ghcr.io/golismero/g3
-    entrypoint: /bin/g3scanner
-    restart: unless-stopped
-    depends_on:
-      - mariadb
-      - mongo
-      - mosquitto
-      - redis
-    networks:
-      - g3net
-    volumes:
-      - ./config:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - G3HOME=/app
-      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-      - SQL_DRIVER=mysql
-      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
-      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
-      - G3_SCANNER_PARALLEL_MODE
-      - G3_SCANNER_MAX_PIPELINES
-      - G3_SCANNER_MAX_DEPTH
-      - G3_LOG_LEVEL
-
-  # ...insert 3 more of these...
-
-  g3worker1:
-    image: ghcr.io/golismero/g3
-    entrypoint: /bin/g3worker
-    restart: unless-stopped
-    depends_on:
-    - mariadb
-    - mongo
-    - mosquitto
-    networks:
-    - g3net
-    volumes:
-    - ./config:/app/config
-    - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-    - G3HOME=/app
-    - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-    - SQL_DRIVER=mysql
-    - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
-    - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-    - G3_WORKER_PLUGINS=nmap
-    - G3_HOLD_CANCEL
-    - G3_LOG_LEVEL
-
-  # ...insert 3 more of these...
-
-  g3worker5:
-    image: ghcr.io/golismero/g3
-    entrypoint: /bin/g3worker
-    restart: unless-stopped
-    depends_on:
-    - mariadb
-    - mongo
-    - mosquitto
-    networks:
-    - g3net
-    volumes:
-    - ./config:/app/config
-    - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-    - G3HOME=/app
-    - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-    - SQL_DRIVER=mysql
-    - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
-    - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-    - G3_WORKER_PLUGINS=!nmap
-    - G3_HOLD_CANCEL
-    - G3_LOG_LEVEL
-
-  # ...insert 11 more of these...
-```
-
-</details>
+Note that Golismero3 does not by itself support SSL, so you will need to put a reverse proxy between the API and the clients.
 
 ### Scanner / worker instance IDs
 

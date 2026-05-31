@@ -7,7 +7,7 @@ replace golismero.com/g3lib => ../g3lib
 replace golismero.com/g3log => ../g3log
 
 require (
-	github.com/go-playground/validator/v10 v10.30.2
+	github.com/go-playground/validator/v10 v10.30.3
 	github.com/google/go-containerregistry v0.21.6
 	github.com/google/go-jsonnet v0.22.0
 	github.com/spf13/pflag v1.0.10
@@ -65,7 +65,7 @@ require (
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260428144813-1c07baab7f7b // indirect
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.139.1 // indirect
+	github.com/ydb-platform/ydb-go-sdk/v3 v3.139.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect

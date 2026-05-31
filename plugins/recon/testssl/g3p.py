@@ -14,6 +14,7 @@ import subprocess
 # anything outside [0-9a-fA-F-] returns None (defense against malformed upstream data).
 _IP_SLUG_ALLOWED = set("0123456789abcdefABCDEF-")
 
+
 def ip_slug(ip):
     slug = ip.replace(":", "-").replace(".", "-")
     if not slug or not all(c in _IP_SLUG_ALLOWED for c in slug):
@@ -23,11 +24,21 @@ def ip_slug(ip):
 
 # Base arguments for testssl.
 # TODO some of this could come from environment variables
-base_args = ["testssl.sh", "--sneaky", "--phone-out", "--hints", "--connect-timeout", "10", "--openssl-timeout", "10", "--wide"]
+base_args = [
+    "testssl.sh",
+    "--sneaky",
+    "--phone-out",
+    "--hints",
+    "--connect-timeout",
+    "10",
+    "--openssl-timeout",
+    "10",
+    "--wide",
+]
 
 # Disable IPv6 unless explicitly enabled.
 is_ipv6_enabled = os.getenv("G3_ENV_IPV6_SUPPORTED")
-is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true" )
+is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true")
 
 # Here we will have the output data.
 output_data = []
@@ -46,14 +57,16 @@ if "url" in input_data:
     url = input_data["url"]
     fd, tmp = tempfile.mkstemp()
     try:
-        with os.fdopen(fd, 'r') as tmpfd:
+        with os.fdopen(fd, "r") as tmpfd:
             args = list(base_args)
             if is_ipv6_enabled:
                 args.append("-6")
             args.extend(["-oJ", tmp, "--overwrite", "--", url])
             # Run testssl, tee'ing combined stdout/stderr to both stderr (live) and the artifacts log.
             with open("/artifacts/testssl.txt", "wb") as logfile:
-                proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                proc = subprocess.Popen(
+                    args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                )
                 for line in proc.stdout:
                     sys.stderr.buffer.write(line)
                     sys.stderr.buffer.flush()
@@ -61,12 +74,14 @@ if "url" in input_data:
                 proc.wait()
             if proc.returncode and not worst_rc:
                 worst_rc = proc.returncode
-            process = subprocess.Popen(["/usr/bin/g3i", tmp], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+            process = subprocess.Popen(
+                ["/usr/bin/g3i", tmp], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
             stdout, stderr = process.communicate()
             if stderr:
                 sys.stderr.write(stderr)
             if stdout:
-                output_data.extend( json.loads(stdout) )
+                output_data.extend(json.loads(stdout))
                 for g3d in output_data:
                     g3d["_artifacts"] = ["testssl.txt", "testssl.json"]
 
@@ -79,11 +94,17 @@ if "url" in input_data:
 # Process hosts. This means we are running a network test.
 # Process IPv4 and IPv6 separately since we can only pass one using "--ip".
 else:
-    for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_enabled else ""):
-        if not ip: continue
+    for ip in (
+        input_data.get("ipv4", ""),
+        input_data.get("ipv6", "") if is_ipv6_enabled else "",
+    ):
+        if not ip:
+            continue
         slug = ip_slug(ip)
         if slug is None:
-            sys.stderr.write("Warning: skipping testssl for malformed IP value %r\n" % ip)
+            sys.stderr.write(
+                "Warning: skipping testssl for malformed IP value %r\n" % ip
+            )
             continue
         host = input_data
 
@@ -99,7 +120,6 @@ else:
         # This will result in a slower scan altogether but it's also more likely to be accurate.
         # TODO this could be run in parallel using the multiprocessing library.
         for service in host["services"]:
-
             # Skip if the port number is unknown (should not happen).
             if "port" not in service:
                 continue
@@ -121,15 +141,29 @@ else:
             # Determine if this is an SSL port, also add protocol specific options.
             # FIXME review this logic, reality is probably more complicated
             if name == "https" or service.get("ssl", False):
-                pass        # no further args needed
-            elif name in ("ftp", "smtp", "lmtp", "pop3", "imap", "sieve", "xmpp", "xmpp-server", "telnet", "ldap", "nntp", "postgres", "mysql"):
+                pass  # no further args needed
+            elif name in (
+                "ftp",
+                "smtp",
+                "lmtp",
+                "pop3",
+                "imap",
+                "sieve",
+                "xmpp",
+                "xmpp-server",
+                "telnet",
+                "ldap",
+                "nntp",
+                "postgres",
+                "mysql",
+            ):
                 args.append("-t")
                 args.append(name)
                 if name in ("xmpp", "xmpp-server"):
                     args.append("--xmpphost")
                     args.append(hostname)
             else:
-                continue    # not an SSL port
+                continue  # not an SSL port
 
             # Per-target artifact filenames so multiple (ip, port) tuples don't clobber.
             txt_path = "/artifacts/testssl.%s.%d.txt" % (slug, port)
@@ -143,7 +177,9 @@ else:
             # Run testssl.sh, tee'ing combined stdout/stderr to both stderr (live)
             # and the artifacts log. This will send all of the text output into the G3 logs.
             with open(txt_path, "wb") as logfile:
-                proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                proc = subprocess.Popen(
+                    args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                )
                 for line in proc.stdout:
                     sys.stderr.buffer.write(line)
                     sys.stderr.buffer.flush()
@@ -154,7 +190,11 @@ else:
 
             # Call the importer on the output file.
             # Capture stdout so we can parse it later.
-            process = subprocess.Popen(["/usr/bin/g3i", json_path], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+            process = subprocess.Popen(
+                ["/usr/bin/g3i", json_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
             stdout, stderr = process.communicate()
             if stderr:
                 sys.stderr.write(stderr)

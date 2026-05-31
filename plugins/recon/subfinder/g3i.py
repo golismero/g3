@@ -19,7 +19,7 @@ if not input:
     sys.stderr.write("Empty input file!\n")
     exit(1)
 isJSON = input[0][0] == "{"
-isJSONWithSources = False   # will be decided later
+isJSONWithSources = False  # will be decided later
 isTextWithSources = input[0][-1] == "]"
 
 # Parse the results no matter what the input format is.
@@ -34,12 +34,12 @@ for line in input:
         if hostname is None:
             hostname = data["input"]
         if "sources" in data:
-            isJSONWithSources = True    # used -cs
+            isJSONWithSources = True  # used -cs
     else:
         if isTextWithSources:
             p = line.find(",")
             assert p > 0, line
-            assert line[p+1] == "[", line
+            assert line[p + 1] == "[", line
             host = line[:p]
         else:
             host = line
@@ -71,7 +71,13 @@ if not isJSON:
 
 # Now that we have all of the information we can reconstruct the command line.
 # Doesn't have to be 100% accurate, just good enough for the report.
-cmd = "subfinder -v " + ("-oJ " if isJSON else "") + ("-cs " if isTextWithSources or isJSONWithSources else "") + "-d " + shlex.quote(hostname)
+cmd = (
+    "subfinder -v "
+    + ("-oJ " if isJSON else "")
+    + ("-cs " if isTextWithSources or isJSONWithSources else "")
+    + "-d "
+    + shlex.quote(hostname)
+)
 
 # Generate the fingerprint for the results.
 fp = ["subfinder " + hostname]
@@ -79,12 +85,14 @@ fp = ["subfinder " + hostname]
 # Convert the results into G3 format.
 output = []
 for host in results:
-    output.append({
-        "_cmd": cmd,
-        "_fp": fp,
-        "_artifacts": ARTIFACTS,
-        "domain": host,
-    })
+    output.append(
+        {
+            "_cmd": cmd,
+            "_fp": fp,
+            "_artifacts": ARTIFACTS,
+            "domain": host,
+        }
+    )
 
 # Print out the output data in JSON format.
 json.dump(output, sys.stdout)

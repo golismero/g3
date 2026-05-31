@@ -2,7 +2,9 @@
 .github/
 .remember/
 .ruff_cache/
+.venv/
 bin/
+clients/
 config/.gitignore
 config/g3*.json
 docs/

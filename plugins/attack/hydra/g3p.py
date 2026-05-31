@@ -7,12 +7,22 @@ import socket
 import subprocess
 
 # Supported protocols. There are special cases for http, ldap, smtp.
-SUPPORTED_PROTOCOLS = "adam6500 asterisk cisco cisco-enable cvs firebird ftp fpts icq imap imaps irc memcached mongodb mssql mysql nntp oracle-listener oracle-sid pcanywhere pcnfs pop3 pop3s postgres radmin2 rdp redis rexec rlogin rpcap rsh rtsp s7-300 sip smb snmp socks5 ssh svn teamspeak telnet telnets vmauthd vnc xmpp".split(" ")
+SUPPORTED_PROTOCOLS = "adam6500 asterisk cisco cisco-enable cvs firebird ftp fpts icq imap imaps irc memcached mongodb mssql mysql nntp oracle-listener oracle-sid pcanywhere pcnfs pop3 pop3s postgres radmin2 rdp redis rexec rlogin rpcap rsh rtsp s7-300 sip smb snmp socks5 ssh svn teamspeak telnet telnets vmauthd vnc xmpp".split(
+    " "
+)
 
 # Base arguments for hydra.
 assert "HYDRA_LOGIN_FILE" in os.environ, "Missing environment variable HYDRA_LOGIN_FILE"
-assert "HYDRA_PASSWORD_FILE" in os.environ, "Missing environment variable HYDRA_PASSWORD_FILE"
-base_args = ["hydra", "-L", os.environ["HYDRA_LOGIN_FILE"], "-P", os.environ["HYDRA_PASSWORD_FILE"]]
+assert "HYDRA_PASSWORD_FILE" in os.environ, (
+    "Missing environment variable HYDRA_PASSWORD_FILE"
+)
+base_args = [
+    "hydra",
+    "-L",
+    os.environ["HYDRA_LOGIN_FILE"],
+    "-P",
+    os.environ["HYDRA_PASSWORD_FILE"],
+]
 if "HYDRA_MAX_TASKS" in os.environ:
     base_args.append("-t")
     base_args.append(os.environ["HYDRA_MAX_TASKS"])
@@ -21,15 +31,17 @@ if "HYDRA_MAX_TASKS" in os.environ:
 # anything outside [0-9a-fA-F-] returns None (defense against malformed upstream data).
 _IP_SLUG_ALLOWED = set("0123456789abcdefABCDEF-")
 
+
 def ip_slug(ip):
     slug = ip.replace(":", "-").replace(".", "-")
     if not slug or not all(c in _IP_SLUG_ALLOWED for c in slug):
         return None
     return slug
 
+
 # Disable IPv6 unless explicitly enabled.
 is_ipv6_enabled = os.getenv("G3_ENV_IPV6_SUPPORTED")
-is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true" )
+is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true")
 
 # Here we will have the output data.
 output_data = []
@@ -46,8 +58,12 @@ input_data = json.load(sys.stdin)
 # We should be getting either an IPv4 or an IPv6 address, but not both.
 # If g3 ever starts mixing them up on the same object, this logic needs to change.
 # It's written as a loop to make it more future-proof (at least it'll do something right-ish).
-for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_enabled else ""):
-    if not ip: continue
+for ip in (
+    input_data.get("ipv4", ""),
+    input_data.get("ipv6", "") if is_ipv6_enabled else "",
+):
+    if not ip:
+        continue
     slug = ip_slug(ip)
     if slug is None:
         sys.stderr.write("Warning: skipping hydra for malformed IP value %r\n" % ip)
@@ -66,7 +82,6 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_ena
     # This will result in a slower scan altogether but it's also more likely to be accurate.
     # TODO this could be run in parallel using the multiprocessing library.
     for service in host["services"]:
-
         # Skip if the port number is unknown (should not happen).
         if "port" not in service:
             continue
@@ -79,7 +94,9 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_ena
             try:
                 protocol = socket.getservbyport(port)
             except Exception:
-                sys.stderr.write("[G3] Warning: unknown protocol on port %d, skipped\n" % port)
+                sys.stderr.write(
+                    "[G3] Warning: unknown protocol on port %d, skipped\n" % port
+                )
                 continue
 
         # Determine if hydra supports this protocol.
@@ -95,7 +112,10 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_ena
             sys.stderr.write("[G3] Warning: SMTP not supported yet.\n")
             continue
         if protocol not in SUPPORTED_PROTOCOLS:
-            sys.stderr.write("[G3] Protocol not supported by Hydra: %s (port %d)\n" % (protocol, port))
+            sys.stderr.write(
+                "[G3] Protocol not supported by Hydra: %s (port %d)\n"
+                % (protocol, port)
+            )
             continue
 
         # Prepare the output filename for hydra.
@@ -109,7 +129,7 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_ena
 
         # Run Hydra, piping stdout and stderr directly to our stderr.
         # This will send all of the text output into the G3 logs.
-        result = subprocess.run(args, stdout = sys.stderr, stderr = sys.stderr, check=False)
+        result = subprocess.run(args, stdout=sys.stderr, stderr=sys.stderr, check=False)
         # hydra returns 0 on a clean run (creds found OR none); any non-zero
         # (255 = errors, 2 = signal) is a real failure worth flagging.
         if result.returncode and not worst_rc:
@@ -117,7 +137,11 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_ena
 
         # Call the importer on the output file.
         # Capture stdout so we can parse it later.
-        process = subprocess.Popen(["/usr/bin/g3i", output_file], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+        process = subprocess.Popen(
+            ["/usr/bin/g3i", output_file],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         stdout, stderr = process.communicate()
         if stderr:
             sys.stderr.write(stderr)
@@ -125,7 +149,7 @@ for ip in (input_data.get("ipv4", ""), input_data.get("ipv6", "") if is_ipv6_ena
             continue
 
         # Parse the output file as JSON.
-        output_data.extend( json.loads(stdout) )
+        output_data.extend(json.loads(stdout))
 
 # Send the JSON output array over stdout.
 json.dump(output_data, sys.stdout)

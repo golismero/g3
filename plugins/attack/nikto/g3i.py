@@ -65,16 +65,30 @@ _UNICODE_HYPHENS = re.compile("[‐-―−]")
 # Each entry: (compiled regex, bucket, prefix) where bucket is
 # "cve"/"taxonomy"/"osvdb"; the captured group is the id payload.
 _URL_TAXONOMY_PATTERNS = [
-    (re.compile(r"^https?://cwe\.mitre\.org/data/definitions/(\d+)\.html", re.I),
-     "taxonomy", "CWE-"),
-    (re.compile(r"^https?://capec\.mitre\.org/data/definitions/(\d+)\.html", re.I),
-     "taxonomy", "CAPEC-"),
-    (re.compile(r"^https?://(?:[\w.-]+\.)?vulners\.com/osvdb/OSVDB:(\d+)", re.I),
-     "osvdb", ""),
-    (re.compile(
-        r"^https?://(?:nvd\.nist\.gov|(?:www\.)?cve\.(?:mitre\.org|org))/\S*?"
-        r"(CVE-\d{4}-\d+)", re.I),
-     "cve", ""),
+    (
+        re.compile(r"^https?://cwe\.mitre\.org/data/definitions/(\d+)\.html", re.I),
+        "taxonomy",
+        "CWE-",
+    ),
+    (
+        re.compile(r"^https?://capec\.mitre\.org/data/definitions/(\d+)\.html", re.I),
+        "taxonomy",
+        "CAPEC-",
+    ),
+    (
+        re.compile(r"^https?://(?:[\w.-]+\.)?vulners\.com/osvdb/OSVDB:(\d+)", re.I),
+        "osvdb",
+        "",
+    ),
+    (
+        re.compile(
+            r"^https?://(?:nvd\.nist\.gov|(?:www\.)?cve\.(?:mitre\.org|org))/\S*?"
+            r"(CVE-\d{4}-\d+)",
+            re.I,
+        ),
+        "cve",
+        "",
+    ),
 ]
 
 
@@ -281,7 +295,13 @@ def read_csv(input_data):
         n = len(row)
         if n >= 7:
             hostname, ip, port, col_ref, method, uri, msg = (
-                row[0], row[1], row[2], row[3], row[4], row[5], row[6],
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
+                row[6],
             )
             # Host-start rows have empty method+uri (banner sits in col7).
             if not method and not uri:
@@ -290,7 +310,12 @@ def read_csv(input_data):
         elif n == 6:
             # 2.1.5 port-merge bug: hostname, ip+junk+port, OSVDB, method, uri, msg.
             hostname, _ip_junk, col_ref, method, uri, msg = (
-                row[0], row[1], row[2], row[3], row[4], row[5],
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
             )
             if not method and not uri:
                 continue
@@ -316,16 +341,14 @@ def read_csv(input_data):
 
 def _path_from_url(url, host_url):
     if url and url.startswith(host_url):
-        return url[len(host_url):] or "/"
+        return url[len(host_url) :] or "/"
     return url or "/"
 
 
 def _findings_from_json_hosts(hosts):
     findings = []
     for host in hosts:
-        host_url = _host_url(
-            host.get("host"), host.get("ip"), host.get("port") or "80"
-        )
+        host_url = _host_url(host.get("host"), host.get("ip"), host.get("port") or "80")
         for v in host.get("vulnerabilities", []):
             url = v.get("url", "")
             findings.append(

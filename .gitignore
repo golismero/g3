@@ -3,4 +3,7 @@ private/
 *-report.md
 *-export.json
 *-logs.log
+*.egg_info/
 __pycache__/
+.ruff_cache/
+.venv/

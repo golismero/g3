@@ -5,7 +5,7 @@
 from os import unlink
 from os.path import dirname, join, realpath
 from json import dump
-from bs4 import BeautifulSoup           # pip install beautifulsoup4
+from bs4 import BeautifulSoup  # pip install beautifulsoup4
 from urllib.request import urlopen
 
 html_file = join(dirname(realpath(__file__)), "source-OSVDB.html")
@@ -37,7 +37,7 @@ for tag in soup.find_all():
     if name == "td" and value.startswith("OSVDB:"):
         osvdb = value
     elif name == "a" and value.startswith("CVE-"):
-        cve = [ x.strip() for x in value.split(" ") ]
+        cve = [x.strip() for x in value.split(" ")]
         if osvdb in o2c_map:
             o2c_map[osvdb].extend(cve)
         else:

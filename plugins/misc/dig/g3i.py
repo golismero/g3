@@ -29,41 +29,47 @@ for response in input:
     server = response["server"]
     p = server.find("(")
     q = server.find(")", p)
-    assert p >= 0, (p,q)
-    assert q >= 0, (p,q)
-    assert p < q, (p,q)
+    assert p >= 0, (p, q)
+    assert q >= 0, (p, q)
+    assert p < q, (p, q)
     server = "@" + server[p:q]
     cmd = shlex.join(["dig", "-t", response["question"]["type"], domain, server])
     fp = ["dig " + domain]
-    output.append({
-        "_type": "domain",
-        "_cmd": cmd,
-        "_fp": fp,
-        "_artifacts": ARTIFACTS,
-        "domain": domain,
-        "records": response["answer"],
-    })
+    output.append(
+        {
+            "_type": "domain",
+            "_cmd": cmd,
+            "_fp": fp,
+            "_artifacts": ARTIFACTS,
+            "domain": domain,
+            "records": response["answer"],
+        }
+    )
 
     # Get the IP addresses.
     for answer in response["answer"]:
         if answer["type"] == "A":
-            output.append({
-                "_type": "host",
-                "_cmd": cmd,
-                "_fp": fp,
-                "_artifacts": ARTIFACTS,
-                "ipv4": answer["data"],
-                "hostnames": [answer["name"][:-1]],
-            })
+            output.append(
+                {
+                    "_type": "host",
+                    "_cmd": cmd,
+                    "_fp": fp,
+                    "_artifacts": ARTIFACTS,
+                    "ipv4": answer["data"],
+                    "hostnames": [answer["name"][:-1]],
+                }
+            )
         if answer["type"] == "AAAA":
-            output.append({
-                "_type": "host",
-                "_cmd": cmd,
-                "_fp": fp,
-                "_artifacts": ARTIFACTS,
-                "ipv6": answer["data"],
-                "hostnames": [answer["name"][:-1]],
-            })
+            output.append(
+                {
+                    "_type": "host",
+                    "_cmd": cmd,
+                    "_fp": fp,
+                    "_artifacts": ARTIFACTS,
+                    "ipv6": answer["data"],
+                    "hostnames": [answer["name"][:-1]],
+                }
+            )
 
 # Print out the output data in JSON format.
 json.dump(output, sys.stdout)

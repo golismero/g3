@@ -4,6 +4,16 @@
         en: "WAFW00F allows one to identify and fingerprint Web Application Firewall (WAF) products protecting a website.",
     },
 
+    llm: {
+        summary: "Web Application Firewall (WAF) detection and fingerprinting.",
+        accepts: ["domain", "url"],
+        produces: "url",
+        commands: [
+            { description: "Probe https://<domain> to detect and fingerprint any WAF in front of it." },
+            { description: "Probe the host of an existing URL object to detect and fingerprint any WAF in front of it." },
+        ],
+    },
+
     commands: [
         {
             condition: "{{if .domain}} true {{else}} false {{end}}",

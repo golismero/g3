@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"strings"
@@ -133,6 +134,151 @@ func MakeApiRequest(ctx context.Context, baseurl string, endpoint string, token 
 		err = errors.New(response.Data.(string))
 	}
 	return &response, err
+}
+
+// DownloadFile is the binary-response sibling of MakeApiRequest. It POSTs the
+// JSON body with bearer auth, streams a successful response into dst, and
+// surfaces JSON error envelopes from non-2xx responses as Go errors.
+//
+// The endpoint must respond with a binary body on success (any non-JSON
+// Content-Type is fine; the helper doesn't inspect it) and a standard
+// {status,data} JSON envelope on failure, per the SendApiError convention.
+func DownloadFile(ctx context.Context, baseurl string, endpoint string, token string, body any, dst io.Writer) error {
+
+	// Figure out if we have to show debug output for the API calls.
+	doDebugAPI := DoDebugAPI()
+
+	// Validate the request structure.
+	if err := validator.New().Struct(body); err != nil {
+		return err
+	}
+
+	// Encode the request structure as JSON.
+	jsonBytes, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	// Get the endpoint URL.
+	url := baseurl + endpoint
+
+	// When debugging, show the request.
+	if doDebugAPI {
+		log.Debug(endpoint + " --> " + string(jsonBytes))
+	}
+
+	// Make the HTTP request.
+	r, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return err
+	}
+	r = r.WithContext(ctx)
+	r.Header.Add("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer "+token)
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	// On success, stream the body verbatim into dst.
+	if res.StatusCode == http.StatusOK {
+		_, err := io.Copy(dst, res.Body)
+		return err
+	}
+
+	// On non-2xx, attempt to decode the JSON error envelope.
+	respBytes, readErr := io.ReadAll(res.Body)
+	if readErr != nil {
+		return errors.New(res.Status)
+	}
+	if doDebugAPI {
+		log.Debug("<-- " + string(respBytes))
+	}
+	var envelope APIResponse
+	if jerr := json.Unmarshal(respBytes, &envelope); jerr == nil {
+		if msg, ok := envelope.Data.(string); ok && msg != "" {
+			return errors.New(msg)
+		}
+	}
+	return errors.New(res.Status)
+}
+
+// UploadFile POSTs the contents of src to endpoint as a multipart form with the
+// given field name and filename, using bearer-token auth. Returns the parsed
+// JSON envelope on 2xx, or an error containing the server's message on non-2xx.
+//
+// The whole file is buffered in memory before the request fires. That's
+// acceptable for the upload sizes g3 supports (importer inputs, plugin
+// artifacts); if streaming becomes necessary, switch to io.Pipe with a
+// goroutine — see g3cli's inline pattern for a reference implementation.
+func UploadFile(ctx context.Context, baseurl string, endpoint string, token string, fieldName string, filename string, src io.Reader) (*APIResponse, error) {
+
+	doDebugAPI := DoDebugAPI()
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile(fieldName, filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(part, src); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+
+	url := baseurl + endpoint
+	if doDebugAPI {
+		log.Debug(endpoint + " --> multipart upload, field=" + fieldName + " filename=" + filename)
+	}
+
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
+	if err != nil {
+		return nil, err
+	}
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	r.Header.Set("Authorization", "Bearer "+token)
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	respBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	if doDebugAPI {
+		log.Debug("<-- " + string(respBytes))
+	}
+
+	var response APIResponse
+	if res.StatusCode == http.StatusOK {
+		if err := json.Unmarshal(respBytes, &response); err != nil {
+			return nil, err
+		}
+		if response.Status == "error" {
+			msg, ok := response.Data.(string)
+			if !ok {
+				msg = "Malformed response from server."
+			}
+			return &response, errors.New(msg)
+		}
+		return &response, nil
+	}
+
+	// Non-2xx: try to surface the JSON-envelope message; otherwise use HTTP status text.
+	response.Status = "error"
+	response.Data = res.Status
+	var tmp APIResponse
+	if err := json.Unmarshal(respBytes, &tmp); err == nil {
+		if msg, ok := tmp.Data.(string); ok {
+			response.Data = msg
+		}
+	}
+	return &response, errors.New(response.Data.(string))
 }
 
 func SendApiResponse(w http.ResponseWriter, data any) {

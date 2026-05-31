@@ -3,41 +3,60 @@
 import sys
 import json
 
-def main():
 
+def main():
     # We must have a Golismero object array in stdin. Parse it.
     input_array = json.load(sys.stdin)
 
     # Trivial case, we were given an empty array. This should not happen, realistically.
     if not input_array:
-        sys.stderr.write("Warning, nikto issue merger received an empty list of issues!\n")
+        sys.stderr.write(
+            "Warning, nikto issue merger received an empty list of issues!\n"
+        )
         json.dump([], sys.stdout)
         return
 
     # Trivial case, we were given a single object. This should not happen, realistically.
     if len(input_array) == 1:
-        sys.stderr.write("Warning, nikto issue merger received a single issue to be merged!\n")
+        sys.stderr.write(
+            "Warning, nikto issue merger received a single issue to be merged!\n"
+        )
         json.dump(input_array, sys.stdout)
         return
 
     # Some basic sanity checks.
     for issue in input_array:
-        assert "_type" in issue and issue["_type"] == "issue", "Wrong data type for object: " + json.dumps(issue)
-        for propname in ("_cmd", "_fp", "_start", "_end", "severity", "affects", "taxonomy", "references", "issues"):
-            assert propname in issue, "Missing %s in data object: %s" % (propname, json.dumps(issue))
+        assert "_type" in issue and issue["_type"] == "issue", (
+            "Wrong data type for object: " + json.dumps(issue)
+        )
+        for propname in (
+            "_cmd",
+            "_fp",
+            "_start",
+            "_end",
+            "severity",
+            "affects",
+            "taxonomy",
+            "references",
+            "issues",
+        ):
+            assert propname in issue, "Missing %s in data object: %s" % (
+                propname,
+                json.dumps(issue),
+            )
 
     # Since this plugin can only generate a single type of issue, we will output a single object.
     merged_issue = {
-            "_type": "issue",
-            "_fp": [],
-            "_start": 0,
-            "_end": 0,
-            "severity": 0,
-            "affects": [],
-            "taxonomy": [],
-            "references": [],
-            "issues": {},
-        }
+        "_type": "issue",
+        "_fp": [],
+        "_start": 0,
+        "_end": 0,
+        "severity": 0,
+        "affects": [],
+        "taxonomy": [],
+        "references": [],
+        "issues": {},
+    }
 
     # Collect all of the properties we want to merge.
     ids = []
@@ -75,6 +94,7 @@ def main():
 
     # Write the output array to stdout.
     json.dump([merged_issue], sys.stdout)
+
 
 if __name__ == "__main__":
     main()

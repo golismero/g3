@@ -23,7 +23,10 @@ for keyword in ("tls", "ssl", "https", "ssh"):
                 html = fd.read()
             assert html
         except Exception:
-            url = "https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?search=%s&page=%d" % (keyword, page)
+            url = (
+                "https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?search=%s&page=%d"
+                % (keyword, page)
+            )
             print("Downloading: " + url)
             r = urlopen(url)
             try:

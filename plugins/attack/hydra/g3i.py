@@ -12,9 +12,14 @@ import datetime
 # Hydra v9.2 run at 2023-06-30 10:33:37 on localhost ftp (hydra -l username -p password -o private/test.hydra ftp://localhost)
 [21][ftp] host: localhost   login: username   password: password
 """
-re_start = re.compile(r"^# Hydra v[0-9]+\.[0-9]+ run at ([^ ]+ [^ ]+) on ([^ ]+) ([^ ]+) \(([^\)]+)\)$")
-re_result = re.compile(r"^\[([0-9]+)\]\[([^\]]+)\] host: ([^ ]+) +login: ([^ ]+) +password: (.+)$")
+re_start = re.compile(
+    r"^# Hydra v[0-9]+\.[0-9]+ run at ([^ ]+ [^ ]+) on ([^ ]+) ([^ ]+) \(([^\)]+)\)$"
+)
+re_result = re.compile(
+    r"^\[([0-9]+)\]\[([^\]]+)\] host: ([^ ]+) +login: ([^ ]+) +password: (.+)$"
+)
 fmt_timestamp = "%Y-%m-%d %H:%M:%S"
+
 
 # Importer function.
 def import_hydra_textfile(fd, artifacts):
@@ -35,16 +40,20 @@ def import_hydra_textfile(fd, artifacts):
         if m:
             if current is not None:
                 if artifacts and not did_warn_0:
-                    sys.stderr.write("WARNING: parser found multiple Hydra run results in the same file, this should not happen\n")
+                    sys.stderr.write(
+                        "WARNING: parser found multiple Hydra run results in the same file, this should not happen\n"
+                    )
                     did_warn_0 = True
                 _finish_issue(current, credentials)
                 output.append(current)
             start_time_str, hostname, service, cmdline = m.groups()
-            start_time = int(datetime.datetime.strptime(start_time_str, fmt_timestamp).timestamp())
+            start_time = int(
+                datetime.datetime.strptime(start_time_str, fmt_timestamp).timestamp()
+            )
             cmdline = shlex.split(cmdline)
             if "-o" in cmdline:
                 i = cmdline.index("-o")
-                cmdline = cmdline[:i] + cmdline[i+2:]
+                cmdline = cmdline[:i] + cmdline[i + 2 :]
             current = {
                 "_type": "issue",
                 "_tool": "hydra",
@@ -61,13 +70,17 @@ def import_hydra_textfile(fd, artifacts):
         m = re_result.match(line)
         if m:
             if line.count("password: ") != 1 and not did_warn_2:
-                sys.stderr.write("WARNING: parser found line(s) it could not parse, results may be missing or wrong\n")
+                sys.stderr.write(
+                    "WARNING: parser found line(s) it could not parse, results may be missing or wrong\n"
+                )
                 did_warn_2 = True
             port, service, hostname, login, password = m.groups()
             t = (hostname, port, service, login, password)
             if t in seen:
                 if not did_warn_3:
-                    sys.stderr.write("WARNING: parser found duplicated entries, results may be missing or wrong\n")
+                    sys.stderr.write(
+                        "WARNING: parser found duplicated entries, results may be missing or wrong\n"
+                    )
                     did_warn_3 = True
                 continue
             seen.add(t)
@@ -75,7 +88,9 @@ def import_hydra_textfile(fd, artifacts):
 
         # Error while parsing.
         if not did_warn_1:
-            sys.stderr.write("WARNING: parser found line(s) it could not parse, results may be missing or wrong\n")
+            sys.stderr.write(
+                "WARNING: parser found line(s) it could not parse, results may be missing or wrong\n"
+            )
             did_warn_1 = True
 
     # Return the output array.
@@ -84,6 +99,7 @@ def import_hydra_textfile(fd, artifacts):
         output.append(current)
     return output
 
+
 # Helper function.
 def _finish_issue(current, credentials):
     if not credentials:
@@ -91,7 +107,7 @@ def _finish_issue(current, credentials):
     else:
         affects = set()
         current["credentials"] = []
-        for (hostname, port, service, login, password) in sorted(credentials):
+        for hostname, port, service, login, password in sorted(credentials):
             affects.add("%s:%s (%s)" % (hostname, port, service))
             cred = {
                 "host": hostname,
@@ -103,12 +119,18 @@ def _finish_issue(current, credentials):
             current["credentials"].append(cred)
         current["severity"] = 3
         current["affects"] = sorted(affects)
-        current["taxonomy"] = ["CAPEC-16", "CAPEC-49", "CAPEC-70", "CWE-307", "CWE-1391"]
+        current["taxonomy"] = [
+            "CAPEC-16",
+            "CAPEC-49",
+            "CAPEC-70",
+            "CWE-307",
+            "CWE-1391",
+        ]
         current["references"] = ["https://github.com/vanhauser-thc/thc-hydra"]
+
 
 # Entry point.
 if __name__ == "__main__":
-
     # If we have a filename in the command line, this means the script was invoked internally.
     if len(sys.argv) == 2:
         with open(sys.argv[1], "r") as fd:

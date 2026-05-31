@@ -20,7 +20,9 @@ try:
         sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
         sys.exit(1)
     for item in json_input:
-        if not set(["url", "detected", "firewall", "manufacturer"]).issubset(set(item.keys())):
+        if not set(["url", "detected", "firewall", "manufacturer"]).issubset(
+            set(item.keys())
+        ):
             sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
             sys.exit(1)
 except Exception:
@@ -29,22 +31,26 @@ except Exception:
     if header == "url,detected,firewall,manufacturer":
         for line in lines:
             url, detected, firewall, manufacturer = line.split(",", 4)
-            json_input.append({
-                "url": url,
-                "detected": bool(detected.lower() == "true"),
-                "firewall": firewall,
-                "manufacturer": manufacturer,
-            })
+            json_input.append(
+                {
+                    "url": url,
+                    "detected": bool(detected.lower() == "true"),
+                    "firewall": firewall,
+                    "manufacturer": manufacturer,
+                }
+            )
     elif header == "url,detected,trigger_url,firewall,manufacturer":
         for line in lines:
             url, detected, trigger_url, firewall, manufacturer = line.split(",", 5)
-            json_input.append({
-                "url": url,
-                "detected": bool(detected.lower() == "true"),
-                "trigger_url": trigger_url,
-                "firewall": firewall,
-                "manufacturer": manufacturer,
-            })
+            json_input.append(
+                {
+                    "url": url,
+                    "detected": bool(detected.lower() == "true"),
+                    "trigger_url": trigger_url,
+                    "firewall": firewall,
+                    "manufacturer": manufacturer,
+                }
+            )
     else:
         sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
         sys.exit(1)
@@ -63,7 +69,7 @@ results_per_url = {}
 urls = set()
 for item in json_input:
     if not item["detected"] or item["firewall"] == "Generic":
-        #sys.stderr.write("Skipped nil result: %r\n" % item)
+        # sys.stderr.write("Skipped nil result: %r\n" % item)
         continue
     url = item["url"]
     if url not in results_per_url:

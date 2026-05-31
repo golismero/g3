@@ -185,7 +185,7 @@ The implementation plan that follows this spec details Tier 1 and outlines Tiers
 - **Tier 2 — Read verbs + managed precheck.** `requireManagedScan` helper. `ls`, `ps`, `logs`, `get`, `output`, `tools`, `describe`, `env`, `fetch`. `-q` collapses list outputs to IDs.
 - **Tier 3 — Write verbs.** `new`, `rm` (with confirmation + `-f`), `target`, `put`, `upload`, `import`, `run`, `cancel`. `-i` reads JSON bodies on `put` and `run`.
 - **Tier 4 — Build / install / CI / docs.** `make install` symlink, CI release matrix entry, golangci-lint coverage, README + CLAUDE.md updates.
-- **Tier 5 (deferred, optional) — g3cli managed-blind filter.** Modify [g3cli.go](../../../src/g3cli/g3cli.go) `Ls.Run`, `Ps.Run`, `Logs.Run`, `Export.Run`, `Report.Run` to filter out `MANAGED` scans client-side. After this lands, g3cli and g3man are partitioned by scan status — neither sees the other half. Touches g3cli, not g3man; grouped here for the symmetry. Can also become a follow-up PR if scope concerns surface.
+- **Tier 5 (deferred until the REST migration) — g3cli managed-blind filter.** Modify [g3cli.go](../../../src/g3cli/g3cli.go) `Ls.Run`, `Ps.Run`, `Logs.Run`, `Export.Run`, `Report.Run` to filter out `MANAGED` scans client-side. After this lands, g3cli and g3man are partitioned by scan status — neither sees the other half. Held until the [HTTP routing & REST migration](../../future/http-routing-and-rest-migration.md) ships: that refactor already rewrites these five `Run` methods to use the new `GET /scans/...` endpoints, so bundling the managed-blind filter avoids touching the same call sites twice. Cost of waiting: managed scans continue to appear in `g3cli` output, which is today's behavior (no regression).
 
 ## 8. Open questions
 

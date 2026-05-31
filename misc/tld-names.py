@@ -34,14 +34,22 @@ if not os.path.exists(tld_filename):
             os.unlink(tld_filename)
             raise
 
-if not os.path.exists(txt_filename) or not os.path.exists(pickle_filename) or not os.path.exists(json_filename):
-
+if (
+    not os.path.exists(txt_filename)
+    or not os.path.exists(pickle_filename)
+    or not os.path.exists(json_filename)
+):
     print("Parsing " + tld_filename)
     tld_names = set()
     with open(tld_filename, "r") as fd:
         for line in fd:
             line = line.strip()
-            if not line or line.startswith("//") or line.startswith("*") or line.startswith("!"):
+            if (
+                not line
+                or line.startswith("//")
+                or line.startswith("*")
+                or line.startswith("!")
+            ):
                 continue
             tld_names.add("." + line)
     sorted_tld_names = sorted(tld_names)

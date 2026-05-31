@@ -4,6 +4,15 @@
         en: "Subfinder is a subdomain discovery tool that returns valid subdomains for websites, using passive online sources. It has a simple, modular architecture and is optimized for speed. Subfinder is built for doing one thing only - passive subdomain enumeration, and it does that very well.",
     },
 
+    llm: {
+        summary: "Passive subdomain enumeration via online sources.",
+        accepts: ["domain"],
+        produces: "domain",
+        commands: [
+            { description: "Enumerate subdomains of a registered domain using passive sources (no active DNS queries to the target's nameservers)." },
+        ],
+    },
+
     commands: [
         {
             condition: "{{if .domain}} true {{else}} false {{end}}",

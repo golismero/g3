@@ -16,7 +16,7 @@ PREFIX    ?= /usr/local
 BINDIR    ?= $(PREFIX)/bin
 
 # Binaries that get shell completions installed. The daemons have no flags.
-CLI_BINS  := g3 g3cli g3tui
+CLI_BINS  := g3 g3cli g3man g3tui
 
 # System completion directories. Each is `-d`-gated at install time so missing
 # shells are silently skipped. Bash has two Linux conventions (Debian vs
@@ -118,6 +118,7 @@ install:
 	sudo ln -s -f $$(pwd)/bin/g3api     $(BINDIR)/g3api
 	sudo ln -s -f $$(pwd)/bin/g3cli     $(BINDIR)/g3cli
 	sudo ln -s -f $$(pwd)/bin/g3config  $(BINDIR)/g3config
+	sudo ln -s -f $$(pwd)/bin/g3man     $(BINDIR)/g3man
 	sudo ln -s -f $$(pwd)/bin/g3scanner $(BINDIR)/g3scanner
 	sudo ln -s -f $$(pwd)/bin/g3tui     $(BINDIR)/g3tui
 	sudo ln -s -f $$(pwd)/bin/g3worker  $(BINDIR)/g3worker
@@ -138,7 +139,7 @@ endif
 ifdef GO
 uninstall:
 	sudo rm -f $(BINDIR)/g3        $(BINDIR)/g3api     $(BINDIR)/g3cli \
-	           $(BINDIR)/g3config  $(BINDIR)/g3scanner $(BINDIR)/g3tui \
+	           $(BINDIR)/g3config  $(BINDIR)/g3man     $(BINDIR)/g3scanner $(BINDIR)/g3tui \
 	           $(BINDIR)/g3worker
 	@for bin in $(CLI_BINS); do \
 	    for dir in $(BASH_DIRS); do sudo rm -f $$dir/$$bin; done; \
@@ -151,6 +152,10 @@ endif
 ifdef GO
 update:
 	cd src && $(MAKE) update
+ifdef PYTHON
+	rm -f ./misc/deps.txt
+	./misc/collect-go-deps.py ./misc/deps.txt
+endif
 endif
 
 # Lint all Go code.
