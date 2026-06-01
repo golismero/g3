@@ -1,4 +1,5 @@
 """Synchronous, engagement-scoped client for the managed g3api surface."""
+
 from __future__ import annotations
 
 import os
@@ -25,9 +26,9 @@ ENV_TOKEN = "G3_API_TOKEN"
 ENV_ARTIFACTS_ROOT = "G3_ARTIFACTS_ROOT"
 
 # Defaults / tunables.
-DEFAULT_TIMEOUT = 30.0           # seconds per HTTP request
-DEFAULT_POLL_INTERVAL = 2.0      # seconds between /scan/tasks/status polls
-DEFAULT_WAIT_TIMEOUT = 1800.0    # seconds, overall ceiling for run() polling
+DEFAULT_TIMEOUT = 30.0  # seconds per HTTP request
+DEFAULT_POLL_INTERVAL = 2.0  # seconds between /scan/tasks/status polls
+DEFAULT_WAIT_TIMEOUT = 1800.0  # seconds, overall ceiling for run() polling
 _DOWNLOAD_CHUNK = 64 * 1024
 
 # State priority for the combined RunResult.state. CANCELED is handled
@@ -244,16 +245,22 @@ class Client:
         /scan/target/add to insert, then /scan/data to fetch the full
         objects.
         """
-        ids = self._call("/scan/target/add", {
-            "scanid": self._scan_id,
-            "targets": list(targets),
-        })
+        ids = self._call(
+            "/scan/target/add",
+            {
+                "scanid": self._scan_id,
+                "targets": list(targets),
+            },
+        )
         if not ids:
             return []
-        objs = self._call("/scan/data", {
-            "scanid": self._scan_id,
-            "dataids": list(ids),
-        })
+        objs = self._call(
+            "/scan/data",
+            {
+                "scanid": self._scan_id,
+                "dataids": list(ids),
+            },
+        )
         return list(objs)
 
     def run(self, data: dict[str, Any], tool: str) -> RunResult:
@@ -293,12 +300,15 @@ class Client:
         dataid = data["_id"]
 
         # Auto-dispatch — server picks all matching command indices.
-        dispatch = self._call("/scan/task/dispatch", {
-            "scanid": self._scan_id,
-            "kind": "tool",
-            "tool": tool,
-            "dataid": dataid,
-        })
+        dispatch = self._call(
+            "/scan/task/dispatch",
+            {
+                "scanid": self._scan_id,
+                "kind": "tool",
+                "tool": tool,
+                "dataid": dataid,
+            },
+        )
         task_ids = tuple(dispatch.get("task_ids") or ())
         if not task_ids:
             raise ClientError(f"dispatch returned no task_ids for tool {tool}")
@@ -375,10 +385,15 @@ class Client:
         `run`'s defensive "no _id" branch. Server-side `IsValidData`
         rejects malformed envelopes regardless of caller.
         """
-        return list(self._call("/scan/data/insert", {
-            "scanid": self._scan_id,
-            "data": list(data),
-        }))
+        return list(
+            self._call(
+                "/scan/data/insert",
+                {
+                    "scanid": self._scan_id,
+                    "data": list(data),
+                },
+            )
+        )
 
     def import_file(
         self,
@@ -398,15 +413,18 @@ class Client:
                     timeout=self._timeout,
                 )
         except requests.RequestException as exc:
-            raise ClientError(
-                f"HTTP transport failure on /file/upload: {exc}"
-            ) from exc
+            raise ClientError(f"HTTP transport failure on /file/upload: {exc}") from exc
         file_id = self._envelope(response)
-        return list(self._call("/scan/import", {
-            "scanid": self._scan_id,
-            "tool": tool,
-            "fileid": file_id,
-        }))
+        return list(
+            self._call(
+                "/scan/import",
+                {
+                    "scanid": self._scan_id,
+                    "tool": tool,
+                    "fileid": file_id,
+                },
+            )
+        )
 
     def task_status(self, task_id: str) -> TaskStatus:
         """Single-poll status for one task. KeyError if the task is absent
@@ -477,10 +495,16 @@ class Client:
 
     def task_results(self, task_id: str) -> list[dict[str, Any]]:
         """All G3Data objects produced by a specific dispatched task."""
-        return list(self._call("/scan/data", {
-            "scanid": self._scan_id,
-            "taskid": task_id,
-        }) or [])
+        return list(
+            self._call(
+                "/scan/data",
+                {
+                    "scanid": self._scan_id,
+                    "taskid": task_id,
+                },
+            )
+            or []
+        )
 
     def task_artifacts(
         self,
@@ -604,7 +628,7 @@ def _filename_from_disposition(header: Optional[str]) -> Optional[str]:
     for part in header.split(";"):
         part = part.strip()
         if part.startswith("filename="):
-            value = part[len("filename="):].strip()
+            value = part[len("filename=") :].strip()
             if value.startswith('"') and value.endswith('"'):
                 value = value[1:-1]
             return value

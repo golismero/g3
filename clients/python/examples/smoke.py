@@ -83,10 +83,7 @@ def main() -> int:
         for t in tools:
             accepts = list(t.accepts)
             produces = list(t.produces)
-            print(
-                f"  {t.name:14s}  accepts={str(accepts):18s}  "
-                f"produces={produces}"
-            )
+            print(f"  {t.name:14s}  accepts={str(accepts):18s}  produces={produces}")
         print(f"  ({len(tools)} LLM-reachable plugin(s))")
 
         # --- 4. Shared env --------------------------------------------------
@@ -154,9 +151,7 @@ def main() -> int:
         print(f"  scan_id round-tripped       =  {client.scan_id == saved_scan_id}")
 
         # --- 9. DATA_PRIMER sanity ----------------------------------------
-        print(
-            f"\n=== DATA_PRIMER  (first 5 lines, {len(DATA_PRIMER)} chars total) ==="
-        )
+        print(f"\n=== DATA_PRIMER  (first 5 lines, {len(DATA_PRIMER)} chars total) ===")
         for line in DATA_PRIMER.splitlines()[:5]:
             print(f"  {line}")
         print("  ...")

@@ -21,6 +21,7 @@ Configuration is from environment variables, read on first construction:
     G3_API_TOKEN            (required)  bearer token
     G3_ARTIFACTS_ROOT       (optional)  default: <tempdir>/g3client
 """
+
 from .client import Client
 from .errors import ApiError, ClientError, TaskCancelled, TaskTimeout
 from .primer import DATA_PRIMER
