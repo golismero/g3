@@ -20,7 +20,7 @@ Source = "https://github.com/golismero/golismero3/tree/main/clients/python"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["g3client*"]
+include = ["g3client", "g3client.*"]
 
 [tool.ruff]
 target-version = "py310"

@@ -22,11 +22,7 @@
     llm: {
         summary: "Network discovery and security auditing scanner.",
         accepts: ["host"],
-        produces: "host",
-        commands: [
-            { description: "Scan an IPv4 host for open services and OS details." },
-            { description: "Scan an IPv6 host for open services and OS details (requires G3_ENV_IPV6_SUPPORTED)." },
-        ],
+        produces: ["host", "issue"],
     },
 
     // Command definitions for this tool.

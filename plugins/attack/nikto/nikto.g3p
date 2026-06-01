@@ -8,11 +8,7 @@
     llm: {
         summary: "Web server vulnerability scanner.",
         accepts: ["url"],
-        produces: "issue",
-        commands: [
-            { description: "Scan an HTTP URL." },
-            { description: "Scan an HTTPS URL (TLS)." },
-        ],
+        produces: ["issue"],
     },
 
     commands: [

@@ -62,20 +62,16 @@ type G3ReporterPhase struct {
 	Commands []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"` // (Optional) Named presets. Empty means "entrypoint runs with no args".
 }
 
-// G3LLMCommandNote is an optional per-command note for LLM consumers. Its
-// position in the slice corresponds to the same index in G3Plugin.Commands.
-type G3LLMCommandNote struct {
-	Description string `json:"description,omitempty"` // What this command variant does.
-}
-
-// G3LLMMetadata is optional, additive metadata describing a plugin's tool
-// contract for LLM/MCP consumers (served by /plugin/describe). It is absent for
-// plugins that have not been annotated; consumers fall back to other fields.
+// G3LLMMetadata is the additive plugin metadata that opts a plugin in to the
+// LLM-facing /plugin/describe surface. Presence of this block is the opt-in
+// signal; all three fields are required and non-empty when the block is
+// present (g3config validates this at plugin load time). There is no
+// fallback derivation — what /plugin/describe returns is exactly what plugin
+// authors declared here.
 type G3LLMMetadata struct {
-	Summary  string             `json:"summary,omitempty"`  // LLM-specific one-line explanation of the tool.
-	Accepts  []string           `json:"accepts,omitempty"`  // G3Data _type(s) this plugin consumes.
-	Produces string             `json:"produces,omitempty"` // Primary G3Data _type produced.
-	Commands []G3LLMCommandNote `json:"commands,omitempty"` // (Optional) Per-command notes, indexed to Commands[].
+	Summary  string   `json:"summary"  validate:"required"`               // LLM-specific one-line explanation of the tool.
+	Accepts  []string `json:"accepts"  validate:"required,min=1,dive,required"` // G3Data _type(s) this plugin consumes.
+	Produces []string `json:"produces" validate:"required,min=1,dive,required"` // G3Data _type(s) this plugin emits (an importer routinely emits multiple types).
 }
 
 type G3Plugin struct {

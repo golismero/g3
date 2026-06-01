@@ -253,6 +253,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT
       - REDIS_PASSWORD
+      - G3_INSTANCE_PREFIX=g3scanner-
       - G3_SCANNER_PARALLEL_MODE
       - G3_SCANNER_MAX_PIPELINES
       - G3_SCANNER_MAX_DEPTH
@@ -299,6 +300,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT
       - REDIS_PASSWORD
+      - G3_WORKER_ID=g3worker-nmap
       - G3_WORKER_PLUGINS=nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
@@ -342,6 +344,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT
       - REDIS_PASSWORD
+      - G3_INSTANCE_PREFIX=g3worker-
       - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL

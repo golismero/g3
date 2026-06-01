@@ -7,10 +7,7 @@
     llm: {
         summary: "Passive subdomain enumeration via online sources.",
         accepts: ["domain"],
-        produces: "domain",
-        commands: [
-            { description: "Enumerate subdomains of a registered domain using passive sources (no active DNS queries to the target's nameservers)." },
-        ],
+        produces: ["domain"],
     },
 
     commands: [

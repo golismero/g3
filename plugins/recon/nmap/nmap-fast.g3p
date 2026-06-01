@@ -9,11 +9,7 @@
     llm: {
         summary: "Network scanner — fast pass (TCP connect on top ports, OS detection; less thorough than `nmap`).",
         accepts: ["host"],
-        produces: "host",
-        commands: [
-            { description: "Fast IPv4 scan (TCP connect on default top ports, OS detection)." },
-            { description: "Fast IPv6 scan (TCP connect on default top ports, OS detection; requires G3_ENV_IPV6_SUPPORTED)." },
-        ],
+        produces: ["host", "issue"],
     },
     commands: [
         {

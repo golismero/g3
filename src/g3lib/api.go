@@ -457,9 +457,9 @@ type ReqTaskDispatch struct {
 	ScanID string `json:"scanid" validate:"required,uuid"`
 	Kind   string `json:"kind"   validate:"required,oneof=tool report"`
 	Tool   string `json:"tool"   validate:"required"`
-	// kind=tool fields:
+	// kind=tool fields: server auto-evaluates plugin.Commands[i].Condition
+	// against the dataid's G3Data and dispatches every matching command.
 	DataID string `json:"dataid,omitempty" validate:"omitempty,mongodb"`
-	Index  int    `json:"index,omitempty"  validate:"gte=0"`
 	// kind=report fields:
 	Preset string `json:"preset,omitempty"`
 }
@@ -516,20 +516,15 @@ func (req *ReqGetEnv) Decode(r *http.Request) error {
 
 // PluginContractOperation describes one command variant a plugin exposes
 // (`/scan/task/dispatch` selects a variant by Index).
-type PluginContractOperation struct {
-	Index       int    `json:"index"`
-	Description string `json:"description,omitempty"` // From G3LLMMetadata.Commands[Index].Description, if any.
-	Produces    string `json:"produces,omitempty"`    // From G3ToolCommand.Returns (per-command, always specific).
-}
-
 // PluginContract is the LLM-facing contract for one plugin. Served by
-// /plugin/describe. Excludes Description/URL/Image (those stay on /plugin/list).
+// /plugin/describe. Excludes Description/URL/Image (those stay on /plugin/list
+// for humans and GUIs). All fields are author-populated from the plugin's
+// `llm:` block — no auto-derivation, no fallbacks.
 type PluginContract struct {
-	Name       string                    `json:"name"`
-	Summary    string                    `json:"summary,omitempty"`  // From G3LLMMetadata.Summary; falls back to Description["en"].
-	Accepts    []string                  `json:"accepts,omitempty"`  // From G3LLMMetadata.Accepts.
-	Produces   string                    `json:"produces,omitempty"` // From G3LLMMetadata.Produces (plugin-level).
-	Operations []PluginContractOperation `json:"operations,omitempty"`
+	Name     string   `json:"name"`
+	Summary  string   `json:"summary"`
+	Accepts  []string `json:"accepts"`
+	Produces []string `json:"produces"`
 }
 
 type ReqCheckScriptSyntax struct {

@@ -9,11 +9,7 @@
     llm: {
         summary: "Network scanner — full sweep (all 65535 ports, OS+version+default scripts; slow but exhaustive).",
         accepts: ["host"],
-        produces: "host",
-        commands: [
-            { description: "Full IPv4 scan: all ports, OS detection, version probes, default scripts. Slow." },
-            { description: "Full IPv6 scan: all ports, OS detection, version probes, default scripts (requires G3_ENV_IPV6_SUPPORTED). Slow." },
-        ],
+        produces: ["host", "issue"],
     },
     commands: [
         {

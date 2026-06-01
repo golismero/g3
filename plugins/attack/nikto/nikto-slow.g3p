@@ -8,11 +8,7 @@
     llm: {
         summary: "Web server vulnerability scanner with rate-limiting (gentler, slower than `nikto`).",
         accepts: ["url"],
-        produces: "issue",
-        commands: [
-            { description: "Scan an HTTP URL with a 1-second pause between requests." },
-            { description: "Scan an HTTPS URL with a 1-second pause between requests." },
-        ],
+        produces: ["issue"],
     },
 
     commands: [

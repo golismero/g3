@@ -139,24 +139,12 @@ func runImport(plugins g3lib.G3PluginMetadata, mdb g3lib.DatastoreClient, artifa
 // are not reachable to LLM consumers and are filtered out at the handler
 // before reaching this function.
 func buildPluginContract(plugin g3lib.G3Plugin) g3lib.PluginContract {
-	contract := g3lib.PluginContract{
+	return g3lib.PluginContract{
 		Name:     plugin.Name,
 		Summary:  plugin.LLM.Summary,
 		Accepts:  plugin.LLM.Accepts,
 		Produces: plugin.LLM.Produces,
 	}
-	contract.Operations = make([]g3lib.PluginContractOperation, 0, len(plugin.Commands))
-	for i, cmd := range plugin.Commands {
-		op := g3lib.PluginContractOperation{
-			Index:    i,
-			Produces: cmd.Returns,
-		}
-		if i < len(plugin.LLM.Commands) {
-			op.Description = plugin.LLM.Commands[i].Description
-		}
-		contract.Operations = append(contract.Operations, op)
-	}
-	return contract
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1268,25 +1256,52 @@ func Main() int {
 				return
 			}
 
-			// Look up the plugin and validate kind/fields against plugin shape.
 			plugin, ok := plugins[request.Tool]
 			if !ok {
 				g3lib.SendApiError(w, http.StatusBadRequest, "unknown tool: "+request.Tool)
 				return
 			}
 
+			// Decide which command indices to dispatch. For kind=tool we
+			// auto-evaluate plugin.Commands[i].Condition against the data
+			// (matching the orchestrator's pipeline behaviour); for
+			// kind=report there's a single conceptual operation that Preset
+			// disambiguates.
+			var indices []int
 			switch request.Kind {
 			case "tool":
 				if len(plugin.Commands) == 0 {
 					g3lib.SendApiError(w, http.StatusBadRequest, "tool "+request.Tool+" does not implement the tool phase")
 					return
 				}
-				if request.Index >= len(plugin.Commands) {
-					g3lib.SendApiError(w, http.StatusBadRequest, "index out of range for tool "+request.Tool)
-					return
-				}
 				if request.DataID == "" {
 					g3lib.SendApiError(w, http.StatusBadRequest, "kind=tool requires dataid")
+					return
+				}
+				loaded, err := g3lib.LoadData(mdb_client, request.ScanID, []string{request.DataID})
+				if err != nil {
+					log.Error("LoadData failed: " + err.Error())
+					g3lib.SendApiError(w, http.StatusInternalServerError, "failed to load data object")
+					return
+				}
+				if len(loaded) == 0 {
+					g3lib.SendApiError(w, http.StatusBadRequest, "data object not found: "+request.DataID)
+					return
+				}
+				data := loaded[0]
+				for i := range plugin.Commands {
+					match, err := g3lib.EvalToolCondition(plugin, i, data)
+					if err != nil {
+						log.Errorf("EvalToolCondition failed for tool %s index %d: %s", request.Tool, i, err.Error())
+						g3lib.SendApiError(w, http.StatusInternalServerError, "condition evaluation failed")
+						return
+					}
+					if match {
+						indices = append(indices, i)
+					}
+				}
+				if len(indices) == 0 {
+					g3lib.SendApiError(w, http.StatusBadRequest, "no command in tool "+request.Tool+" matches the given data")
 					return
 				}
 			case "report":
@@ -1311,39 +1326,41 @@ func Main() int {
 						return
 					}
 				}
+				indices = []int{0}
 			default:
 				g3lib.SendApiError(w, http.StatusBadRequest, "unknown kind: "+request.Kind)
 				return
 			}
 
-			// Generate the task_id and publish the dispatch to the scanner.
-			taskid := uuid.NewString()
-			dispatch := g3lib.G3Dispatch{
-				G3TaskMessage: g3lib.G3TaskMessage{
-					G3Message: g3lib.G3Message{
-						ScanID: request.ScanID,
+			// Publish a dispatch per matched index; collect the task_ids.
+			taskIds := make([]string, 0, len(indices))
+			for _, idx := range indices {
+				taskid := uuid.NewString()
+				dispatch := g3lib.G3Dispatch{
+					G3TaskMessage: g3lib.G3TaskMessage{
+						G3Message: g3lib.G3Message{
+							ScanID: request.ScanID,
+						},
+						TaskID: taskid,
 					},
-					TaskID: taskid,
-				},
-				Kind:   request.Kind,
-				Tool:   request.Tool,
-				DataID: request.DataID,
-				Index:  request.Index,
-				Preset: request.Preset,
-			}
-			if err := g3lib.SendDispatch(mq_client, dispatch); err != nil {
-				log.Error("SendDispatch failed: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "failed to publish dispatch")
-				return
+					Kind:   request.Kind,
+					Tool:   request.Tool,
+					DataID: request.DataID,
+					Index:  idx,
+					Preset: request.Preset,
+				}
+				if err := g3lib.SendDispatch(mq_client, dispatch); err != nil {
+					log.Error("SendDispatch failed: " + err.Error())
+					g3lib.SendApiError(w, http.StatusInternalServerError, "failed to publish dispatch")
+					return
+				}
+				taskIds = append(taskIds, taskid)
 			}
 
-			// Set the X-G3-Task-ID header so clients have two equivalent ways to
-			// learn the task_id (parse JSON body or read header).
-			w.Header().Set("X-G3-Task-ID", taskid)
 			w.WriteHeader(http.StatusAccepted)
 			response := g3lib.APIResponse{
 				Status: "success",
-				Data:   map[string]string{"task_id": taskid},
+				Data:   map[string][]string{"task_ids": taskIds},
 			}
 			response.Write(w)
 		}))

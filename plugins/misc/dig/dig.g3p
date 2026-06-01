@@ -7,12 +7,7 @@
     llm: {
         summary: "DNS lookup utility for enumerating domain records.",
         accepts: ["domain"],
-        produces: "domain",
-        commands: [
-            { description: "Resolve A records (IPv4 addresses) for the domain." },
-            { description: "Resolve AAAA records (IPv6 addresses) for the domain." },
-            { description: "Resolve all DNS record types for the domain." },
-        ],
+        produces: ["domain", "host"],
     },
 
     // Only run against domain objects that do not have any discovered DNS records.
