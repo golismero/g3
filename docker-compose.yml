@@ -72,6 +72,7 @@ services:
       - /bin/sh
       - -c
       - |
+        rm /mosquitto/config/password.txt &&
         mosquitto_passwd -b -c /mosquitto/config/password.txt "$$MQTT_USERNAME" "$$MQTT_PASSWORD" &&
         exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
   #  ports:
