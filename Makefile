@@ -1,4 +1,4 @@
-.PHONY: all bin clean docker plugins pull update install uninstall lint help
+.PHONY: all bin dist clean docker plugins pull update install uninstall lint help
 
 # Default target — show help when invoked as bare `make`.
 .DEFAULT_GOAL := help
@@ -70,7 +70,8 @@ else
 	@printf "  $(C_CYAN)all$(C_RESET)       Build Go binaries $(C_DIM)(no Docker: images skipped)$(C_RESET)\n"
 endif
 	@printf "  $(C_CYAN)bin$(C_RESET)       Compile the Go binaries into ./bin/\n"
-	@printf "  $(C_CYAN)clean$(C_RESET)     Remove the compiled binaries from ./bin/\n"
+	@printf "  $(C_CYAN)dist$(C_RESET)      Cross-compile release zips + checksums into ./dist/ (version from git)\n"
+	@printf "  $(C_CYAN)clean$(C_RESET)     Remove the compiled binaries and ./dist/\n"
 	@printf "  $(C_CYAN)install$(C_RESET)   Symlink ./bin/g3* into $(BINDIR) and register shell completions (sudo; override PREFIX=...)\n"
 	@printf "  $(C_CYAN)uninstall$(C_RESET) Remove the symlinks and completion files installed by 'make install'\n"
 	@printf "  $(C_CYAN)update$(C_RESET)    Update all Go module dependencies\n"
@@ -82,6 +83,7 @@ else
 	@printf "  $(C_DIM)all       (disabled — Go and Docker not detected)$(C_RESET)\n"
 endif
 	@printf "  $(C_DIM)bin       (disabled — Go not detected)$(C_RESET)\n"
+	@printf "  $(C_DIM)dist      (disabled — Go not detected)$(C_RESET)\n"
 	@printf "  $(C_DIM)clean     (disabled — Go not detected)$(C_RESET)\n"
 	@printf "  $(C_DIM)install   (disabled — Go not detected)$(C_RESET)\n"
 	@printf "  $(C_DIM)uninstall (disabled — Go not detected)$(C_RESET)\n"
@@ -100,15 +102,26 @@ endif
 
 # Build the binaries locally.
 ifdef GO
-bin: clean
-	mkdir -p bin/ config/
+bin:
 	cd src && CGO_ENABLED=0 $(MAKE)
 endif
 
-# Clean the binaries locally.
+# Cross-compile the release binaries into ./dist/ (zips + SHA-256 checksums),
+# reproducing .github/workflows/release.yml. Version is derived from git
+# (exact vX.Y.Z tag, else main->latest, else branch name, else dev). Requires
+# `zip` and `sha256sum`/`shasum` on PATH.
+ifdef GO
+dist:
+	./misc/build-dist.sh
+endif
+
+# Clean the locally built binaries and cross-compiled artifacts. Both bin/
+# and dist/ keep a tracked self-ignoring .gitignore, so remove only the build
+# output and leave those in place.
 ifdef GO
 clean:
 	rm -f bin/g3*
+	rm -f dist/g3-*
 endif
 
 # Install the binaries locally and register shell completions in system dirs.
@@ -203,7 +216,7 @@ endif
 else
 	touch ./misc/deps.txt
 endif
-	docker build -t ghcr.io/golismero/g3 .
+	docker build --build-arg VERSION="$$(./misc/git-version.sh)" -t ghcr.io/golismero/g3 .
 
 # Pull the main g3 image and all plugin images from ghcr.io.
 ifdef DOCKER

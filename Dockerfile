@@ -5,7 +5,14 @@ WORKDIR /app
 COPY ./misc/deps.txt /app/
 RUN go mod download -x $(cat /app/deps.txt)
 COPY src/ /app/
-RUN CGO_ENABLED=0 GOOS=linux make all
+# VERSION is resolved on the host (where .git lives) and passed in by the
+# `docker` make target; a bare `docker build` falls back to "dev". The flags
+# mirror release.yml: strip symbols (-s -w), trim build paths (-trimpath),
+# and stamp main.Version. Daemons without a Version symbol ignore the -X.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux make all \
+      GO_FLAGS=-trimpath \
+      GO_LDFLAGS="-s -w -X main.Version=${VERSION}"
 
 FROM debian:stable-slim
 ENV DEBIAN_FRONTEND=noninteractive

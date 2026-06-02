@@ -177,6 +177,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Stamp main.Version into the g3 binaries so `g3 --version` matches
+          # the image tag they ship under (IMAGE_TAG: main->latest, else the
+          # vX.Y.Z tag). Only the g3 Dockerfile declares ARG VERSION; gating
+          # on the image keeps the 11 plugin builds free of "unconsumed
+          # build-arg" warnings.
+          build-args: ${{ matrix.image == 'g3' && format('VERSION={0}', env.IMAGE_TAG) || '' }}
           # Cache is shared across branches (content-addressed). If divergent
           # dependencies cause thrashing, scope per branch by appending
           # -${{ github.ref_name }} to the buildcache tag.
