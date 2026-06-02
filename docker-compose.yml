@@ -25,8 +25,8 @@ services:
   mongo:
     image: mongo:4.4.6
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:27017:27017"
+    # ports:
+    #   - "127.0.0.1:27017:27017"
     networks:
       - g3net
     volumes:
@@ -60,9 +60,9 @@ services:
       - ./volumes/mosquitto/config:/mosquitto/config/
       - ./volumes/mosquitto/log:/mosquitto/log/
       - ./volumes/mosquitto/data:/mosquitto/data/
-#    ports:
-#      - "127.0.0.1:1883:1883"
-#      - "127.0.0.1:9001:9001"
+  #  ports:
+  #    - "127.0.0.1:1883:1883"
+  #    - "127.0.0.1:9001:9001"
 
   # MQTT Admin is useful for debugging.
   # mqtt-admin:
@@ -98,8 +98,8 @@ services:
     volumes:
       - ./volumes/mariadb/data:/var/lib/mysql
       - ./volumes/mariadb/initdb.d:/docker-entrypoint-initdb.d:ro
- #   ports:
- #     - "127.0.0.1:3306:3306"
+  #  ports:
+  #    - "127.0.0.1:3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: "${SQL_ROOT_PASSWORD}"
       MYSQL_DATABASE: "${SQL_DATABASE}"
