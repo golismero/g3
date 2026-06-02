@@ -51,6 +51,11 @@ services:
   #     ME_CONFIG_MONGODB_URL: "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/"
 
   # The MQTT broker is used to coordinate tasks between the scanner and the workers.
+  # The broker has no env-var->credential mechanism of its own (unlike mongo/mariadb),
+  # so we regenerate its password file from MQTT_USERNAME/MQTT_PASSWORD on every start
+  # before launching the broker. This keeps the broker's credentials in sync with .env,
+  # the same source the clients (g3api/g3scanner/g3worker) read MQTT_URL from. Note this
+  # rewrites volumes/mosquitto/config/password.txt on each `up`.
   mosquitto:
     image: eclipse-mosquitto
     restart: unless-stopped
@@ -60,6 +65,15 @@ services:
       - ./volumes/mosquitto/config:/mosquitto/config/
       - ./volumes/mosquitto/log:/mosquitto/log/
       - ./volumes/mosquitto/data:/mosquitto/data/
+    environment:
+      - MQTT_USERNAME=${MQTT_USERNAME}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        mosquitto_passwd -b -c /mosquitto/config/password.txt "$$MQTT_USERNAME" "$$MQTT_PASSWORD" &&
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
   #  ports:
   #    - "127.0.0.1:1883:1883"
   #    - "127.0.0.1:9001:9001"
