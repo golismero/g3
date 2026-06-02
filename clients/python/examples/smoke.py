@@ -141,7 +141,7 @@ def main() -> int:
                 print(f"  {rel}")
 
         # --- 8. Persistence API: unbind, rebind, verify identity preserved --
-        print("\n=== Persistence: unbind/bind (knife-restart simulation) ===")
+        print("\n=== Persistence: unbind/bind (restart simulation) ===")
         saved_scan_id = client.scan_id
         Client.unbind(_KEY)
         print(f"  after unbind: Client.keys() = {Client.keys()}")

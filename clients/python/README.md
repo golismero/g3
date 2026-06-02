@@ -1,7 +1,7 @@
 # g3client
 
 Python wrapper for the managed half of `g3api` — the part of golismero3 that
-hosts on-demand task dispatch for external clients (knife agents and others).
+hosts on-demand task dispatch for external clients.
 
 ## Install
 

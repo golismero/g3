@@ -60,17 +60,16 @@ def _resolve_config() -> tuple[str, str, Path]:
 class Client:
     """Synchronous, engagement-scoped client for the managed g3api surface.
 
-    Multiton keyed by the caller-chosen `key` string (knife uses engagement
-    IDs). Constructing `Client(k)` twice with the same `k` returns the same
-    in-process instance.
+    Multiton keyed by the caller-chosen `key` string. Constructing `Client(k)`
+    twice with the same `k` returns the same in-process instance.
 
     Configuration is read once per-instance from environment variables (see
     g3client.llm.__init__ docstring). The constructor eagerly creates a
     managed scan on g3 the first time a key is seen; subsequent constructions
     for the same key are O(0) — no HTTP traffic.
 
-    Persistence across knife process restarts is supported via the `bind` /
-    `unbind` / `keys` class methods and the `scan_id` property; knife stores
+    Persistence across process restarts is supported via the `bind` /
+    `unbind` / `keys` class methods and the `scan_id` property; caller stores
     `(key, scan_id)` pairs in its own DB and rehydrates the multiton on
     startup.
     """
@@ -289,7 +288,7 @@ class Client:
         # path is defensive: legitimate LLM use cases never reach it because
         # all G3Data the LLM holds came from add_target / a previous run() /
         # import_file, which all populate _id. It exists as an escape hatch for
-        # knife-side compatibility layers that may inject pre-known objects
+        # caller-side compatibility layers that may inject pre-known objects
         # (those callers should know to call `_insert_data` via the underscore
         # API or to construct objects the server will accept).
         if "_id" not in data:
@@ -380,8 +379,8 @@ class Client:
         raw-G3Data insertion. The only ways an LLM should acquire G3Data
         are `add_target` (canonicalises a string), `run` (returns objects
         produced by a tool), and `import_file` (parses tool output). This
-        method exists for knife-side compatibility layers that may need to
-        inject pre-known objects from knife's own data model, and for
+        method exists for caller-side compatibility layers that may need to
+        inject pre-known objects from the caller's own data model, and for
         `run`'s defensive "no _id" branch. Server-side `IsValidData`
         rejects malformed envelopes regardless of caller.
         """
