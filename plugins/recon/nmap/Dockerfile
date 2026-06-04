@@ -49,6 +49,4 @@ WORKDIR /app
 RUN pip install --no-cache-dir --root-user-action=ignore python-libnmap
 COPY --chmod=0755 g3p.sh /usr/bin/g3p
 COPY --chmod=0755 g3i.py /usr/bin/g3i
-COPY --chmod=0755 g3m.py /usr/bin/g3m
-COPY iana-descriptions.json .
 ENTRYPOINT ["/usr/bin/g3p"]

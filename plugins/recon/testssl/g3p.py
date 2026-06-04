@@ -40,9 +40,6 @@ base_args = [
 is_ipv6_enabled = os.getenv("G3_ENV_IPV6_SUPPORTED")
 is_ipv6_enabled = is_ipv6_enabled and (is_ipv6_enabled.strip().lower() == "true")
 
-# Here we will have the output data.
-output_data = []
-
 # Worst exit code seen across all testssl invocations (URL branch or the
 # per-target host loop). testssl exits 0 on a normal run even when sub-tests
 # fail; a non-zero code is a genuine failure. Fold: any non-zero → non-zero.
@@ -74,16 +71,7 @@ if "url" in input_data:
                 proc.wait()
             if proc.returncode and not worst_rc:
                 worst_rc = proc.returncode
-            process = subprocess.Popen(
-                ["/usr/bin/g3i", tmp], stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            stdout, stderr = process.communicate()
-            if stderr:
-                sys.stderr.write(stderr)
-            if stdout:
-                output_data.extend(json.loads(stdout))
-                for g3d in output_data:
-                    g3d["_artifacts"] = ["testssl.txt", "testssl.json"]
+            input_data["_artifacts"] = ["testssl.txt", "testssl.json"]
 
         # Copy the temporary file to the artifacts folder.
         shutil.copy(tmp, "/artifacts/testssl.json")
@@ -94,6 +82,7 @@ if "url" in input_data:
 # Process hosts. This means we are running a network test.
 # Process IPv4 and IPv6 separately since we can only pass one using "--ip".
 else:
+    input_data["_artifacts"] = []
     for ip in (
         input_data.get("ipv4", ""),
         input_data.get("ipv6", "") if is_ipv6_enabled else "",
@@ -188,32 +177,14 @@ else:
             if proc.returncode and not worst_rc:
                 worst_rc = proc.returncode
 
-            # Call the importer on the output file.
-            # Capture stdout so we can parse it later.
-            process = subprocess.Popen(
-                ["/usr/bin/g3i", json_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            stdout, stderr = process.communicate()
-            if stderr:
-                sys.stderr.write(stderr)
-            if not stdout:
-                continue
-
-            # Parse the output file as JSON.
-            artifacts = []
+            # Link the artifacts to the input object.
             if os.path.exists(txt_path):
-                artifacts.append(os.path.basename(txt_path))
+                input_data["_artifacts"].append(os.path.basename(txt_path))
             if os.path.exists(json_path):
-                artifacts.append(os.path.basename(json_path))
-            new_data = json.loads(stdout)
-            for g3d in new_data:
-                g3d["_artifacts"] = artifacts
-            output_data.extend(new_data)
+                input_data["_artifacts"].append(os.path.basename(json_path))
 
 # Send the JSON output array over stdout.
-json.dump(output_data, sys.stdout)
+json.dump([input_data], sys.stdout)
 sys.stdout.flush()
 
 # Propagate testssl's exit code (folded across all invocations). 0 = clean;

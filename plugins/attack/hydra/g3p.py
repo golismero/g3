@@ -119,7 +119,8 @@ for ip in (
             continue
 
         # Prepare the output filename for hydra.
-        output_file = "/artifacts/hydra.%s.%d.txt" % (slug, port)
+        artifact = "hydra.%s.%d.txt" % (slug, port)
+        output_file = "/artifacts/" + artifact
 
         # Build the command line for Hydra.
         args = list(base_args)
@@ -135,21 +136,9 @@ for ip in (
         if result.returncode and not worst_rc:
             worst_rc = result.returncode
 
-        # Call the importer on the output file.
-        # Capture stdout so we can parse it later.
-        process = subprocess.Popen(
-            ["/usr/bin/g3i", output_file],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        stdout, stderr = process.communicate()
-        if stderr:
-            sys.stderr.write(stderr)
-        if not stdout:
-            continue
-
-        # Parse the output file as JSON.
-        output_data.extend(json.loads(stdout))
+        # Claim the generated artifacts.
+        if os.path.exists(output_file):
+            output_data.append({"_artifacts": [artifact]})
 
 # Send the JSON output array over stdout.
 json.dump(output_data, sys.stdout)

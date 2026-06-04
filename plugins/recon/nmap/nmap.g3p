@@ -19,12 +19,6 @@
     // These are images prepared especially for use with Golismero3.
     image: "ghcr.io/golismero/nmap",
 
-    llm: {
-        summary: "Network discovery and security auditing scanner.",
-        accepts: ["host"],
-        produces: ["host", "issue"],
-    },
-
     // Command definitions for this tool.
     //
     // This is an array of objects that define a condition for a command to run,
@@ -101,17 +95,5 @@
 
         // The returned type is again optional, as long as the importer provides it instead.
         returns: "host",
-    },
-
-    // (Optional) Issue merger for this tool.
-    // This takes care of ensuring there are no duplicates of the type of issue this plugin produces.
-    // It is highly recommended to implement this if the tool can report issues!
-    merger: {
-
-        // The default options change the entry point to "/usr/bin/g3m".
-        dockeropt: ["-i", "--rm", "--entrypoint", "/usr/bin/g3m"],
-
-        // The command here is optional. Use {{(env).G3_ENV_NAME}} to reference host env vars.
-        command: [],
     },
 }

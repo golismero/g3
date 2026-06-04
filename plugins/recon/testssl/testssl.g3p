@@ -4,12 +4,6 @@
         en: "testssl.sh is a free command line tool which checks a server's service on any port for the support of TLS/SSL ciphers, protocols as well as recent cryptographic flaws and more."
     },
 
-    llm: {
-        summary: "TLS/SSL configuration and vulnerability scanner.",
-        accepts: ["host", "url"],
-        produces: ["issue"],
-    },
-
     commands: [
 
         // Run against host objects that have discovered services.
@@ -17,12 +11,12 @@
         {
             condition: "{{if and .ipv4 .services}} true {{else}} false {{end}}",
             fingerprint: ["testssl {{.ipv4}}"],
-            returns: "issue",
+            returns: "host",
         },
         {
             condition: "{{if and .ipv6 .services (eq (env).G3_ENV_IPV6_SUPPORTED \"true\")}} true {{else}} false {{end}}",
             fingerprint: ["testssl {{.ipv6}}"],
-            returns: "issue",
+            returns: "host",
         },
 
         // Run against https:// urls. This will only test port 443, but will test all hosts the hostname resolves to.
@@ -30,15 +24,7 @@
         {
             condition: "{{if and .url (eq .scheme \"https\")}} true {{else}} false {{end}}",
             fingerprint: ["testssl {{.host}}"],
-            returns: "issue",
+            returns: "url",
         },
     ],
-
-    // Fingerprint is set by the importer.
-    importer: {
-        returns: "issue",
-    },
-
-    // Need to define the merger or it won't be run.
-    merger: {},
 }

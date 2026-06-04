@@ -5,12 +5,6 @@
     },
     image: "ghcr.io/golismero/nikto",
 
-    llm: {
-        summary: "Web server vulnerability scanner.",
-        accepts: ["url"],
-        produces: ["issue"],
-    },
-
     commands: [
 
         // Run against http:// urls.
@@ -18,7 +12,7 @@
             condition: "{{if and .url (eq .scheme \"http\")}} true {{else}} false {{end}}",
             fingerprint: ["nikto {{.host}}"],
             command: ["-host", "{{.host}}"],
-            returns: "issue",
+            returns: "nil",
         },
 
         // Run against https:// urls.
@@ -26,14 +20,8 @@
             condition: "{{if and .url (eq .scheme \"https\")}} true {{else}} false {{end}}",
             fingerprint: ["nikto {{.host}}"],
             command: ["-ssl", "-host", "{{.host}}"],
-            returns: "issue",
+            returns: "nil",
         },
 
     ],
-
-    importer: {
-        returns: "issue",
-    },
-
-    merger: {},
 }

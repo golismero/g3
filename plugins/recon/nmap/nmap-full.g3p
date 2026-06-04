@@ -6,11 +6,6 @@
     },
     url: "https://nmap.org/",
     image: "ghcr.io/golismero/nmap",
-    llm: {
-        summary: "Network scanner — full sweep (all 65535 ports, OS+version+default scripts; slow but exhaustive).",
-        accepts: ["host"],
-        produces: ["host", "issue"],
-    },
     commands: [
         {
             condition: "{{if .services}} false {{else}} {{if .ipv4}} true {{else}} false {{end}} {{end}}",

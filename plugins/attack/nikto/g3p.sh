@@ -12,5 +12,5 @@ set -o pipefail
 # silently reported as an empty scan.
 rc=0
 nikto.pl -useragent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36" -nointeractive -Display V -Save /artifacts -Format csv -o /artifacts/nikto "$@" | tee /artifacts/nikto.txt 1>&2 || rc=$?
-cat /artifacts/nikto.csv | /usr/bin/g3i "$@"
+echo '{"_artifacts":["nikto.txt", "nikto.csv"]}'
 exit $rc

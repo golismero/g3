@@ -6,11 +6,6 @@
     },
     url: "https://nmap.org/",
     image: "ghcr.io/golismero/nmap",
-    llm: {
-        summary: "Network scanner — fast pass (TCP connect on top ports, OS detection; less thorough than `nmap`).",
-        accepts: ["host"],
-        produces: ["host", "issue"],
-    },
     commands: [
         {
             condition: "{{if .services}} false {{else}} {{if .ipv4}} true {{else}} false {{end}} {{end}}",
