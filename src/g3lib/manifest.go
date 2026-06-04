@@ -23,9 +23,9 @@ type G3ManifestFile struct {
 }
 
 // G3ManifestWork describes one sub-command run within the task: a command line
-// (the plugin entrypoint may run multiple sub-commands internally — testssl-
-// per-port, vulners-per-CPE, etc.) and the filenames the plugin claimed for that
-// command via _artifacts. The filenames reference entries in G3Manifest.Files.
+// (the plugin entrypoint may run multiple sub-commands internally and the
+// filenames the plugin claimed for that command via _artifacts. The filenames
+// reference entries in G3Manifest.Files.
 type G3ManifestWork struct {
 	Cmd       string   `json:"cmd"`
 	Artifacts []string `json:"artifacts"`
