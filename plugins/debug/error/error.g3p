@@ -2,9 +2,7 @@
 // Exists to exercise the orchestrator's error paths (e.g. samples/stresstest.script), not for real scans.
 {
     url: "https://github.com/golismero/g3",
-    description: {
-        en: "Debug/stress-test plugin. Always exits with a non-zero status so the engine's error-handling paths can be exercised.",
-    },
+    description: "Debug/stress-test plugin. Always exits with a non-zero status so the engine's error-handling paths can be exercised.",
     // Intentionally no `llm:` block: debug-only plugin, not exposed via /plugin/describe.
     commands: [
         {

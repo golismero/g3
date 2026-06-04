@@ -424,15 +424,6 @@ func (req *ReqLoadData) Decode(r *http.Request) error {
 	return validator.New().Struct(req)
 }
 
-type ReqReport struct {
-	ScanID string               `json:"scanid"              validate:"uuid"`
-}
-func (req *ReqReport) Decode(r *http.Request) error {
-	if err := ValidateHttpRequest(r); err != nil { return err }
-	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return validator.New().Struct(req)
-}
-
 type ReqTaskArtifacts struct {
 	ScanID string `json:"scanid" validate:"required,uuid"`
 	TaskID string `json:"taskid" validate:"required,uuid"`

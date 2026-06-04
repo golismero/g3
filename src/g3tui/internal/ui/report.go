@@ -34,7 +34,7 @@ const (
 	reportError
 )
 
-// reportFetchedMsg carries the one-shot /scan/report result back to the
+// reportFetchedMsg carries the dispatched magenta report result back to the
 // pane. Generation guards against late deliveries.
 type reportFetchedMsg struct {
 	Generation int
@@ -357,9 +357,9 @@ func (p ReportPane) renderTitle(maxWidth int) string {
 // markdown to "*[Image: <alt>]*" text before Glamour sees them.
 // Glamour configures goldmark without WithUnsafe(), so raw HTML blocks
 // like the pie-chart <p><img src='data:image/png;base64,…'/></p> emitted
-// by the server's report template are dropped entirely at render time —
+// by the magenta reporter plugin are dropped entirely at render time —
 // taking the alt-text inside the <img> with them. Preprocessing here is
-// contained to g3tui; the server's markdown is unchanged for the web GUI
+// contained to g3tui; magenta's markdown is unchanged for the web GUI
 // and g3cli report consumers.
 //
 // More architecturally correct alternative: register a custom goldmark

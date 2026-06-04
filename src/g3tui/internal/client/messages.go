@@ -56,7 +56,7 @@ type ScanLogChunk struct {
 	Err     error
 }
 
-// Successful one-shot fetch from /scan/report.
+// Successful fetch of a magenta-generated report (dispatch + download).
 type ReportLoaded struct {
 	ScanID   string
 	Markdown string

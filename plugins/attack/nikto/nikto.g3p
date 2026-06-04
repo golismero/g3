@@ -1,8 +1,6 @@
 {
     url: "https://github.com/sullo/nikto",
-    description: {
-        en: "Nikto is a free software command-line vulnerability scanner that scans webservers for dangerous files/CGIs, outdated server software and other problems.",
-    },
+    description: "Nikto is a free software command-line vulnerability scanner that scans webservers for dangerous files/CGIs, outdated server software and other problems.",
     image: "ghcr.io/golismero/nikto",
 
     commands: [

@@ -1,9 +1,7 @@
 // This version of the plugin does the fastest possible scan.
 // It will not be very thorough.
 {
-    description: {
-        en: "Nmap is a free and open source utility for network discovery and security auditing."
-    },
+    description: "Nmap is a free and open source utility for network discovery and security auditing.",
     url: "https://nmap.org/",
     image: "ghcr.io/golismero/nmap",
     commands: [

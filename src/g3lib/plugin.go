@@ -76,7 +76,7 @@ type G3LLMMetadata struct {
 
 type G3Plugin struct {
 	Name        string              `json:"name"`                                           // Tool name. Must be unique.
-	Description map[string]string   `json:"description"`                                    // Description for humans, translated.
+	Description string              `json:"description"`                                    // Description for humans.
 	URL         string              `json:"url"                 validate:"url"`             // URL for humans.
 	Image       string              `json:"image"`                                          // Docker image.
 	Commands    []G3ToolCommand     `json:"commands,omitempty"  validate:"omitempty,dive"`  // (Optional) Array of commands and conditions.
@@ -89,7 +89,7 @@ func (plugin G3Plugin) String() string {
 	output := ""
 	output = output + fmt.Sprintln("Name:        " + plugin.Name)
 	output = output + fmt.Sprintln("Homepage:    " + plugin.URL)
-	output = output + fmt.Sprintln("Description: " + plugin.Description["en"])
+	output = output + fmt.Sprintln("Description: " + plugin.Description)
 	return output
 }
 
@@ -103,10 +103,6 @@ type ParsedPluginCommand struct {
 	ParsedFP	bool
 	Returns     string
 }
-
-// i18n templates for the plugins.
-type G3PluginTemplates map[string]string							// language -> text template
-type G3PluginTemplatesCache map[string]G3PluginTemplates			// plugin name -> language
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -133,31 +129,6 @@ func LoadPlugins() G3PluginMetadata {
 
 	// Return the map.
 	return plugins
-}
-
-// Load plugin i18n templates from the cache.
-// This function will panic on error.
-func LoadPluginTemplates() G3PluginTemplatesCache {
-
-	// Get the G3HOME directory.
-	g3home := GetHomeDirectory()
-
-	// Load the plugin templates cache JSON file.
-	path := filepath.Join(g3home, G3CONFIG, G3TEMPLATES)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		panic("Failed to process " + path + ": " + err.Error())
-	}
-
-	// Parse the JSON file.
-	pluginTemplates := G3PluginTemplatesCache{}
-	err = json.Unmarshal(data, &pluginTemplates)
-	if err != nil {
-		panic("Failed to process " + path + ": " + err.Error())
-	}
-
-	// Return the map.
-	return pluginTemplates
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

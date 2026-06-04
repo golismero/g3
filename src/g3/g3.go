@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -90,8 +91,11 @@ type FilterCmd struct {
 }
 
 type ReportCmd struct {
-	IOCmd
 	FlagCmd
+	Tool      string `name:"tool" default:"magenta" help:"Reporter plugin to run."`
+	Preset    string `name:"preset" default:"" help:"Reporter preset (when the plugin declares presets)."`
+	Artifacts string `name:"artifacts" short:"a" type:"existingdir" required:"" help:"Directory of tool artifacts to report on (mounted as /input)."`
+	Output    string `name:"output" short:"o" type:"path" required:"" help:"Output directory for the report (mounted as /output)."`
 }
 
 type CompletionsCmd struct {
@@ -113,7 +117,7 @@ var CLI struct {
 	Merge       MergeCmd       `cmd:"" aliases:"m" help:"Launch issue merger plugins."`
 	Join        JoinCmd        `cmd:"" aliases:"j" help:"Join multiple G3 output files into one."`
 	Filter      FilterCmd      `cmd:"" aliases:"f" help:"Filter the input using a logical condition."`
-	Report      ReportCmd      `cmd:"" aliases:"o" help:"Produce a Markdown vulnerability report."`
+	Report      ReportCmd      `cmd:"" aliases:"o" help:"Generate a report by running a reporter plugin (magenta) over an artifacts directory."`
 	Completions CompletionsCmd `cmd:"" aliases:"c" help:"Emit shell completion registration snippet."`
 }
 
@@ -453,7 +457,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 								"--- %s\n"+
 								"--------------------------------------------------------------------------------\n",
 							int(((currentScanStep-1)*100)/totalScanSteps), currentScanStep-1, totalScanSteps,
-							plugin.Name, plugin.Description["en"], plugin.URL)
+							plugin.Name, plugin.Description, plugin.URL)
 						slot, slotErr := g3lib.CreateEphemeralArtifactSlot()
 						if slotErr != nil {
 							log.Warningf("Cannot create ephemeral artifact slot, plugin will run without /artifacts: %s", slotErr.Error())
@@ -647,7 +651,7 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 					"\n" +
 						"--------------------------------------------------------------------------------\n" +
 						"--- Running tool: " + plugin.Name + "\n" +
-						"--- " + plugin.Description["en"] + "\n" +
+						"--- " + plugin.Description + "\n" +
 						"--- " + plugin.URL + "\n" +
 						"--------------------------------------------------------------------------------\n")
 				slot, slotErr := g3lib.CreateEphemeralArtifactSlot()
@@ -958,48 +962,58 @@ func (cmd *MergeCmd) Run(ctx CmdContext) error {
 	return nil
 }
 
+// Run generates a report by running a reporter plugin (magenta by default)
+// against a directory of tool artifacts. Reporting is delegated entirely to
+// the plugin: the artifacts directory is mounted read-only as /input and the
+// output directory read-write as /output, exactly like a server-side reporter
+// task. The user is responsible for populating --artifacts (e.g. by directing
+// `g3 run` output there).
 func (cmd *ReportCmd) Run(ctx CmdContext) error {
-	var err error
 
-	// Parse the input JSON data.
-	var inputJson []g3lib.G3Data
-	var tools []string
-	inputJson, err = g3lib.LoadDataFromFile(cmd.Input)
+	// Resolve the reporter plugin.
+	plugin, ok := ctx.Plugins[cmd.Tool]
+	if !ok || plugin.Reporter == nil {
+		log.Critical("Reporter plugin not found: " + cmd.Tool)
+		return errors.New("Reporter plugin not found: " + cmd.Tool)
+	}
+
+	// Build the reporter command line (resolves the preset, if any).
+	parsed, errArr := g3lib.BuildReporterCommand(plugin, cmd.Preset)
+	if len(errArr) > 0 {
+		for _, e := range errArr {
+			log.Error(e.Error())
+		}
+		return errArr[0]
+	}
+
+	// Resolve absolute host paths for the /input and /output mounts.
+	inDir, err := filepath.Abs(cmd.Artifacts)
 	if err != nil {
-		log.Critical(err)
+		log.Critical("Invalid artifacts directory: " + err.Error())
 		return err
 	}
-	for _, data := range inputJson {
-		name := data["_tool"].(string)
-		if !g3lib.ContainsStr(tools, name) {
-			tools = append(tools, name)
-		}
+	outDir, err := filepath.Abs(cmd.Output)
+	if err != nil {
+		log.Critical("Invalid output directory: " + err.Error())
+		return err
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		log.Critical("Cannot create output directory: " + err.Error())
+		return err
 	}
 
-	// Load the main i18n strings.
-	i18nStrings := g3lib.LoadG3Strings()
-
-	// Load the plugins i18n templates.
-	pluginTemplatesCache := g3lib.LoadPluginTemplates()
-
-	// Build the report.
-	reporter := g3lib.NewMarkdownReporter(g3lib.DefaultConfig, ctx.Plugins, pluginTemplatesCache, i18nStrings)
-	textOutput, errorArray := reporter.Build("en", "Golismero3 Scan Report", inputJson, tools)
-	if len(errorArray) > 0 {
-		for _, err := range errorArray {
-			log.Error(err.Error())
-		}
+	// Pick the stderr sink (the reporter's live output).
+	var stderr io.Writer = os.Stderr
+	if cmd.Quiet {
+		stderr = nil
 	}
 
-	// Save the report text.
-	if cmd.Output == "-" {
-		fmt.Print(textOutput)
-	} else {
-		err = os.WriteFile(cmd.Output, []byte(textOutput), 0644)
-		if err != nil {
-			log.Critical("Error writing to file " + cmd.Output + ": " + err.Error())
-			return err
-		}
+	// Docker-run the reporter plugin: <artifacts> → /input:ro, <output> → /output:rw.
+	// Reporter plugins (e.g. magenta) close their own stdin, so we pass none.
+	if err := g3lib.RunPluginReporter(ctx.Ctx, plugin, parsed, inDir, outDir, nil, stderr); err != nil {
+		log.Critical("Reporter failed: " + err.Error())
+		return err
 	}
+	log.Info("Report written to " + outDir)
 	return nil
 }

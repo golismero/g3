@@ -19,8 +19,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/nakagami/firebirdsql v0.9.19
 	github.com/redis/go-redis/v9 v9.20.0
-	github.com/wcharczuk/go-chart v2.0.1+incompatible
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.139.2
+	github.com/ydb-platform/ydb-go-sdk/v3 v3.139.5
 	go.mongodb.org/mongo-driver v1.17.9
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
@@ -28,7 +27,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/apsdehal/go-logger v0.0.0-20190515212710-b0d6ccfee0e6 // indirect
-	github.com/blend/go-sdk v1.20240719.1 // indirect
 	github.com/btnguyen2k/consu/checksum v1.1.1 // indirect
 	github.com/btnguyen2k/consu/g18 v0.1.0 // indirect
 	github.com/btnguyen2k/consu/gjrc v0.2.2 // indirect
@@ -42,7 +40,6 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
-	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
@@ -60,7 +57,6 @@ require (
 	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
-	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect

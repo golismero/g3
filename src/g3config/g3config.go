@@ -11,9 +11,6 @@ import (
 	"regexp"
 	"strings"
 
-	"golang.org/x/text/language"
-	"golang.org/x/text/language/display"
-
 	"github.com/go-playground/validator/v10"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-jsonnet"
@@ -22,130 +19,6 @@ import (
 	"golismero.com/g3lib"
 	log "golismero.com/g3log"
 )
-
-// Parse i18n strings for Golismero.
-func ParseLanguageFiles(i18npath string) (g3lib.G3TranslatedStrings, error) {
-	loadedStringsCache := g3lib.G3TranslatedStrings{}
-	err := filepath.WalkDir(i18npath, func(path string, _ fs.DirEntry, err error) error {
-
-		// Stop everything if there was an error while traversing directories.
-		if err != nil {
-			return err
-		}
-
-		// Ignore non JSON files.
-		if filepath.Ext(path) != ".json" {
-			return nil
-		}
-
-		// Get the language from the filename.
-		lang := strings.TrimSuffix(filepath.Base(path), ".json")
-
-		// Read the file contents.
-		bytes, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		// Parse the file contents.
-		loadedStrings := g3lib.G3TranslatedStringsForLanguage{}
-		err = json.Unmarshal(bytes, &loadedStrings)
-		if err != nil {
-			return err
-		}
-
-		// Save the strings.
-		loadedStringsCache[lang] = loadedStrings
-		return nil
-	})
-
-	// Return the strings.
-	return loadedStringsCache, err
-}
-
-// Find and parse i18n templates for plugins.
-func ParsePluginTemplates(i18npath string) (g3lib.G3PluginTemplates, error) {
-	loadedStrings := g3lib.G3PluginTemplates{}
-
-	// Check if the i18n directory exists.
-	// Ignore the error if it doesn't, since it's not mandatory for plugins to have one.
-	fi, err := os.Stat(i18npath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return loadedStrings, nil
-		}
-		return loadedStrings, err
-	}
-	if !fi.IsDir() {
-		return loadedStrings, fmt.Errorf("should be a directory: %s", i18npath)
-	}
-
-	// Traverse the i18n directory.
-	re := regexp.MustCompile(`^[a-zA-Z0-9_\-]*$`)
-	err = filepath.WalkDir(i18npath, func(path string, _ fs.DirEntry, err error) error {
-
-		// Stop everything if there was an error while traversing directories.
-		if err != nil {
-			return err
-		}
-
-		// Ignore non JSON files.
-		if filepath.Ext(path) != ".json" {
-			return nil
-		}
-
-		// Get the language from the filename.
-		lang := strings.TrimSuffix(filepath.Base(path), ".json")
-
-		// Read the file contents.
-		bytes, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-
-		// Parse the file contents.
-		pluginTemplates := map[string]string{}
-		err = json.Unmarshal(bytes, &pluginTemplates)
-		if err != nil {
-			return err
-		}
-
-		// Fix missing templates with their default values when possible.
-		if _, ok := pluginTemplates["affects"]; !ok {
-			pluginTemplates["affects"] = "{{range .affects}}* {{.}}\n{{end}}"
-		}
-		if _, ok := pluginTemplates["references"]; !ok {
-			pluginTemplates["references"] = "{{range .references}}* [{{.}}]({{.}})\n{{end}}"
-		}
-		if _, ok := pluginTemplates["summary"]; !ok {
-			if value, ok := pluginTemplates["description"]; !ok {
-				pluginTemplates["summary"] = value
-			}
-		}
-		if _, ok := pluginTemplates["description"]; !ok {
-			if value, ok := pluginTemplates["summary"]; !ok {
-				pluginTemplates["description"] = value
-			}
-		}
-
-		// Validate the templates and save them.
-		template := ""
-		for name, tpl := range pluginTemplates {
-			if ! re.Match([]byte(name)) {
-				return errors.New("invalid template name: " + name)
-			}
-			tpl = fmt.Sprintf("{{define \"%s\"}}%s{{end}}", name, tpl)
-			_, e := g3lib.BuildTemplate(tpl)
-			if e != nil {
-				return fmt.Errorf("bad template \"%s\": %s", name, e.Error())
-			}
-			template = template + tpl
-		}
-		loadedStrings[lang] = template
-		return nil
-	})
-	return loadedStrings, err
-}
 
 func main() {
 
@@ -176,8 +49,6 @@ func main() {
 
 	// Metadata caches.
 	pluginsMetadataFile := filepath.Join(g3home, g3lib.G3CONFIG, g3lib.G3PLUGINS)
-	pluginTemplatesFile := filepath.Join(g3home, g3lib.G3CONFIG, g3lib.G3TEMPLATES)
-	i18nStringsFile := filepath.Join(g3home, g3lib.G3CONFIG, g3lib.G3STRINGS)
 
 	// Initialize the validator.
 	var validate = validator.New()
@@ -194,36 +65,8 @@ func main() {
 	// We'll be storing each plugin name and its metadata here.
 	plugins := g3lib.G3PluginMetadata{}
 
-	// We'll store the plugin templates here.
-	pluginTemplates := g3lib.G3PluginTemplatesCache{}
-
-	// Parse the G3 i18n strings.
-	mainFilepath := filepath.Join(g3home, "i18n")
-	if !quiet {
-		relMainPath, err := filepath.Rel(g3home, mainFilepath)
-		if err != nil {
-			relMainPath = mainFilepath
-		}
-		log.Info("Found: " + relMainPath + string(filepath.Separator))
-	}
-	mainStrings, err := ParseLanguageFiles(mainFilepath)
-	if err != nil {
-		log.Error(err.Error())
-		os.Exit(1)
-	}
-	if !quiet {
-		for lang := range mainStrings {
-			langTag, err := language.Parse(lang)
-			if err != nil {
-				log.Error(err.Error())
-				os.Exit(1)
-			}
-			log.Info("  Language: " + display.Self.Name(langTag))
-		}
-	}
-
 	// Recursively traverse the G3HOME directory.
-	err = filepath.WalkDir(filepath.Join(g3home, "plugins"), func(path string, _ fs.DirEntry, err error) error {
+	err := filepath.WalkDir(filepath.Join(g3home, "plugins"), func(path string, _ fs.DirEntry, err error) error {
 
 		// Stop everything if there was an error while traversing directories.
 		if err != nil {
@@ -343,8 +186,8 @@ func main() {
 		}
 
 		// If the tool description is missing, add a default description.
-		if len(metadata.Description) == 0 {
-			metadata.Description["en"] = "Golismero3 integration with " + metadata.Name + "."
+		if metadata.Description == "" {
+			metadata.Description = "Golismero3 integration with " + metadata.Name + "."
 		}
 
 		// If the tool URL is missing, just point to the GitHub repository.
@@ -366,31 +209,8 @@ func main() {
 			return errors.New("ERROR! Docker image (" + metadata.Image + ") not found: " + err.Error())
 		}
 
-		// Parse any associated i18n strings for this plugin.
-		i18npath := filepath.Join(filepath.Dir(path), "i18n")
-		loadedStrings, err := ParsePluginTemplates(i18npath)
-		if err != nil {
-			return err
-		}
-		if !quiet {
-			for lang := range loadedStrings {
-				langTag, err := language.Parse(lang)
-				if err != nil {
-					return err
-				}
-				log.Info("  Language: " + display.Self.Name(langTag))
-			}
-		}
-
 		// Store the plugin name and metadata as a map.
-		// Make sure the English language is implemented, since this is our default.
 		plugins[metadata.Name] = metadata
-		if len(loadedStrings) > 0 {
-			if _, ok := loadedStrings["en"]; !ok {
-				return errors.New("ERROR! Missing English language")
-			}
-			pluginTemplates[metadata.Name] = loadedStrings
-		}
 		return nil
 	})
 	if err != nil {
@@ -410,14 +230,6 @@ func main() {
 	if err != nil {
 		relPluginsMetadataFile = pluginsMetadataFile
 	}
-	relPluginTemplatesFile, err := filepath.Rel(g3home, pluginTemplatesFile)
-	if err != nil {
-		relPluginTemplatesFile = pluginTemplatesFile
-	}
-	reli18nStringsFile, err := filepath.Rel(g3home, i18nStringsFile)
-	if err != nil {
-		reli18nStringsFile = i18nStringsFile
-	}
 
 	// Store the plugins metadata in JSON format.
 	jsonBytes, err := json.Marshal(plugins)
@@ -431,30 +243,4 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info("Saved file: " + relPluginsMetadataFile)
-
-	// Store the plugins i18n templates in JSON format.
-	jsonBytes, err = json.Marshal(pluginTemplates)
-	if err != nil {
-		log.Error("Error writing to file " + relPluginTemplatesFile + ": " + err.Error())
-		os.Exit(1)
-	}
-	err = os.WriteFile(pluginTemplatesFile, jsonBytes, 0644)
-	if err != nil {
-		log.Error("Error writing to file " + relPluginTemplatesFile + ": " + err.Error())
-		os.Exit(1)
-	}
-	log.Info("Saved file: " + relPluginTemplatesFile)
-
-	// Save the G3 i18n strings in JSON format.
-	jsonBytes, err = json.Marshal(mainStrings)
-	if err != nil {
-		log.Error("Error writing to file " + reli18nStringsFile + ": " + err.Error())
-		os.Exit(1)
-	}
-	err = os.WriteFile(i18nStringsFile, jsonBytes, 0644)
-	if err != nil {
-		log.Error("Error writing to file " + reli18nStringsFile + ": " + err.Error())
-		os.Exit(1)
-	}
-	log.Info("Saved file: " + reli18nStringsFile)
 }

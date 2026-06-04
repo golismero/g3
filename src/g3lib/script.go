@@ -153,12 +153,9 @@ func (parsed ParsedScript) String() string {
 		if text != "" {
 			text = text + "\n"
 		}
-		switch {
-		case parsed.Report.Tool == "":
-			text = text + "report\n"
-		case parsed.Report.Preset != "":
+		if parsed.Report.Preset != "" {
 			text = text + "report " + parsed.Report.Tool + ":" + parsed.Report.Preset + "\n"
-		default:
+		} else {
 			text = text + "report " + parsed.Report.Tool + "\n"
 		}
 	}
@@ -295,8 +292,10 @@ func ParseScript(plugins G3PluginMetadata, script string) (ParsedScript, error) 
 		// The "report" command declares a reporter to invoke after the pipeline finishes.
 		// Must be the LAST directive in the script. At most one per script.
 		// Syntax:
-		//   report                      → built-in MarkdownReporter (run in-process by g3scanner)
+		//   report                      → magenta reporter plugin (the default)
 		//   report <tool>[:<preset>]    → reporter plugin (dispatched to a worker)
+		// The built-in reporter has been removed; reporting is always delegated
+		// to a reporter plugin (magenta by default).
 		if commands[0] == "report" {
 			if parsed.Report != nil {
 				err = fmt.Errorf("syntax error on line %d: only one report directive per script is allowed", lineno+1)
@@ -306,21 +305,19 @@ func ParseScript(plugins G3PluginMetadata, script string) (ParsedScript, error) 
 				err = fmt.Errorf("syntax error on line %d: report directive takes at most one argument: <tool>[:<preset>]", lineno+1)
 				return ParsedScript{}, err
 			}
-			// Bare "report" → built-in (Tool stays empty); no plugin validation needed.
-			if len(commands) == 1 {
-				parsed.Report = &ParsedReport{}
-				continue
-			}
-			// Split <tool>:<preset>
-			toolArg := commands[1]
-			tool := toolArg
+			// Resolve <tool>[:<preset>]. A bare "report" defaults to magenta.
+			tool := "magenta"
 			preset := ""
-			if i := strings.Index(toolArg, ":"); i >= 0 {
-				tool = toolArg[:i]
-				preset = toolArg[i+1:]
-				if tool == "" {
-					err = fmt.Errorf("syntax error on line %d: missing tool name in report directive", lineno+1)
-					return ParsedScript{}, err
+			if len(commands) == 2 {
+				toolArg := commands[1]
+				tool = toolArg
+				if i := strings.Index(toolArg, ":"); i >= 0 {
+					tool = toolArg[:i]
+					preset = toolArg[i+1:]
+					if tool == "" {
+						err = fmt.Errorf("syntax error on line %d: missing tool name in report directive", lineno+1)
+						return ParsedScript{}, err
+					}
 				}
 			}
 			// Plugin validation (mirrors /scan/task/dispatch validation in g3api).

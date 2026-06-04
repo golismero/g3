@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"golismero.com/g3lib"
 )
@@ -94,17 +95,58 @@ func (c *Client) GetScanLogs(ctx context.Context, scanID string) ([]g3lib.LogEnt
 	return out, err
 }
 
-// GetReport → /scan/report. Returns (markdown, errorsText). The server
-// ships errors alongside the report when generation had non-fatal issues.
+// GetReport dispatches the magenta reporter plugin for the scan, waits for the
+// reporter task to complete, then downloads the produced report. Returns
+// (markdown, errorsText, error); errorsText is retained for signature
+// compatibility and is always empty now that reporting is delegated to the
+// plugin (the built-in reporter has been removed). Safe to call from a tea.Cmd
+// goroutine — it blocks while polling.
 func (c *Client) GetReport(ctx context.Context, scanID string) (string, string, error) {
-	var raw struct {
-		Report string `json:"report"`
-		Errors string `json:"errors"`
+	// 1. Dispatch the magenta reporter.
+	var dispatch struct {
+		TaskIDs []string `json:"task_ids"`
 	}
-	if err := c.call(ctx, "/scan/report", g3lib.ReqReport{ScanID: scanID}, &raw); err != nil {
+	if err := c.call(ctx, "/scan/task/dispatch", g3lib.ReqTaskDispatch{ScanID: scanID, Kind: "report", Tool: "magenta"}, &dispatch); err != nil {
 		return "", "", err
 	}
-	return raw.Report, raw.Errors, nil
+	if len(dispatch.TaskIDs) == 0 {
+		return "", "", errors.New("no reporter task was dispatched")
+	}
+	taskID := dispatch.TaskIDs[0]
+
+	// 2. Poll until the reporter task reaches a terminal state.
+	state := ""
+	for {
+		status, err := c.GetTaskStatus(ctx, scanID)
+		if err != nil {
+			return "", "", err
+		}
+		state = ""
+		for _, t := range status.Tasks {
+			if t.TaskID == taskID {
+				state = t.State
+				break
+			}
+		}
+		if state == "DONE" || state == "ERROR" || state == "CANCELED" {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	if state != "DONE" {
+		return "", "", fmt.Errorf("reporter task did not complete (state: %s)", state)
+	}
+
+	// 3. Download the report artifact into memory.
+	var buf bytes.Buffer
+	if err := g3lib.DownloadFile(ctx, c.BaseURL, "/scan/task/artifacts", c.Token, g3lib.ReqTaskArtifacts{ScanID: scanID, TaskID: taskID}, &buf); err != nil {
+		return "", "", err
+	}
+	return buf.String(), "", nil
 }
 
 // GetScanDataList → /scan/datalist. Returns all data object IDs for the

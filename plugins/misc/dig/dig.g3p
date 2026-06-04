@@ -1,8 +1,6 @@
 {
     url: "https://www.cyberciti.biz/faq/linux-unix-dig-command-examples-usage-syntax/",
-    description: {
-        en: "The dig command in Linux is used to gather DNS information. It stands for Domain Information Groper, and it collects data about Domain Name Servers.",
-    },
+    description: "The dig command in Linux is used to gather DNS information. It stands for Domain Information Groper, and it collects data about Domain Name Servers.",
 
     // Only run against domain objects that do not have any discovered DNS records.
     // Run multiple commands, each for every DNS record type.

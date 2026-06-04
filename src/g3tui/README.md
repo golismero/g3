@@ -91,7 +91,7 @@ Opens the full-screen logs viewer for the selected scan. Lines are chronological
 
 ### View report (`r`)
 
-Opens the full-screen Markdown report viewer for the selected scan (terminal scans only). Fetches `/scan/report` once on open, renders via Glamour (auto light/dark). Press `s` to save the raw Markdown verbatim (default filename `<scanid>-report.md`). Press `e` to export the underlying scan data as a beautified JSON array (matches `g3cli export --beautify`); this runs as a cancelable background operation with a temp-and-rename for atomicity. Press `esc` to return.
+Opens the full-screen Markdown report viewer for the selected scan (terminal scans only). On open, dispatches the magenta reporter plugin (`/scan/task/dispatch`), waits for it to finish, then downloads and renders the report (`/scan/task/artifacts`) via Glamour (auto light/dark). Press `s` to save the raw Markdown verbatim (default filename `<scanid>-report.md`). Press `e` to export the underlying scan data as a beautified JSON array (matches `g3cli export --beautify`); this runs as a cancelable background operation with a temp-and-rename for atomicity. Press `esc` to return.
 
 If the server reports parse errors during report generation, a yellow caveats banner appears at the top of the pane. The full error blob is dropped; the first line is shown.
 

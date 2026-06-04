@@ -2,9 +2,7 @@
 // Exists to exercise the orchestrator (e.g. samples/stresstest.script), not for real scans.
 {
     url: "https://github.com/golismero/g3",
-    description: {
-        en: "Debug/stress-test plugin. Echoes the input data object back to the engine as a single-item list.",
-    },
+    description: "Debug/stress-test plugin. Echoes the input data object back to the engine as a single-item list.",
     // Intentionally no `llm:` block: debug-only plugin, not exposed via /plugin/describe.
     commands: [
         {

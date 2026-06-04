@@ -2,8 +2,6 @@
 
 import sys
 import json
-import socket
-import traceback
 
 from libnmap.parser import NmapParser
 

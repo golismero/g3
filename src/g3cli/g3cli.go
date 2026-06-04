@@ -77,6 +77,8 @@ type CancelCmd struct {
 
 type ReportCmd struct {
 	ScanID string `arg:""    required:""                         help:"Scan ID."`
+	Tool   string `name:"tool"   default:"magenta"               help:"Reporter plugin to dispatch."`
+	Preset string `name:"preset" default:""                      help:"Reporter preset (when the plugin declares presets)."`
 	Output string `short:"o" type:"path"         default:"-"     help:"Output file."`
 }
 
@@ -1014,15 +1016,45 @@ func (cmd *CancelCmd) Run(vars CmdContext) error {
 	return nil
 }
 
+// firstTaskID extracts the first task_id from a /scan/task/dispatch response
+// (shape: {"task_ids": [...]}).
+func firstTaskID(data any) (string, error) {
+	m, ok := data.(map[string]interface{})
+	if !ok {
+		return "", errors.New("malformed response from server")
+	}
+	idsIface, ok := m["task_ids"]
+	if !ok {
+		return "", errors.New("response missing task_ids")
+	}
+	ids, ok := idsIface.([]interface{})
+	if !ok || len(ids) == 0 {
+		return "", errors.New("no task was dispatched")
+	}
+	id, ok := ids[0].(string)
+	if !ok {
+		return "", errors.New("malformed task_id")
+	}
+	return id, nil
+}
+
+// Run requests a report by dispatching a reporter plugin (magenta by default)
+// as a server-side task, polling until it completes, then downloading the
+// produced artifact. Reporting is delegated entirely to the plugin; there is
+// no built-in reporter.
 func (cmd *ReportCmd) Run(vars CmdContext) error {
 	output := cmd.Output
 	ctx := vars.Ctx
 	baseUrl := vars.BaseURL
 
-	// Request a report.
-	var req g3lib.ReqReport
-	req.ScanID = cmd.ScanID
-	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/report", vars.Token, req)
+	// 1. Dispatch the reporter plugin.
+	dreq := g3lib.ReqTaskDispatch{
+		ScanID: cmd.ScanID,
+		Kind:   "report",
+		Tool:   cmd.Tool,
+		Preset: cmd.Preset,
+	}
+	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/task/dispatch", vars.Token, dreq)
 	if err != nil {
 		log.Critical("Error sending API request: " + err.Error())
 		return err
@@ -1031,49 +1063,73 @@ func (cmd *ReportCmd) Run(vars CmdContext) error {
 		log.Critical(resp.Data)
 		return errors.New("malformed response from server")
 	}
-	result, ok := resp.Data.(map[string]interface{})
-	if !ok {
+	taskID, err := firstTaskID(resp.Data)
+	if err != nil {
 		log.Criticalf("%v", resp.Data)
 		log.Critical("Malformed response from server.")
-		return errors.New("malformed response from server")
+		return err
 	}
+	log.Info("Dispatched reporter " + cmd.Tool + " as task " + taskID + "; waiting for completion...")
 
-	// If there were parsing errors during the report generation, show them.
-	errorIface, ok := result["errors"]
-	if ok {
-		errorText, ok := errorIface.(string)
-		if !ok {
-			log.Criticalf("%v", resp.Data)
+	// 2. Poll the task status until the reporter task reaches a terminal state.
+	state := ""
+	for {
+		sresp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/tasks/status", vars.Token, g3lib.ReqQueryScanTaskStatus{ScanID: cmd.ScanID})
+		if err != nil {
+			log.Critical("Error sending API request: " + err.Error())
+			return err
+		}
+		if sresp.Status != "success" {
+			log.Critical(sresp.Data)
+			return errors.New("malformed response from server")
+		}
+		var payload g3lib.ScanTaskStatusResponse
+		rawData, merr := json.Marshal(sresp.Data)
+		if merr == nil {
+			merr = json.Unmarshal(rawData, &payload)
+		}
+		if merr != nil {
+			log.Criticalf("%v", sresp.Data)
 			log.Critical("Malformed response from server.")
 			return errors.New("malformed response from server")
 		}
-		log.Error(
-			"Errors were encountered when generating the report:\n---------------------------------------------------\n" + errorText)
+		state = ""
+		for _, t := range payload.Tasks {
+			if t.TaskID == taskID {
+				state = t.State
+				break
+			}
+		}
+		if state == "DONE" || state == "ERROR" || state == "CANCELED" {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	if state != "DONE" {
+		log.Critical("Reporter task did not complete successfully (state: " + state + ").")
+		return errors.New("reporter task state: " + state)
 	}
 
-	// Get the report text.
-	reportIface, ok := result["report"]
-	if !ok {
-		log.Criticalf("%v", resp.Data)
-		log.Critical("Malformed response from server.")
-		return errors.New("malformed response from server")
-	}
-	reportText, ok := reportIface.(string)
-	if !ok {
-		log.Criticalf("%v", resp.Data)
-		log.Critical("Malformed response from server.")
-		return errors.New("malformed response from server")
-	}
-
-	// Save the report text.
+	// 3. Download the report artifact.
+	var dst io.Writer
 	if output == "-" {
-		fmt.Print(reportText)
+		dst = os.Stdout
 	} else {
-		err = os.WriteFile(output, []byte(reportText), 0644)
+		f, err := os.Create(output)
 		if err != nil {
 			log.Critical("Error writing to file " + output + ": " + err.Error())
 			return err
 		}
+		defer f.Close()
+		dst = f
+	}
+	if err := g3lib.DownloadFile(ctx, baseUrl, "/scan/task/artifacts", vars.Token, g3lib.ReqTaskArtifacts{ScanID: cmd.ScanID, TaskID: taskID}, dst); err != nil {
+		log.Critical("Error downloading report: " + err.Error())
+		return err
 	}
 	return nil
 }

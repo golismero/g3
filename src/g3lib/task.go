@@ -122,9 +122,8 @@ type G3Scan struct {            // MessageType: MSG_SCAN
 	Mode string                 `json:"mode"        validate:"required"`
 	Pipelines [][]string        `json:"pipelines"`  // can be empty
 	// Report mirrors ParsedScript.Report. Non-nil means the script declared a
-	// report directive. Tool == "" signals the built-in MarkdownReporter
-	// (run in-process from g3scanner); Tool != "" signals a plugin reporter
-	// (dispatched to a worker via dispatchTask).
+	// report directive. Tool names the reporter plugin to dispatch (magenta by
+	// default for a bare `report`); the report is always run as a worker task.
 	Report *ParsedReport        `json:"report,omitempty"`
 }
 

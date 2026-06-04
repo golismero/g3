@@ -291,12 +291,6 @@ func Main() int {
 		return 1
 	}
 
-	// Load the main i18n strings.
-	i18nStrings := g3lib.LoadG3Strings()
-
-	// Load the plugins i18n templates.
-	pluginTemplatesCache := g3lib.LoadPluginTemplates()
-
 	// Initialize the notification trackers. Each WS msgtype has its own
 	// tracker so a subscriber to "scanremoved" never receives a
 	// "scanprogress" payload (which would otherwise be wrapped with the
@@ -1016,86 +1010,6 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Generate a report.
-		//
-		http.HandleFunc(apiPath+"/scan/report", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Handling: scan/report")
-			var request g3lib.ReqReport
-			err := request.Decode(r)
-			if err != nil {
-				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-
-			// Get the list of issues from the report info, if available.
-			// If there is no report info, just get all issues for the scan.
-			errorText := ""
-			log.Debug("Querying Redis...")
-			var issues []string
-			info, err := g3lib.LoadReportInfo(rdb_client, request.ScanID)
-			if err != nil {
-				log.Error("Could not find a finished report object in Redis, this could mean the scan has not finished yet. Error message: " + err.Error())
-				errorText = errorText + "Could not find a finished report object in Redis, this could mean the scan has not finished yet.\n"
-				issues, err = g3lib.GetIssueIDs(mdb_client, request.ScanID, "*")
-				if err != nil {
-					log.Critical(err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Error fetching data from the database.")
-					return
-				}
-				log.Debugf("Found %d total issues.", len(issues))
-			} else {
-				log.Debugf("Found %d reported issues.", len(info.Issues))
-				issues = info.Issues
-			}
-
-			// Load the data from the database.
-			log.Debug("Querying MongoDB...")
-			inputJson, err := g3lib.LoadData(mdb_client, request.ScanID, issues)
-			if err != nil {
-				log.Critical(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Error fetching data from the database.")
-				return
-			}
-			log.Debugf("...done! Found %d objects.", len(inputJson))
-
-			// Get the list of tools used in the scan.
-			var tools []string
-			if len(issues) > 0 {
-				tools, err = g3lib.GetScanIssueTools(mdb_client, request.ScanID)
-			} else {
-				tools, err = g3lib.GetScanTools(mdb_client, request.ScanID)
-			}
-			if err != nil {
-				log.Critical(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Error fetching data from the database.")
-				return
-			}
-
-			// Build the report.
-			reporter := g3lib.NewMarkdownReporter(g3lib.DefaultConfig, plugins, pluginTemplatesCache, i18nStrings)
-			textOutput, errorArray := reporter.Build("en", "Golismero3 Scan Report", inputJson, tools)
-			if len(errorArray) > 0 {
-				for _, err := range errorArray {
-					log.Error(err.Error())
-					errorText = errorText + err.Error() + "\n"
-				}
-			}
-
-			// Return the report text and the errors during its generation.
-			if textOutput == "" {
-				g3lib.SendApiError(w, http.StatusInternalServerError, errorText)
-			} else {
-				result := map[string]string{}
-				result["report"] = textOutput
-				if errorText != "" {
-					result["errors"] = errorText
-				}
-				g3lib.SendApiResponse(w, result)
-			}
-		}))
-
-		///////////////////////////////////////////////////////////////////////////////////////////
 		// Generic task-artifacts download. Lifecycle-first: task state is read from Redis
 		// (fast path) or reconstructed from SQL log markers (durable fallback). Filesystem
 		// participates only in the bundling step. Redis absence is NEVER a failure signal;
@@ -1454,7 +1368,7 @@ func Main() int {
 				pluginData := map[string]string{}
 				pluginData["name"] = plugin.Name
 				pluginData["url"] = plugin.URL
-				pluginData["description"] = plugin.Description["en"]
+				pluginData["description"] = plugin.Description
 				pluginList = append(pluginList, pluginData)
 			}
 

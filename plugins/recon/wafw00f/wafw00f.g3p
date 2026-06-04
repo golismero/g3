@@ -1,8 +1,6 @@
 {
     url: "https://github.com/EnableSecurity/wafw00f",
-    description: {
-        en: "WAFW00F allows one to identify and fingerprint Web Application Firewall (WAF) products protecting a website.",
-    },
+    description: "WAFW00F allows one to identify and fingerprint Web Application Firewall (WAF) products protecting a website.",
 
     commands: [
         {

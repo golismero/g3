@@ -29,12 +29,6 @@ const G3CONFIG = "config"
 // Plugins cache file name.
 const G3PLUGINS = "g3plugins.json"
 
-// Golismero i18n strings file name.
-const G3STRINGS = "g3strings.json"
-
-// Plugins i18n strings file name.
-const G3TEMPLATES = "g3templates.json"
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Get the G3HOME directory.
@@ -163,39 +157,6 @@ func ResolveInstanceID(envKey string) (string, error) {
 			hostname, envKey)
 	}
 	return prefix + hostname, nil
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// i18n strings for Golismero.
-type G3TranslatedStringsForLanguage map[string]string              // ID -> strings
-type G3TranslatedStrings map[string]G3TranslatedStringsForLanguage // language -> strings map
-
-// Load the i18 strings for Golismero.
-// Note that unlike the i18n strings for plugins, these are not templates (mostly).
-func LoadG3Strings() G3TranslatedStrings {
-
-	// Get the G3HOME directory.
-	g3home := GetHomeDirectory()
-
-	// Load the plugin templates cache JSON file.
-	path := filepath.Join(g3home, G3CONFIG, G3STRINGS)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		log.Error("Failed to process " + path + ": " + err.Error())
-		os.Exit(1)
-	}
-
-	// Parse the JSON file.
-	loadedStrings := G3TranslatedStrings{}
-	err = json.Unmarshal(data, &loadedStrings)
-	if err != nil {
-		log.Error("Failed to process " + path + ": " + err.Error())
-		os.Exit(1)
-	}
-
-	// Return the parsed strings.
-	return loadedStrings
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
