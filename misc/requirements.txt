@@ -1,2 +1,1 @@
-beautifulsoup4
-lxml
+# no requirements for now, leaving this for future use
