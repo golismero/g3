@@ -765,6 +765,22 @@ func main() {
 				actionable = append(actionable, d)
 			}
 		}
+
+		// Objects that make artifact claims: every actionable object, plus any
+		// nil placeholder that nonetheless carries an _artifacts field. A pure
+		// artifact-producing tool (e.g. nikto) returns nil for pipeline purposes
+		// — it adds no fuel — but still owns the files it dropped into its slot,
+		// so those are claimed (validated + recorded in the manifest's work[]),
+		// not treated as orphans. Fuel/persistence below still keys off
+		// actionable alone; a nil stays a nil for the scanner.
+		claimants := make([]g3lib.G3Data, 0, len(actionable)+len(nils))
+		claimants = append(claimants, actionable...)
+		for _, d := range nils {
+			if _, ok := d["_artifacts"]; ok {
+				claimants = append(claimants, d)
+			}
+		}
+
 		var toPersist []g3lib.G3Data
 		switch {
 		case len(actionable) > 0:
@@ -780,12 +796,12 @@ func main() {
 			toPersist = nils[:1] // collapse 0/1/many nils → one cache seed
 		}
 
-		// Artifact-claim validation runs over the actionable objects (the ones
-		// that make claims). A violation is a hard contract breach → ERROR, but
-		// the data still flows to the scanner below (state ≠ fuel).
+		// Artifact-claim validation runs over the claimants (actionable objects
+		// plus artifact-bearing nils). A violation is a hard contract breach →
+		// ERROR, but the data still flows to the scanner below (state ≠ fuel).
 		var claimErr error
 		if !canceled {
-			claimErr = g3lib.ValidateArtifactClaims(actionable, manifestFiles)
+			claimErr = g3lib.ValidateArtifactClaims(claimants, manifestFiles)
 		}
 
 		// Compute the terminal verdict. State and fuel are decoupled (see spec).
@@ -814,7 +830,7 @@ func main() {
 			StartedAt:  pluginStartTS,
 			EndedAt:    pluginEndTS,
 			Files:      manifestFiles,
-			Work:       g3lib.BuildManifestWork(actionable),
+			Work:       g3lib.BuildManifestWork(claimants),
 		})
 		if manifestWriteErr != nil {
 			log.Error("Cannot write task manifest for " + task.TaskID + ": " + manifestWriteErr.Error())
