@@ -119,9 +119,12 @@ The one reusable poll-loop, mirroring g3tui's Go `Poll` helper and the old clien
 - an `interval` (default 2.0s, the repo-wide cadence) and a `timeout` (deadline on a
   monotonic clock),
 - fires `fetch` immediately, then on each interval; returns when `predicate` is satisfied;
-  raises `TaskTimeout` on deadline.
+  raises the builtin `TimeoutError` on deadline.
 
-Both Tier 2 and Tier 3 build their waits on this; neither writes its own loop.
+`poll_until` stays free of task semantics: it raises the generic `TimeoutError`, and the
+orchestration tiers (`scanner`/`manager`) catch it and translate to the domain
+`TaskTimeout` carrying the pending task ids and last-observed states. Both Tier 2 and
+Tier 3 build their waits on this; neither writes its own loop.
 
 ### 5.3 `errors.py` — exception hierarchy
 Ported from the old client (all have operational value outside LLM use):
@@ -135,11 +138,13 @@ Ported from the old client (all have operational value outside LLM use):
 `frozen` dataclasses, each retaining a `raw: dict` for forward-compatibility:
 - `ScanProgress(scanid, status, progress, message, raw)`
 - `TaskStatus(task_id, tool, worker, state, dispatched_at, started_at, completed_at, error_msg, raw)` with `.is_terminal`
+- `ScanTasksStatus(scan_status, tasks, raw)` — the batch result of `tasks.status`
 - `PluginInfo(name, url, description, raw)` — from `plugin/list`
 - `PluginContract(name, summary, accepts, produces, raw)` — from `plugin/describe`
 - `RunOutcome(state, data, artifacts_dir, error_msg, task_ids)` — Tier 3 result
 - `ScanReport(scanid, status, report_path, report_bytes, task_ids)` — Tier 2 result
 - `TASK_TERMINAL_STATES = frozenset({"DONE", "WARNING", "ERROR", "CANCELED"})`
+- `SCAN_TERMINAL_STATES = frozenset({"FINISHED", "ERROR", "CANCELED"})`
 
 **Excluded:** `DATA_PRIMER`, the LLM-slim `PluginContract` philosophy, and the old
 `RunResult`'s LLM framing (the worst-wins aggregation *logic* is reused in `RunOutcome`).
