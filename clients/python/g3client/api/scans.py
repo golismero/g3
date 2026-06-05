@@ -23,12 +23,9 @@ class ScansResource:
         self.imports = ImportsResource(transport)
         self.logs = LogsResource(transport)
 
-    def create(self, script: str, scanid: Optional[str] = None) -> str:
+    def create(self, script: str) -> str:
         # REST-MIGRATION: future POST /scans
-        body: dict[str, Any] = {"script": script}
-        if scanid:
-            body["scanid"] = scanid
-        return self._t.request("POST", "/scan/start", json=body)
+        return self._t.request("POST", "/scan/start", json={"script": script})
 
     def create_managed(self) -> str:
         # REST-MIGRATION: future POST /scans/managed

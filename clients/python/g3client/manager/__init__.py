@@ -1,10 +1,10 @@
-"""Tier 3: managed scans (the g3man workflow).
+"""Tier 3: managed scans.
 
-`Manager` owns a single *managed* scan and drives it the way `g3man` does: add
-targets / insert data / import files, launch tools asynchronously, poll their
-status, download per-task artifacts, and collect produced G3Data. `run()` is the
-synchronous headline — dispatch one tool, wait to completion, download artifacts,
-and collect results into a `RunOutcome`.
+`Manager` owns a single *managed* scan and drives it externally, bypassing the
+scan orchestrator: add targets / insert data / import files, launch tools
+asynchronously, poll their status, download per-task artifacts, and collect
+produced G3Data. `run()` is the synchronous headline — dispatch one tool, wait
+to completion, download artifacts, and collect results into a `RunOutcome`.
 
 It is composed EXCLUSIVELY from `g3client.api` (Tier 1) and the shared `poll_until`
 helper — no HTTP, no `Transport`, no manual endpoint calls.

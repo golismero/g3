@@ -96,7 +96,7 @@ Flags:
   -q, --quiet               Suppress stderr output except on fatal errors.
 
 Commands:
-  scan        Start a new scan or re-start an existing stopped scan.
+  scan        Start a new scan.
   progress    Show the progress of each running scan in real time.
   logs        Show the execution logs of a scan.
   ls          Show the list of all scans.

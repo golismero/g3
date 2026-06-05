@@ -165,7 +165,7 @@ transport; the migration is a per-method edit.*
 
 | Tier-1 call (future-shaped) | Implemented today against | Refactor target |
 |---|---|---|
-| `api.scans.create(script, scanid=None)` | `POST /scan/start` | `POST /scans` |
+| `api.scans.create(script)` | `POST /scan/start` | `POST /scans` |
 | `api.scans.create_managed()` | `POST /scan/create` | `POST /scans/managed` |
 | `api.scans.list()` | `POST /scan/list` | `GET /scans/list` |
 | `api.scans.progress()` | `POST /scan/progress` | `GET /scans` |

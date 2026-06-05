@@ -12,7 +12,7 @@
 `g3client` is a layered client library for `g3api`, concerned solely with Golismero
 (scans, tasks, data, plugins, files, config) — no LLM concerns. It gives callers a clean
 method per `g3api` operation plus two high-level orchestration helpers that reproduce the
-end-to-end flows that g3cli/g3tui (orchestrated scans) and g3man (managed scans) perform.
+end-to-end flows that g3cli/g3tui (orchestrated scans) and g3man (managed scans) would perform.
 
 **This document is the language-neutral blueprint.** It defines the abstractions,
 vocabulary, recipes, and contracts that *every* `g3client` port shares, so that future
@@ -100,7 +100,7 @@ path); **no caller ever changes**. In the reference implementation each such sit
 
 | Canonical method (future-shaped) | Today's endpoint | Future REST endpoint |
 |---|---|---|
-| `scans.create(script, scanid=None)` | `POST /scan/start` | `POST /scans` |
+| `scans.create(script)` | `POST /scan/start` | `POST /scans` |
 | `scans.create_managed()` | `POST /scan/create` | `POST /scans/managed` |
 | `scans.list()` | `POST /scan/list` | `GET /scans/list` |
 | `scans.progress()` | `POST /scan/progress` | `GET /scans` |
