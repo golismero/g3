@@ -239,7 +239,8 @@ func (w Wizard) dispatchSection(m tea.KeyMsg) (Wizard, tea.Cmd) {
 		return w, cmd
 	case sectionMode:
 		switch {
-		case key.Matches(m, Keys.Left), key.Matches(m, Keys.Right), key.Matches(m, Keys.Space):
+		case key.Matches(m, Keys.Up), key.Matches(m, Keys.Down),
+			key.Matches(m, Keys.Left), key.Matches(m, Keys.Right), key.Matches(m, Keys.Space):
 			if w.mode == modeParallel {
 				w.mode = modeSequential
 			} else {
@@ -250,11 +251,11 @@ func (w Wizard) dispatchSection(m tea.KeyMsg) (Wizard, tea.Cmd) {
 	case sectionScanType:
 		types := w.scanTypeNames()
 		switch {
-		case key.Matches(m, Keys.Up):
+		case key.Matches(m, Keys.Up), key.Matches(m, Keys.Left):
 			if w.scanTypeIdx > 0 {
 				w.scanTypeIdx--
 			}
-		case key.Matches(m, Keys.Down):
+		case key.Matches(m, Keys.Down), key.Matches(m, Keys.Right):
 			if w.scanTypeIdx < len(types)-1 {
 				w.scanTypeIdx++
 			}
