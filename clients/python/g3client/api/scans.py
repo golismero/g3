@@ -4,6 +4,7 @@ REST-MIGRATION: method names follow docs/future/http-routing-and-rest-migration.
 Bodies call today's POST endpoints; migrating = swap the path string (and move path
 fields into the path). No caller changes.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -64,11 +65,14 @@ class TargetsResource:
 
     def add(self, scanid: str, targets: Sequence[str]) -> list[str]:
         # REST-MIGRATION: future POST /scans/{scanid}/targets. Returns inserted data IDs.
-        return self._t.request(
-            "POST",
-            "/scan/target/add",
-            json={"scanid": scanid, "targets": list(targets)},
-        ) or []
+        return (
+            self._t.request(
+                "POST",
+                "/scan/target/add",
+                json={"scanid": scanid, "targets": list(targets)},
+            )
+            or []
+        )
 
 
 class DataResource:
@@ -77,11 +81,14 @@ class DataResource:
 
     def insert(self, scanid: str, data: Sequence[dict[str, Any]]) -> list[str]:
         # REST-MIGRATION: future POST /scans/{scanid}/data
-        return self._t.request(
-            "POST",
-            "/scan/data/insert",
-            json={"scanid": scanid, "data": list(data)},
-        ) or []
+        return (
+            self._t.request(
+                "POST",
+                "/scan/data/insert",
+                json={"scanid": scanid, "data": list(data)},
+            )
+            or []
+        )
 
     def list(self, scanid: str) -> list[str]:
         # REST-MIGRATION: future GET /scans/{scanid}/data/list
@@ -129,7 +136,9 @@ class TasksResource:
 
     def status(self, scanid: str) -> ScanTasksStatus:
         # REST-MIGRATION: future GET /scans/{scanid}/tasks
-        resp = self._t.request("POST", "/scan/tasks/status", json={"scanid": scanid}) or {}
+        resp = (
+            self._t.request("POST", "/scan/tasks/status", json={"scanid": scanid}) or {}
+        )
         return ScanTasksStatus.from_raw(resp)
 
     def list(self, scanid: str) -> list[str]:
@@ -168,11 +177,14 @@ class ImportsResource:
 
     def create(self, scanid: str, tool: str, fileid: str) -> list[str]:
         # REST-MIGRATION: future POST /scans/{scanid}/import
-        return self._t.request(
-            "POST",
-            "/scan/import",
-            json={"scanid": scanid, "tool": tool, "fileid": fileid},
-        ) or []
+        return (
+            self._t.request(
+                "POST",
+                "/scan/import",
+                json={"scanid": scanid, "tool": tool, "fileid": fileid},
+            )
+            or []
+        )
 
 
 class LogsResource:
@@ -183,4 +195,6 @@ class LogsResource:
         # REST-MIGRATION: future GET /scans/{scanid}/logs
         # Server returns a list (scan-level) or a {scanid, taskid, lines:[...]} object
         # (task-level). Returned as-is; the scanner/manager tiers shape it.
-        return self._t.request("POST", "/scan/logs", json={"scanid": scanid, "taskid": taskid or ""})
+        return self._t.request(
+            "POST", "/scan/logs", json={"scanid": scanid, "taskid": taskid or ""}
+        )

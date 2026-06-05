@@ -8,6 +8,7 @@ DESIGN RULE — read before editing:
     methods changes. Sites that emulate a not-yet-existing endpoint, or that will
     collapse once the new endpoint lands, are marked `# REST-MIGRATION:`.
 """
+
 from __future__ import annotations
 
 import os
@@ -42,7 +43,9 @@ class ApiClient:
         self.transport = Transport(base_url, token, timeout=timeout, session=session)
 
         root = artifacts_root or os.environ.get("G3_ARTIFACTS_ROOT")
-        self.artifacts_root = Path(root) if root else Path(tempfile.gettempdir()) / "g3client"
+        self.artifacts_root = (
+            Path(root) if root else Path(tempfile.gettempdir()) / "g3client"
+        )
 
         self.scans = ScansResource(self.transport, self.artifacts_root)
         self.plugins = PluginsResource(self.transport)

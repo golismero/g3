@@ -1,4 +1,5 @@
 """Exception hierarchy for g3client. Every error derives from ClientError."""
+
 from __future__ import annotations
 
 

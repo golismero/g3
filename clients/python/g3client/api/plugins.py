@@ -1,4 +1,5 @@
 """Plugins resource."""
+
 from __future__ import annotations
 
 from .._transport import Transport

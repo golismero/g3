@@ -4,6 +4,7 @@ ALL HTTP access in the library passes through Transport. To add an async variant
 later, implement an AsyncTransport exposing the same `request` and `download`
 methods; no resource or orchestration code needs to change.
 """
+
 from __future__ import annotations
 
 import os
@@ -71,7 +72,7 @@ class Transport:
             except requests.RequestException as exc:
                 last_exc = exc
                 if attempt < self.retries:
-                    time.sleep(DEFAULT_BACKOFF * (2 ** attempt))
+                    time.sleep(DEFAULT_BACKOFF * (2**attempt))
                     continue
         raise ApiError(0, "transport error: " + str(last_exc))
 
@@ -80,11 +81,15 @@ class Transport:
         try:
             payload = resp.json()
         except ValueError:
-            raise ApiError(resp.status_code, "non-JSON response: " + repr(resp.text[:200]))
+            raise ApiError(
+                resp.status_code, "non-JSON response: " + repr(resp.text[:200])
+            )
         status = payload.get("status")
         data = payload.get("data")
         if resp.status_code >= 400 or status == "error":
-            msg = data if isinstance(data, str) else (payload.get("message") or str(data))
+            msg = (
+                data if isinstance(data, str) else (payload.get("message") or str(data))
+            )
             raise ApiError(resp.status_code, msg or "unknown error")
         return data
 
@@ -97,7 +102,9 @@ class Transport:
         params: Optional[dict[str, Any]] = None,
         files: Optional[dict[str, Any]] = None,
     ) -> Any:
-        return self._envelope(self._send(method, path, json=json, params=params, files=files))
+        return self._envelope(
+            self._send(method, path, json=json, params=params, files=files)
+        )
 
     def download(self, method: str, path: str, dest: Path, *, json: Any = None) -> Path:
         dest = Path(dest)
@@ -105,7 +112,10 @@ class Transport:
         resp = self._send(method, path, json=json, stream=True)
         if resp.status_code >= 400:
             self._envelope(resp)  # raises ApiError with the server message
-        filename = _filename_from_disposition(resp.headers.get("Content-Disposition", "")) or "artifact.bin"
+        filename = (
+            _filename_from_disposition(resp.headers.get("Content-Disposition", ""))
+            or "artifact.bin"
+        )
         tmp = dest / (filename + ".tmp")
         try:
             with tmp.open("wb") as fh:
@@ -130,7 +140,7 @@ def _filename_from_disposition(header: str) -> str:
     for part in header.split(";"):
         part = part.strip()
         if part.lower().startswith("filename="):
-            return os.path.basename(part[len("filename="):].strip().strip('"'))
+            return os.path.basename(part[len("filename=") :].strip().strip('"'))
     return ""
 
 
@@ -141,5 +151,7 @@ def _safe_extract_zip(zf: zipfile.ZipFile, dest: Path) -> None:
         try:
             target.relative_to(dest_abs)
         except ValueError as exc:
-            raise ClientError("refusing to extract path-traversing zip member: " + repr(member)) from exc
+            raise ClientError(
+                "refusing to extract path-traversing zip member: " + repr(member)
+            ) from exc
     zf.extractall(dest)

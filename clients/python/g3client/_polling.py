@@ -4,6 +4,7 @@ Pure and seam-friendly: the clock and sleep are injectable so callers can unit-t
 deterministically and an async variant can supply async sleeps. Raises the builtin
 TimeoutError on deadline; domain tiers translate it to TaskTimeout with their IDs.
 """
+
 from __future__ import annotations
 
 import time

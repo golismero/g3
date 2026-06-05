@@ -3,6 +3,7 @@
 Each type keeps the original server dict in `raw` for forward-compatibility:
 new server fields are reachable without a library change.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

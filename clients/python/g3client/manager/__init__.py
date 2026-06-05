@@ -9,6 +9,7 @@ and collect results into a `RunOutcome`.
 It is composed EXCLUSIVELY from `g3client.api` (Tier 1) and the shared `poll_until`
 helper — no HTTP, no `Transport`, no manual endpoint calls.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -65,9 +66,7 @@ class Manager:
         fileid = api.files.upload(path)
         return api.scans.imports.create(self.scan_id, tool, fileid)
 
-    def launch(
-        self, tool: str, dataid: str, preset: Optional[str] = None
-    ) -> list[str]:
+    def launch(self, tool: str, dataid: str, preset: Optional[str] = None) -> list[str]:
         """Dispatch a tool asynchronously; return (and record) its task IDs.
 
         A single dispatch can fan out to several tasks (one per matched
@@ -125,7 +124,11 @@ class Manager:
             )
         except TimeoutError:
             snap = last_seen.get("snap")
-            last = _last_states(snap, wanted) if snap is not None else {tid: "UNKNOWN" for tid in wanted}
+            last = (
+                _last_states(snap, wanted)
+                if snap is not None
+                else {tid: "UNKNOWN" for tid in wanted}
+            )
             raise TaskTimeout(task_ids=wanted, last_states=last) from None
 
         by_id = {t.task_id: t for t in final.tasks}
@@ -191,7 +194,9 @@ class Manager:
             slot = (dest_root / tid) if dest_root is not None else None
             self.fetch_artifacts(tid, dest=slot)
         artifacts_dir = (
-            dest_root if dest_root is not None else self._api.artifacts_root / self.scan_id
+            dest_root
+            if dest_root is not None
+            else self._api.artifacts_root / self.scan_id
         )
 
         # Aggregate produced data across every task.
@@ -212,9 +217,7 @@ class Manager:
         self._api.scans.delete(self.scan_id)
 
 
-def _last_states(
-    status: ScanTasksStatus, wanted: Sequence[str]
-) -> dict[str, str]:
+def _last_states(status: ScanTasksStatus, wanted: Sequence[str]) -> dict[str, str]:
     """Map each wanted task id to its last observed state, or "UNKNOWN" if absent."""
     by_id = {t.task_id: t.state for t in status.tasks}
     return {tid: by_id.get(tid, "UNKNOWN") for tid in wanted}

@@ -1,4 +1,5 @@
 """g3client — Python client library for g3api (Golismero3)."""
+
 from __future__ import annotations
 
 __version__ = "0.1.0"

@@ -8,6 +8,7 @@ artifact.
 It is composed EXCLUSIVELY from `g3client.api` (Tier 1) and the shared `poll_until`
 helper — no HTTP, no `Transport`, no manual endpoint calls.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -169,7 +170,9 @@ def _build_script(
 
     if imports:
         blocks.append(
-            "\n".join('import ' + tool + ' "' + fileid + '"' for tool, fileid in imports)
+            "\n".join(
+                "import " + tool + ' "' + fileid + '"' for tool, fileid in imports
+            )
         )
 
     if pipeline:
