@@ -1,2 +1,4 @@
+testssl
 nmap-full | testssl
 dig | nmap-full | testssl
+subfinder | dig | nmap-full | testssl

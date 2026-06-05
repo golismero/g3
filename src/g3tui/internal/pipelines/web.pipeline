@@ -1,5 +1,8 @@
+testssl
 nmap-fast | testssl
 dig | nmap-fast | testssl
 subfinder | dig | nmap-fast | testssl
 nikto
+subfinder | nikto
 wafw00f
+subfinder | wafwoof
