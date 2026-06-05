@@ -49,7 +49,6 @@ type CmdContext struct {
 type ScanCmd struct {
 	Input  string `short:"i" type:"existingfile" default:"-"     help:"Input file."`
 	Output string `short:"o" type:"path"         default:"-"     help:"Output file."`
-	ScanID string `arg:""    optional:""                         help:"Optional ID of an existing scan to continue or re-start."`
 }
 
 type ProgressCmd struct {
@@ -110,7 +109,7 @@ var CLI struct {
 	Quiet   bool             `short:"q" default:"false" help:"Quiet mode."`
 	Version kong.VersionFlag `                          help:"Show version and exit."`
 
-	Scan        ScanCmd        `cmd:"" aliases:"s" help:"Start a new scan or re-start an existing stopped scan."`
+	Scan        ScanCmd        `cmd:"" aliases:"s" help:"Start a new scan."`
 	Progress    ProgressCmd    `cmd:"" aliases:"w" help:"Show the progress of each running scan in real time."`
 	Logs        LogsCmd        `cmd:"" aliases:"f" help:"Show the execution logs of a scan."`
 	Ls          LsCmd          `cmd:"" aliases:"l" help:"Show the list of all scans."`
@@ -367,9 +366,6 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 
 	// Send the scan request to the server.
 	var req g3lib.ReqStartScan
-	if cmd.ScanID != "" {
-		req.ScanID = cmd.ScanID
-	}
 	req.Script = parsed.String()
 	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/start", vars.Token, req)
 	if err != nil {

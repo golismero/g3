@@ -322,8 +322,7 @@ func (resp *APIResponse) Write(w http.ResponseWriter) {
 }
 
 type ReqStartScan struct {
-	ScanID string               `json:"scanid,omitempty"    validate:"omitempty,uuid"`
-	Script string               `json:"script,omitempty"    validate:"omitempty"`
+	Script string               `json:"script"              validate:"required"`
 }
 func (req *ReqStartScan) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }

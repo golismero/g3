@@ -471,36 +471,18 @@ func Main() int {
 				return
 			}
 
-			// If a scan ID was provided, require it to already exist — guards
-			// against typos silently spawning a phantom scan. The progress row
-			// is the cheapest existence witness.
-			//
-			// TODO: race. A scan is published to MQTT here before g3scanner
-			// writes its first WAITING progress row, so a second /scan/start
-			// arriving for the same ID inside that window will falsely 404.
-			// Narrow (milliseconds) and harmless in the single-author case,
-			// but a proper fix needs an existence source that's authoritative
-			// at dispatch time — e.g. writing the progress row here before
-			// publishing, or checking Redis task state / MongoDB presence in
-			// addition to the progress table.
-			if request.ScanID != "" {
-				if _, err := g3lib.GetScanStatus(sql_db, request.ScanID); err != nil {
-					if errors.Is(err, sql.ErrNoRows) {
-						g3lib.SendApiError(w, http.StatusNotFound, "Scan does not exist.")
-						return
-					}
-					log.Error(err)
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
-					return
-				}
-			} else {
-				if len(parsed.Targets) == 0 && len(parsed.Imports) == 0 {
-					log.Error("No targets for new scan, aborting.")
-					g3lib.SendApiError(w, http.StatusBadRequest, "No targets for new scan, aborting.")
-					return
-				}
-				request.ScanID = uuid.NewString()
+			// /scan/start always creates a fresh scan. A scan must have
+			// something to do: targets are only seed data — the real work is
+			// pipeline runs or imports, and a pipeline also needs seed data
+			// (targets or imports) to run against, otherwise nothing dispatches
+			// and the scan sits at 0% forever. Managed scans (/scan/create)
+			// intentionally allow "nothing to do"; orchestrated scans do not.
+			if len(parsed.Imports) == 0 && (len(parsed.Pipelines) == 0 || len(parsed.Targets) == 0) {
+				log.Error("Empty scan rejected: nothing to do (need an import, or a pipeline run with at least one target).")
+				g3lib.SendApiError(w, http.StatusBadRequest, "Empty scan: a scan must declare at least one import, or at least one pipeline run with a target.")
+				return
 			}
+			scanID := uuid.NewString()
 
 			// Log the parsed script.
 			log.Debug(
@@ -519,7 +501,7 @@ func Main() int {
 					g3lib.SendApiError(w, http.StatusBadRequest, "Runtime error in script: "+err.Error())
 					return
 				}
-				_, err = g3lib.SaveData(mdb_client, request.ScanID, g3lib.NIL_TASKID, targetData)
+				_, err = g3lib.SaveData(mdb_client, scanID, g3lib.NIL_TASKID, targetData)
 				if err != nil {
 					log.Error(err)
 					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
@@ -531,7 +513,7 @@ func Main() int {
 			// closure so the `defer stdin.Close()` fires per-iteration rather
 			// than accumulating open file descriptors until the handler returns.
 			importOne := func(parsedImport g3lib.ParsedImport) bool {
-				_, status, err := runImport(plugins, mdb_client, artifactsRoot, request.ScanID, parsedImport.Tool, parsedImport.Path)
+				_, status, err := runImport(plugins, mdb_client, artifactsRoot, scanID, parsedImport.Tool, parsedImport.Path)
 				if err != nil {
 					log.Error(err)
 					if status == http.StatusBadRequest {
@@ -552,7 +534,7 @@ func Main() int {
 			// Send the new scan message. parsed.Report is nil when the script
 			// has no report directive, non-nil with empty Tool for the built-in,
 			// non-nil with a Tool for a plugin reporter.
-			err = g3lib.SendNewScan(mq_client, request.ScanID, parsed.Mode, parsed.Pipelines, parsed.Report)
+			err = g3lib.SendNewScan(mq_client, scanID, parsed.Mode, parsed.Pipelines, parsed.Report)
 			if err != nil {
 				log.Error(err)
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
@@ -560,7 +542,7 @@ func Main() int {
 			}
 
 			// Return the response.
-			g3lib.SendApiResponse(w, request.ScanID)
+			g3lib.SendApiResponse(w, scanID)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
