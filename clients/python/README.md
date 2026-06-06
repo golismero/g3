@@ -157,6 +157,8 @@ All exceptions derive from `g3client.ClientError`:
 | `TaskTimeout(task_ids, last_states)` | Polling hit its deadline before tasks went terminal. |
 | `TaskCancelled(task_ids)` | A task (or scan) reached `CANCELED`. |
 | `TaskFailed(task_ids, error_msg)` | A task (or scan) reached a terminal `ERROR`. |
+| `ScanGone(scanid)` | The scan vanished mid-poll (e.g. deleted server-side). |
+| `TaskGone(scanid, taskid)` | A tracked task vanished mid-poll (e.g. its scan was deleted). |
 
 ## Notes
 

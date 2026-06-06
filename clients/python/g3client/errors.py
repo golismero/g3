@@ -40,3 +40,29 @@ class TaskFailed(ClientError):
         super().__init__("tasks failed: " + ", ".join(task_ids) + ": " + error_msg)
         self.task_ids = task_ids
         self.error_msg = error_msg
+
+
+class ScanGone(ClientError):
+    """The scan vanished from the server mid-operation (e.g. it was deleted).
+
+    Distinct from a transport/HTTP error: it means the scan was observed and
+    then disappeared, so polling should stop and surface it rather than wait.
+    """
+
+    def __init__(self, scanid: str) -> None:
+        super().__init__("scan no longer exists: " + scanid)
+        self.scanid = scanid
+
+
+class TaskGone(ClientError):
+    """A tracked task vanished from the server mid-operation (e.g. its scan was
+    deleted).
+
+    Distinct from a transport/HTTP error: the task was observed and then
+    disappeared, so polling should stop and surface it rather than wait.
+    """
+
+    def __init__(self, scanid: str, taskid: str) -> None:
+        super().__init__("task no longer exists: " + taskid + " (scan " + scanid + ")")
+        self.scanid = scanid
+        self.taskid = taskid

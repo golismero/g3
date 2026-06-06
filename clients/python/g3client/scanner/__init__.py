@@ -16,7 +16,7 @@ from typing import Any, Callable, Optional, Sequence, Union
 
 from .._polling import DEFAULT_POLL_INTERVAL, poll_until
 from ..api import ApiClient
-from ..errors import TaskCancelled, TaskFailed, TaskTimeout
+from ..errors import ScanGone, TaskCancelled, TaskFailed, TaskTimeout
 from ..types import ScanProgress, ScanReport
 
 # Report specifier accepted by `scan(report=...)`: "tool", "tool:preset", or a tuple.
@@ -59,7 +59,8 @@ class Scanner:
         (imports are uploaded first and referenced by file id).
 
         Raises `TaskTimeout` on deadline, `TaskFailed` on a terminal ERROR scan,
-        and `TaskCancelled` on a CANCELED scan.
+        `TaskCancelled` on a CANCELED scan, and `ScanGone` if the scan is deleted
+        server-side mid-run.
         """
         api = self.api
 
@@ -78,8 +79,20 @@ class Scanner:
         last_seen = {"progress": None}  # latest ScanProgress observed
         log_mark = {"count": 0}  # count of log entries already emitted
 
+        seen = {"v": False}  # has the scan ever been observed in the progress table?
+
         def fetch_scan() -> Optional[ScanProgress]:
-            return api.scans.get(scanid)
+            progress = api.scans.get(scanid)
+            if progress is None:
+                # Distinguish "not registered yet" from "deleted": before the
+                # scanner writes the first progress row, a fresh scan is briefly
+                # absent (keep polling). Once observed, a later disappearance
+                # means it was removed server-side — surface it, don't wait.
+                if seen["v"]:
+                    raise ScanGone(scanid)
+                return None
+            seen["v"] = True
+            return progress
 
         def on_poll(progress: Optional[ScanProgress]) -> None:
             if progress is None:
@@ -120,8 +133,17 @@ class Scanner:
             raise TaskFailed((), "reporter dispatch returned no task id")
         report_tid = tids[0]
 
+        report_seen = {"v": False}
+
         def fetch_task() -> Any:
-            return api.scans.tasks.get(scanid, report_tid)
+            task = api.scans.tasks.get(scanid, report_tid)
+            if task is None:
+                # The report task vanished — its scan was deleted mid-report.
+                if report_seen["v"]:
+                    raise ScanGone(scanid)
+                return None
+            report_seen["v"] = True
+            return task
 
         try:
             task = poll_until(

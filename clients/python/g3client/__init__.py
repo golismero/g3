@@ -7,8 +7,10 @@ __version__ = "0.1.0"
 from .errors import (
     ApiError,
     ClientError,
+    ScanGone,
     TaskCancelled,
     TaskFailed,
+    TaskGone,
     TaskTimeout,
 )
 
@@ -26,4 +28,6 @@ __all__ = [
     "TaskTimeout",
     "TaskCancelled",
     "TaskFailed",
+    "ScanGone",
+    "TaskGone",
 ]

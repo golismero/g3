@@ -17,7 +17,7 @@ from typing import Any, Callable, Optional, Sequence, Union
 
 from .._polling import DEFAULT_POLL_INTERVAL, poll_until
 from ..api import ApiClient
-from ..errors import TaskCancelled, TaskFailed, TaskTimeout
+from ..errors import TaskCancelled, TaskFailed, TaskGone, TaskTimeout
 from ..types import RunOutcome, ScanTasksStatus, TaskStatus
 
 # Worst-wins state aggregation across a dispatch fan-out (salvaged from the old
@@ -94,13 +94,16 @@ class Manager:
 
         `on_status` (if given) is invoked each round with the `ScanTasksStatus`.
         Returns `{task_id: TaskStatus}` for the requested ids, built from the final
-        snapshot. Raises `TaskTimeout` (carrying the unfinished ids) on deadline.
+        snapshot. Raises `TaskTimeout` (carrying the unfinished ids) on deadline,
+        and `TaskGone` if a tracked task disappears mid-poll (e.g. its scan was
+        deleted server-side).
         """
         wanted = tuple(task_ids)
         api = self._api
         # Capture the most recent snapshot so the except block never makes a
         # fresh network call (which could raise and mask the original TimeoutError).
         last_seen: dict[str, ScanTasksStatus] = {}
+        seen_ids: set[str] = set()  # wanted task ids ever observed present
 
         def fetch() -> ScanTasksStatus:
             return api.scans.tasks.status(self.scan_id)
@@ -113,6 +116,15 @@ class Manager:
             last_seen["snap"] = status
             if on_status is not None:
                 on_status(status)
+            # A freshly-dispatched task may not appear immediately (keep polling),
+            # but once observed, a later disappearance means the task (or its
+            # scan) was removed server-side — surface it rather than wait.
+            present = {t.task_id for t in status.tasks}
+            for tid in wanted:
+                if tid in present:
+                    seen_ids.add(tid)
+                elif tid in seen_ids:
+                    raise TaskGone(self.scan_id, tid)
 
         try:
             final = poll_until(
