@@ -11,17 +11,18 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const REDIS_HOST     = "REDIS_HOST"
-const REDIS_PORT     = "REDIS_PORT"
+const REDIS_HOST = "REDIS_HOST"
+const REDIS_PORT = "REDIS_PORT"
 const REDIS_PASSWORD = "REDIS_PASSWORD"
 
 type KeyValueStoreClient struct {
 	c *redis.Client
 }
 
+// TODO: implement proper metadata here
 type G3Report struct {
-	ScanID string   `json:"scanid"      validate:"required,uuid"`   // ID for the Golismero scan.
-	Issues []string `json:"issues"      validate:"dive,mongodb"`    // Issues reported by Golismero plugins.
+	ScanID string   `json:"scanid"      validate:"required,uuid"` // ID for the Golismero scan.
+	Issues []string `json:"issues"      validate:"dive,mongodb"`  // Issues reported by Golismero plugins.
 	//Title string `json:"name"        validate:"required"`           // Report title.
 	//Author string `json:"author"      validate:"required"`          // Report author.
 	//Client string `json:"client"      validate:"required"`          // Client the report will be delivered to.
@@ -72,7 +73,7 @@ func DisconnectFromKeyValueStore(rdb KeyValueStoreClient) error {
 // Load the report information object from Redis.
 func LoadReportInfo(rdb KeyValueStoreClient, scanid string) (G3Report, error) {
 	var report G3Report
-    jsonStr, err := rdb.c.Get(context.Background(), "g3report:" + scanid).Result()
+	jsonStr, err := rdb.c.Get(context.Background(), "g3report:"+scanid).Result()
 	if err != nil {
 		return report, err
 	}
@@ -87,12 +88,12 @@ func SaveReportInfo(rdb KeyValueStoreClient, info G3Report) error {
 	if err != nil {
 		return err
 	}
-	return rdb.c.Set(context.Background(), "g3report:" + info.ScanID, string(jsonBytes), 0).Err()
+	return rdb.c.Set(context.Background(), "g3report:"+info.ScanID, string(jsonBytes), 0).Err()
 }
 
 // Delete the report information object from Redis.
 func DeleteReportInfo(rdb KeyValueStoreClient, scanid string) error {
-	return rdb.c.Del(context.Background(), "g3report:" + scanid).Err()
+	return rdb.c.Del(context.Background(), "g3report:"+scanid).Err()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -119,7 +120,7 @@ type TaskState struct {
 	DispatchTS int64  `json:"dispatch_ts,omitempty"`
 	Worker     string `json:"worker,omitempty"`
 	StartTS    int64  `json:"start_ts,omitempty"`
-	State      string `json:"state,omitempty"`        // RUNNING / DONE / ERROR / CANCELED
+	State      string `json:"state,omitempty"` // RUNNING / DONE / ERROR / CANCELED
 	CompleteTS int64  `json:"complete_ts,omitempty"`
 	ErrorMsg   string `json:"error_msg,omitempty"`
 }

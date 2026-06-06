@@ -1174,38 +1174,81 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		return
 	}
 
-	// If the scan script declared a reporter, dispatch it now. The reporter
-	// task runs independently of the scan completion — the scan transitions to
-	// FINISHED regardless of reporter state. Clients observe the reporter task
-	// in /scan/tasks/status with its own DISPATCHED → RUNNING → DONE lifecycle.
+	// If the scan script declared a reporter, dispatch it and wait for it to
+	// finish before completing the scan. The `report` directive is the user's
+	// explicit signal that a report is mandatory — had it been optional, the
+	// directive would simply be absent. So the reporter is treated as a final,
+	// blocking step: the scan stays RUNNING (at 100% progress) while the report
+	// generates, and a reporter failure fails the whole scan.
 	//
 	// Reporting is always delegated to a reporter plugin (magenta by default;
 	// script.go resolves a bare `report` directive to the magenta tool), so
 	// there is no in-process reporter — every report is a worker dispatch via
 	// the canonical dispatchTask helper.
+	//
+	// Tracking the reporter in runningTasks (like any tool task) makes its
+	// lifecycle observable live via /scan/tasks/status (DISPATCHED → RUNNING →
+	// DONE) and lets a mid-report scan cancel propagate to the reporter worker
+	// for free — the stop handler cancels everything in runningTasks. Because we
+	// wait for the terminal response before returning, the worker's Redis writes
+	// land before the defer DeleteTaskStates wipe, so there is no orphan hash.
 	if msg.Report != nil {
 		reporterTaskID := uuid.NewString()
-		// TODO: ScanRunner's defer DeleteTaskStates wipes Redis hashes for
-		// all tasks in this scan, including the reporter task we're about
-		// to dispatch. The worker's SetTaskRunning then writes an orphan
-		// hash (not in the scan's task set), so /scan/tasks/status sees
-		// the reporter task only via the SQL log fallback
-		// (ReconstructTaskStates), never via the live Redis path.
-		// Lifecycle is observable end-to-end — just through SQL, not
-		// Redis. Acceptable per the Tier 3 spec ("reporter task is
-		// independent of scan completion"); revisit if a real workload
-		// needs sub-second reporter-state visibility.
 		if err := dispatchTask(
 			mq_client, rdb_client, scan_sql_db,
 			msg.ScanID, reporterTaskID, "report", msg.Report.Tool,
 			"", 0, msg.Report.Preset,
 		); err != nil {
-			// Non-fatal: scan still completes. Reporter dispatch failure
-			// is logged but does not flip the scan to ERROR — pipeline
-			// work succeeded; the reporter is a downstream artifact that
-			// can be re-requested via /scan/task/dispatch.
+			// The report was requested but we couldn't even dispatch it. Since
+			// the directive makes the report mandatory, this fails the scan.
 			log.Error("Failed to dispatch script-declared reporter: " + err.Error())
+			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Failed to dispatch reporter: "+err.Error()); err != nil {
+				log.Error(err.Error())
+			}
+			return
 		}
+		runningTasks.Add(reporterTaskID)
+
+		// Wait for the reporter task to terminate, staying responsive to scan
+		// cancellation. This mirrors the pipeline wait loop above: a real task
+		// response carries a non-empty TaskID, while the stop handler wakes us
+		// with an empty fake response after clearing currentScanID. We match on
+		// the reporter's own ID so any stray response is simply ignored.
+		//
+		// TODO: there is no per-task timeout here. A reporter worker that dies
+		// without sending a terminal response blocks the scan in RUNNING
+		// indefinitely, escapable only by a manual scan cancel (which does reach
+		// the reporter, since it's in runningTasks). This matches the existing
+		// behavior of every tool-task wait — revisit only if/when we add hang
+		// detection across the board.
+		log.Debug("Waiting for reporter task to complete...")
+		var response g3lib.G3Response
+		for {
+			response = <-responseChannel
+			if response.TaskID == reporterTaskID {
+				break
+			}
+			if currentScanID == "" {
+				log.Debug("Canceled scan during reporting, dropping reporter...")
+				if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+					log.Error(err.Error())
+				}
+				return
+			}
+		}
+		runningTasks.Delete(reporterTaskID)
+
+		// An empty response means the reporter ended in an error condition (same
+		// convention as tool tasks, see the pipeline loop). The directive made
+		// the report mandatory, so a reporter failure fails the whole scan.
+		if len(response.Response) == 0 {
+			log.Error("Reporter task failed, marking scan as failed.")
+			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Reporter task failed"); err != nil {
+				log.Error(err.Error())
+			}
+			return
+		}
+		log.Debug("Reporter task finished.")
 	}
 
 	// Send a message to indicate the scan has finished.
