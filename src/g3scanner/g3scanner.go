@@ -315,6 +315,7 @@ func main() {
 
 // Handle an incoming scan request.
 // This function will be running within a goroutine.
+// TODO FIXME: this is a lot of spaghetti, I need to break it down into auxiliary functions...
 func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMetadata, msg g3lib.G3Scan, scannerID string) {
 
 	// Log the start and stop of the scan.
@@ -478,7 +479,8 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 			}
 
 			// Loop until all pipelines are finished.
-			for {
+			pipesAreEmpty := false
+			for !pipesAreEmpty {
 				log.Debug("Evaluating pipelines...")
 
 				// Check for cancelation.
@@ -709,6 +711,13 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					log.Debug("All pipelines are finished, we are done!")
 					break
 				}
+				if count > len(msg.Pipelines) {
+					log.Errorf("Internal error: count == %d but len(msg.Pipelines) == %d", count, len(msg.Pipelines))
+					if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "internal error"); err != nil {
+						log.Error(err.Error())
+					}
+					return
+				}
 
 				// When we reach this point, all pipelines that are not finished are stuck
 				// waiting on one or more pending tasks, so we can only wait for the next
@@ -723,19 +732,32 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					log.Error(err.Error())
 				}
 
+				// Edge case: we are running a scan where no pipelines launched any tasks, globally.
+				// TBH I'm not sure how this state is reachable (traced the loops myself a couple times,
+				// and Claude did that too, we're both confused) but whatever - it's apparently possible.
+				if runningTasks.Length() == 0 {
+					countTotalPending := 0
+					for pipeidx := 0; pipeidx < len(msg.Pipelines); pipeidx++ {
+						countTotalPending += len(pipelineState[pipeidx].PendingTasks)
+					}
+					if countTotalPending == 0 {
+						log.Debug("No pending tasks and all pipelines empty, we are done!")
+						pipesAreEmpty = true
+						continue
+					}
+					log.Errorf("Internal error while waiting for tasks!")
+					log.Debugf("Pending tasks for scan %s: %v", msg.ScanID, runningTasks.ToArray())
+					for pipeidx := 0; pipeidx < len(msg.Pipelines); pipeidx++ {
+						log.Debugf("Pending tasks for pipeline %d: %v", pipeidx, pipelineState[pipeidx].PendingTasks)
+					}
+					if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "internal error"); err != nil {
+						log.Error(err.Error())
+					}
+					return
+				}
+
 				// If on debug mode, show the pending tasks.
 				if log.LogLevel == "DEBUG" {
-					if runningTasks.Length() == 0 {
-						log.Errorf("Internal error while waiting for tasks!")
-						log.Debugf("Pending tasks for scan %s: %v", msg.ScanID, runningTasks.ToArray())
-						for pipeidx := 0; pipeidx < len(msg.Pipelines); pipeidx++ {
-							log.Debugf("Pending tasks for pipeline %d: %v", pipeidx, pipelineState[pipeidx].PendingTasks)
-						}
-						if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "internal error"); err != nil {
-							log.Error(err.Error())
-						}
-						return
-					}
 					log.Debugf("Pending tasks for scan %s: %v", msg.ScanID, runningTasks.ToArray())
 				}
 
