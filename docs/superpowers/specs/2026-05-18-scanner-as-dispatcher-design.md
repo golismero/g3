@@ -498,7 +498,7 @@ has a hash to update). Both code paths share the same primitives
 
 ```go
 // New process-level connections alongside the existing MQTT connection.
-rdb_client, err := g3lib.ConnectToKeyValueStore()
+rdb_client, err := g3lib.ConnectToRedis()
 // ...
 sql_db, err := g3lib.ConnectToSQL()
 // ...

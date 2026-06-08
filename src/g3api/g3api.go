@@ -399,13 +399,13 @@ func Main() int {
 	log.Debug("Connected to SQL database.")
 
 	// Connect to the Redis database.
-	rdb_client, err := g3lib.ConnectToKeyValueStore()
+	rdb_client, err := g3lib.ConnectToRedis()
 	if err != nil {
 		log.Critical(err)
 		return 1
 	}
 	defer func() {
-		g3lib.DisconnectFromKeyValueStore(rdb_client)
+		g3lib.DisconnectFromRedis(rdb_client)
 		log.Debug("Disconnected from Redis.")
 	}()
 	log.Debug("Connected to Redis.")
@@ -933,7 +933,7 @@ func Main() int {
 			// Delete the scan data.
 			scanid := request.ScanID
 			log.Infof("Deleting scan with ID: %s", scanid)
-			err = g3lib.DeleteReportInfo(rdb_client, scanid)
+			err = g3lib.DeleteScanMetadata(rdb_client, scanid)
 			if err != nil {
 				log.Critical("Error deleting report info: " + err.Error())
 				reterr = reterr + "Error deleting report info: " + err.Error() + "\n"

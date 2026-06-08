@@ -260,13 +260,13 @@ Find the existing `mq_client, err := g3lib.ConnectToBroker(...)` call near the t
 ```go
 	// Process-level Redis connection for the dispatch handler. ScanRunner
 	// goroutines still establish their own per-goroutine Redis connections.
-	rdb_client, err := g3lib.ConnectToKeyValueStore()
+	rdb_client, err := g3lib.ConnectToRedis()
 	if err != nil {
 		log.Critical("Cannot connect to Redis: " + err.Error())
 		os.Exit(1)
 	}
 	defer func() {
-		_ = g3lib.DisconnectFromKeyValueStore(rdb_client)
+		_ = g3lib.DisconnectFromRedis(rdb_client)
 	}()
 	log.Debug("Process connected to Redis (dispatch handler).")
 

@@ -6,8 +6,6 @@ replace golismero.com/g3log => ../g3log
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
-	github.com/btnguyen2k/gocosmos v1.1.0
-	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/go-sql-driver/mysql v1.10.0
@@ -15,11 +13,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/lib/pq v1.12.3
-	github.com/mattn/go-sqlite3 v1.14.44
-	github.com/nakagami/firebirdsql v0.9.19
 	github.com/redis/go-redis/v9 v9.20.0
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.139.5
 	go.mongodb.org/mongo-driver v1.17.9
 	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
@@ -27,42 +21,24 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/apsdehal/go-logger v0.0.0-20190515212710-b0d6ccfee0e6 // indirect
-	github.com/btnguyen2k/consu/checksum v1.1.1 // indirect
-	github.com/btnguyen2k/consu/g18 v0.1.0 // indirect
-	github.com/btnguyen2k/consu/gjrc v0.2.2 // indirect
-	github.com/btnguyen2k/consu/olaf v0.1.3 // indirect
-	github.com/btnguyen2k/consu/reddo v0.1.9 // indirect
-	github.com/btnguyen2k/consu/semita v0.1.5 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
-	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
-	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
-	github.com/jonboulle/clockwork v0.5.0 // indirect
-	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/montanaflynn/stats v0.9.0 // indirect
-	github.com/nakagami/chacha20 v0.1.0 // indirect
-	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
-	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260428144813-1c07baab7f7b // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
-	gitlab.com/nyarla/go-crypt v0.0.0-20160106005555-d9a5dc2b789b // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/grpc v1.81.1 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
-	modernc.org/mathutil v1.7.1 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 )

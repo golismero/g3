@@ -344,8 +344,8 @@ func DropScanData(dbclient DatastoreClient, scanid string) error {
 // as a JSON Lines stream, in the strict order documented by the reporter
 // plugin contract:
 //
-//   Line 1:        the G3Report (deduped issue ID list)
-//   Lines 2..K:    the issue G3Data objects, in G3Report.Issues order
+//   Line 1:        the G3ScanMetadata (deduped issue ID list)
+//   Lines 2..K:    the issue G3Data objects, in G3ScanMetadata.Issues order
 //   Lines K+1..N:  every other G3Data object in the scan
 //   EOF
 //
@@ -359,7 +359,7 @@ func DropScanData(dbclient DatastoreClient, scanid string) error {
 // The returned ReadCloser MUST be closed by the caller to release the pipe
 // and unblock the goroutine in the case where the goroutine has already
 // exited via an early return.
-func ReporterStdinStream(mdb DatastoreClient, rdb KeyValueStoreClient, scanid string) io.ReadCloser {
+func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string) io.ReadCloser {
 	pr, pw := io.Pipe()
 	go func() {
 		// Closing the writer half delivers EOF to the reader (the container's stdin).
@@ -379,10 +379,10 @@ func ReporterStdinStream(mdb DatastoreClient, rdb KeyValueStoreClient, scanid st
 
 		enc := json.NewEncoder(pw)
 
-		// Line 1: G3Report.
-		report, err := LoadReportInfo(rdb, scanid)
+		// Line 1: G3ScanMetadata.
+		report, err := LoadScanMetadata(rdb, scanid)
 		if err != nil {
-			encodeErr = fmt.Errorf("ReporterStdinStream: load G3Report for %s: %w", scanid, err)
+			encodeErr = fmt.Errorf("ReporterStdinStream: load G3ScanMetadata for %s: %w", scanid, err)
 			return
 		}
 		if err := enc.Encode(report); err != nil {

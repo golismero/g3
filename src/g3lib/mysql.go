@@ -11,22 +11,9 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
-
-	// For the time being I am deliberately not supporting Oracle since it requires proprietary C code to work.
-	// As for the rest of the drivers, check each one for DSN and environment variable details on how to use them.
-	// Note that enabling all of these can increase compilation time and binary size - if this is a problem to you
-	// consider commenting out the database drivers you don't need and recompiling the binaries.
-
-	_ "github.com/btnguyen2k/gocosmos"        // Azure Cosmos
-	_ "github.com/denisenkom/go-mssqldb"      // Microsoft SQL Server
 	_ "github.com/go-sql-driver/mysql"        // MySQL / MariaDB
-	_ "github.com/lib/pq"                     // Postgres
-	_ "github.com/mattn/go-sqlite3"           // SQLite
-	_ "github.com/nakagami/firebirdsql"       // Firebird
-	_ "github.com/ydb-platform/ydb-go-sdk/v3" // YandexDB
 )
 
-const SQL_DRIVER = "SQL_DRIVER"
 const SQL_DSN = "SQL_DSN"
 
 type SQLDBClient struct {
@@ -97,17 +84,13 @@ func ConnectToSQL() (SQLDBClient, error) {
 	c := SQLDBClient{}
 
 	// Get the connection string.
-	dbtype := os.Getenv(SQL_DRIVER)
-	if dbtype == "" {
-		return c, errors.New("missing environment variable: " + SQL_DRIVER)
-	}
 	dsn := os.Getenv(SQL_DSN)
 	if dsn == "" {
 		return c, errors.New("missing environment variable: " + SQL_DSN)
 	}
 
 	// Connect to the database.
-	db, err := sql.Open(dbtype, dsn)
+	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return c, err
 	}
@@ -194,7 +177,7 @@ func QueryTaskIDsFromLog(db SQLDBClient, scanid string) ([]string, error) {
 	// Get the task IDs from the log. Since we always output on line of log
 	// before the task is even run, this should work well enough for our
 	// purposes, which is mostly recovering logs anyway.
-	query := "SELECT UNIQUE(`taskid`) FROM `logs` ORDER BY `timestamp`, `id` ASC"
+	query := "SELECT DISTINCT `taskid` FROM `logs` ORDER BY `timestamp`, `id` ASC"
 	rows, err := db.db.Query(query)
 	if err != nil {
 		return tasklist, err

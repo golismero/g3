@@ -28,4 +28,4 @@ linters:
         - fmt.Fprintln
         - fmt.Fprintf
         - golismero.com/g3lib.LoadDotEnvFile
-        - golismero.com/g3lib.DisconnectFromKeyValueStore
+        - golismero.com/g3lib.DisconnectFromRedis

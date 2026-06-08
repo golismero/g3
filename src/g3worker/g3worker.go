@@ -432,13 +432,13 @@ func main() {
 
 	// Connect to Redis. Worker writes its ID + start timestamp into the per-task
 	// hash when it accepts a task; this feeds the live-visibility view in g3cli.
-	rdb_client, err := g3lib.ConnectToKeyValueStore()
+	rdb_client, err := g3lib.ConnectToRedis()
 	if err != nil {
 		log.Critical(err)
 		os.Exit(1)
 	}
 	defer func() {
-		g3lib.DisconnectFromKeyValueStore(rdb_client) //nolint:errcheck
+		g3lib.DisconnectFromRedis(rdb_client) //nolint:errcheck
 		log.Debug("Disconnected from Redis.")
 	}()
 	log.Debug("Connected to Redis.")

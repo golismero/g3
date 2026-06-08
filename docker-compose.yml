@@ -212,7 +212,6 @@ services:
     environment:
       - G3HOME=/app
       - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
-      - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
       - REDIS_HOST=redis

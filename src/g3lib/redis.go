@@ -15,22 +15,13 @@ const REDIS_HOST = "REDIS_HOST"
 const REDIS_PORT = "REDIS_PORT"
 const REDIS_PASSWORD = "REDIS_PASSWORD"
 
-type KeyValueStoreClient struct {
+type RedisConnection struct {
 	c *redis.Client
 }
 
-// TODO: implement proper metadata here
-type G3Report struct {
-	ScanID string   `json:"scanid"      validate:"required,uuid"` // ID for the Golismero scan.
-	Issues []string `json:"issues"      validate:"dive,mongodb"`  // Issues reported by Golismero plugins.
-	//Title string `json:"name"        validate:"required"`           // Report title.
-	//Author string `json:"author"      validate:"required"`          // Report author.
-	//Client string `json:"client"      validate:"required"`          // Client the report will be delivered to.
-}
-
 // Connect to the Redis server.
-func ConnectToKeyValueStore() (KeyValueStoreClient, error) {
-	var rdb_client KeyValueStoreClient
+func ConnectToRedis() (RedisConnection, error) {
+	var rdb_client RedisConnection
 
 	host := os.Getenv(REDIS_HOST)
 	if host == "" {
@@ -60,8 +51,8 @@ func ConnectToKeyValueStore() (KeyValueStoreClient, error) {
 	return rdb_client, err
 }
 
-// Defer this call after ConnectToKeyValueStore().
-func DisconnectFromKeyValueStore(rdb KeyValueStoreClient) error {
+// Defer this call after ConnectToRedis().
+func DisconnectFromRedis(rdb RedisConnection) error {
 	if rdb.c == nil {
 		return nil
 	}
@@ -70,10 +61,31 @@ func DisconnectFromKeyValueStore(rdb KeyValueStoreClient) error {
 	return err
 }
 
-// Load the report information object from Redis.
-func LoadReportInfo(rdb KeyValueStoreClient, scanid string) (G3Report, error) {
-	var report G3Report
-	jsonStr, err := rdb.c.Get(context.Background(), "g3report:"+scanid).Result()
+// Helpers to normalize the key naming convention.
+func (rdb RedisConnection) ScanKey(scanid string, key string) string {
+	return rdb.TaskKey(scanid, NIL_TASKID, key)
+}
+func (rdb RedisConnection) TaskKey(scanid string, taskid string, key string) string {
+	return "g3:" + scanid + ":" + taskid + ":" + key
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Scan metadata (used for reports)
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+// TODO: implement proper metadata here
+type G3ScanMetadata struct {
+	ScanID string   `json:"scanid"      validate:"required,uuid"` // ID for the Golismero scan.
+	Issues []string `json:"issues"      validate:"dive,mongodb"`  // Issues reported by Golismero plugins.
+	//Title string `json:"name"        validate:"required"`           // Report title.
+	//Author string `json:"author"      validate:"required"`          // Report author.
+	//Client string `json:"client"      validate:"required"`          // Client the report will be delivered to.
+}
+
+// Load the scan metadata object from Redis.
+func LoadScanMetadata(rdb RedisConnection, scanid string) (G3ScanMetadata, error) {
+	var report G3ScanMetadata
+	jsonStr, err := rdb.c.Get(context.Background(), rdb.ScanKey(scanid, "metadata")).Result()
 	if err != nil {
 		return report, err
 	}
@@ -82,27 +94,22 @@ func LoadReportInfo(rdb KeyValueStoreClient, scanid string) (G3Report, error) {
 	return report, err
 }
 
-// Save the report information object into Redis.
-func SaveReportInfo(rdb KeyValueStoreClient, info G3Report) error {
+// Save the scan metadata object into Redis.
+func SaveScanMetadata(rdb RedisConnection, info G3ScanMetadata) error {
 	jsonBytes, err := json.Marshal(info)
 	if err != nil {
 		return err
 	}
-	return rdb.c.Set(context.Background(), "g3report:"+info.ScanID, string(jsonBytes), 0).Err()
+	return rdb.c.Set(context.Background(), rdb.ScanKey(info.ScanID, "metadata"), string(jsonBytes), 0).Err()
 }
 
-// Delete the report information object from Redis.
-func DeleteReportInfo(rdb KeyValueStoreClient, scanid string) error {
-	return rdb.c.Del(context.Background(), "g3report:"+scanid).Err()
+// Delete the scan metadata object from Redis.
+func DeleteScanMetadata(rdb RedisConnection, scanid string) error {
+	return rdb.c.Del(context.Background(), rdb.ScanKey(scanid, "metadata")).Err()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Live task state — ephemeral per-scan tracking of dispatched/running/completed tasks.
-//
-// Shape:
-//   - Set  g3:scan:<scanid>:tasks              members = task IDs for the scan
-//   - Hash g3:scan:<scanid>:task:<taskid>      fields: tool, dispatch_ts, worker, start_ts,
-//                                                      state, complete_ts, error_msg
 //
 // Writer ownership: scanner creates entries on dispatch and closes them on response/cancel;
 // worker stamps its ID and start_ts when it accepts the task. Both write to Redis independently;
@@ -125,9 +132,6 @@ type TaskState struct {
 	ErrorMsg   string `json:"error_msg,omitempty"`
 }
 
-func taskSetKey(scanid string) string          { return "g3:scan:" + scanid + ":tasks" }
-func taskHashKey(scanid, taskid string) string { return "g3:scan:" + scanid + ":task:" + taskid }
-
 // Task state machine:
 //
 //   DISPATCHED ──(worker accepts)──▶ RUNNING ──(worker completes)──▶ DONE / ERROR / CANCELED
@@ -142,12 +146,12 @@ func taskHashKey(scanid, taskid string) string { return "g3:scan:" + scanid + ":
 
 // Scanner calls this right before SendTask so the per-task hash exists by the time a
 // worker can possibly pick the task up.
-func SetTaskDispatched(rdb KeyValueStoreClient, scanid, taskid, tool string, dispatchTS int64) error {
+func SetTaskDispatched(rdb RedisConnection, scanid, taskid, tool string, dispatchTS int64) error {
 	ctx := context.Background()
-	if err := rdb.c.SAdd(ctx, taskSetKey(scanid), taskid).Err(); err != nil {
+	if err := rdb.c.SAdd(ctx, rdb.ScanKey(scanid, "tasks"), taskid).Err(); err != nil {
 		return err
 	}
-	return rdb.c.HSet(ctx, taskHashKey(scanid, taskid),
+	return rdb.c.HSet(ctx, rdb.TaskKey(scanid, taskid, "info"),
 		"tool", tool,
 		"dispatch_ts", dispatchTS,
 		"state", "DISPATCHED",
@@ -156,8 +160,8 @@ func SetTaskDispatched(rdb KeyValueStoreClient, scanid, taskid, tool string, dis
 
 // Worker calls this when it accepts a task (case 2 of CancelTracker.AddTaskIfNew).
 // Transitions state DISPATCHED → RUNNING and stamps the worker identity.
-func SetTaskRunning(rdb KeyValueStoreClient, scanid, taskid, workerid string, startTS int64) error {
-	return rdb.c.HSet(context.Background(), taskHashKey(scanid, taskid),
+func SetTaskRunning(rdb RedisConnection, scanid, taskid, workerid string, startTS int64) error {
+	return rdb.c.HSet(context.Background(), rdb.TaskKey(scanid, taskid, "info"),
 		"worker", workerid,
 		"start_ts", startTS,
 		"state", "RUNNING",
@@ -169,9 +173,9 @@ func SetTaskRunning(rdb KeyValueStoreClient, scanid, taskid, workerid string, st
 // and ran DeleteTaskStates), this is a no-op. Prevents late worker writes from creating
 // orphan hashes that aren't members of any g3:scan:<scanid>:tasks set.
 // errMsg is optional ("" to omit).
-func SetTaskTerminal(rdb KeyValueStoreClient, scanid, taskid, state string, completeTS int64, errMsg string) error {
+func SetTaskTerminal(rdb RedisConnection, scanid, taskid, state string, completeTS int64, errMsg string) error {
 	ctx := context.Background()
-	key := taskHashKey(scanid, taskid)
+	key := rdb.TaskKey(scanid, taskid, "info")
 	exists, err := rdb.c.Exists(ctx, key).Result()
 	if err != nil {
 		return err
@@ -188,15 +192,15 @@ func SetTaskTerminal(rdb KeyValueStoreClient, scanid, taskid, state string, comp
 
 // Load every task state for a scan. Returns an empty slice if the scan has no Redis state
 // (either never running or already cleaned up after a terminal transition).
-func GetTaskStates(rdb KeyValueStoreClient, scanid string) ([]TaskState, error) {
+func GetTaskStates(rdb RedisConnection, scanid string) ([]TaskState, error) {
 	ctx := context.Background()
-	taskIDs, err := rdb.c.SMembers(ctx, taskSetKey(scanid)).Result()
+	taskIDs, err := rdb.c.SMembers(ctx, rdb.ScanKey(scanid, "tasks")).Result()
 	if err != nil {
 		return nil, err
 	}
 	states := make([]TaskState, 0, len(taskIDs))
 	for _, taskid := range taskIDs {
-		fields, err := rdb.c.HGetAll(ctx, taskHashKey(scanid, taskid)).Result()
+		fields, err := rdb.c.HGetAll(ctx, rdb.TaskKey(scanid, taskid, "info")).Result()
 		if err != nil {
 			return states, err
 		}
@@ -232,9 +236,9 @@ func GetTaskStates(rdb KeyValueStoreClient, scanid string) ([]TaskState, error) 
 // hash has been cleaned up (scan terminal + state reaper ran). Returns the
 // state string ("DISPATCHED", "RUNNING", "DONE", "ERROR", "CANCELED") otherwise.
 // Used by /scan/task/artifacts to distinguish in-flight tasks from terminal-but-purged ones.
-func GetTaskState(rdb KeyValueStoreClient, scanid, taskid string) (string, error) {
+func GetTaskState(rdb RedisConnection, scanid, taskid string) (string, error) {
 	ctx := context.Background()
-	key := taskHashKey(scanid, taskid)
+	key := rdb.TaskKey(scanid, taskid, "info")
 	exists, err := rdb.c.Exists(ctx, key).Result()
 	if err != nil {
 		return "", err
@@ -251,16 +255,16 @@ func GetTaskState(rdb KeyValueStoreClient, scanid, taskid string) (string, error
 
 // Delete every Redis key for a scan's task state. Scanner calls this on terminal transition;
 // /scan/delete calls it in the cleanup fanout. Safe on empty (no-op if nothing is there).
-func DeleteTaskStates(rdb KeyValueStoreClient, scanid string) error {
+func DeleteTaskStates(rdb RedisConnection, scanid string) error {
 	ctx := context.Background()
-	taskIDs, err := rdb.c.SMembers(ctx, taskSetKey(scanid)).Result()
+	taskIDs, err := rdb.c.SMembers(ctx, rdb.ScanKey(scanid, "tasks")).Result()
 	if err != nil {
 		return err
 	}
 	keys := make([]string, 0, len(taskIDs)+1)
-	keys = append(keys, taskSetKey(scanid))
+	keys = append(keys, rdb.ScanKey(scanid, "tasks"))
 	for _, taskid := range taskIDs {
-		keys = append(keys, taskHashKey(scanid, taskid))
+		keys = append(keys, rdb.TaskKey(scanid, taskid, "info"))
 	}
 	if len(keys) == 0 {
 		return nil

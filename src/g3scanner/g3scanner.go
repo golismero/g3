@@ -173,13 +173,13 @@ func main() {
 
 	// Process-level Redis connection for the dispatch handler. ScanRunner
 	// goroutines still establish their own per-goroutine Redis connections.
-	rdb_client, err := g3lib.ConnectToKeyValueStore()
+	rdb_client, err := g3lib.ConnectToRedis()
 	if err != nil {
 		log.Critical("Cannot connect to Redis: " + err.Error())
 		os.Exit(1)
 	}
 	defer func() {
-		_ = g3lib.DisconnectFromKeyValueStore(rdb_client)
+		_ = g3lib.DisconnectFromRedis(rdb_client)
 	}()
 	log.Debug("Process connected to Redis (dispatch handler).")
 
@@ -355,7 +355,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	log.Debug("Goroutine connected to MongoDB.")
 
 	// Connect to the Redis database.
-	rdb_client, err := g3lib.ConnectToKeyValueStore()
+	rdb_client, err := g3lib.ConnectToRedis()
 	if err != nil {
 		log.Error(err.Error())
 		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
@@ -364,7 +364,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		return
 	}
 	defer func() {
-		g3lib.DisconnectFromKeyValueStore(rdb_client) //nolint:errcheck
+		g3lib.DisconnectFromRedis(rdb_client) //nolint:errcheck
 		log.Debug("Goroutine disconnected from Redis.")
 	}()
 	log.Debug("Goroutine connected to Redis.")
@@ -1161,11 +1161,11 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 
 	// Save the report in the database.
-	var info g3lib.G3Report
+	var info g3lib.G3ScanMetadata
 	info.ScanID = msg.ScanID
 	info.Issues = reportIssues.ToArray()
 	sort.Strings(info.Issues)
-	err = g3lib.SaveReportInfo(rdb_client, info)
+	err = g3lib.SaveScanMetadata(rdb_client, info)
 	if err != nil {
 		log.Error("Error saving report info: " + err.Error())
 		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Error saving report info: "+err.Error()); err != nil {
@@ -1270,7 +1270,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 // are valid). This helper assumes well-formed inputs.
 func dispatchTask(
 	mq g3lib.MessageQueueClient,
-	rdb g3lib.KeyValueStoreClient,
+	rdb g3lib.RedisConnection,
 	sql g3lib.SQLDBClient,
 	scanID, taskID, kind, tool string,
 	dataID string, // tool kind only
@@ -1309,7 +1309,7 @@ func dispatchTask(
 // kvstore.go).
 func dispatchHandler(
 	mq g3lib.MessageQueueClient,
-	rdb g3lib.KeyValueStoreClient,
+	rdb g3lib.RedisConnection,
 	sql g3lib.SQLDBClient,
 	plugins g3lib.G3PluginMetadata,
 	msg g3lib.G3Dispatch,
