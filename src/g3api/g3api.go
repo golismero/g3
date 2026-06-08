@@ -419,7 +419,7 @@ func Main() int {
 		// progress column, so we pass it through verbatim. The sender
 		// is the authority on whether the value is meaningful; the
 		// subscriber doesn't second-guess.
-		g3lib.UpdateScanProgress(sql_db, msg.ScanID, msg.Status, msg.Progress, msg.Message) //nolint:errcheck
+		g3lib.UpdateScanProgressSeq(sql_db, msg.ScanID, msg.Status, msg.Progress, msg.Message, msg.Seq) //nolint:errcheck
 
 		// Notify the event if anyone wants it.
 		progressNotify.SendNotification(msg)

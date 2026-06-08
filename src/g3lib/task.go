@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime/debug"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -137,6 +138,11 @@ type G3ScanStatus struct {      // MessageType: MSG_STATUS
 	// progress" — never as zero.
 	Progress *int               `json:"progress,omitempty"`
 	Message string       	    `json:"message"`
+	// Seq is a strictly increasing per-sender sequence number. The receiver
+	// drops status updates older than the last persisted one — g3api processes
+	// status messages concurrently (see SetOrderMatters(false)), so back-to-back
+	// updates can arrive out of order. See nextStatusSeq.
+	Seq uint64 `json:"seq"`
 }
 
 type G3ScanStop struct {        // MessageType: MSG_STOP
@@ -263,6 +269,17 @@ func SendScanStop(client MessageQueueClient, scanid string) error {
 	return SendMQPayload(client, G3SCANNERSTOPTOPIC, msg)
 }
 
+// statusSeqCounter backs nextStatusSeq. All scan-status messages for a given
+// scan are sent from a single scanner process, so a per-process atomic counter
+// is monotonic per scan (a subsequence of a monotonic sequence is monotonic) —
+// no per-scan state is needed. The receiver (g3api) uses Seq to drop
+// out-of-order updates, since it handles status messages concurrently.
+var statusSeqCounter uint64
+
+func nextStatusSeq() uint64 {
+	return atomic.AddUint64(&statusSeqCounter, 1)
+}
+
 // Send a running scan progress message to the broker.
 func SendScanProgress(client MessageQueueClient, scanid string, currentScanStep, totalScanSteps int) error {
 	if totalScanSteps <= 0 {
@@ -276,6 +293,7 @@ func SendScanProgress(client MessageQueueClient, scanid string, currentScanStep,
 	}
 	msg := G3ScanStatus{}
 	msg.MessageType = MSG_STATUS
+	msg.Seq = nextStatusSeq()
 	msg.SenderID = GetClientID(client)
 	msg.ScanID = scanid
 	msg.Status = STATUS_RUNNING
@@ -296,6 +314,7 @@ func SendScanProgress(client MessageQueueClient, scanid string, currentScanStep,
 func SendScanStopped(client MessageQueueClient, scanid string) error {
 	msg := G3ScanStatus{}
 	msg.MessageType = MSG_STATUS
+	msg.Seq = nextStatusSeq()
 	msg.SenderID = GetClientID(client)
 	msg.ScanID = scanid
 	msg.Status = STATUS_CANCELED
@@ -314,6 +333,7 @@ func SendScanFailed(client MessageQueueClient, scanid, errorMessage string) erro
 	}
 	msg := G3ScanStatus{}
 	msg.MessageType = MSG_STATUS
+	msg.Seq = nextStatusSeq()
 	msg.SenderID = GetClientID(client)
 	msg.ScanID = scanid
 	msg.Status = STATUS_ERROR
@@ -330,6 +350,7 @@ func SendScanCompleted(client MessageQueueClient, scanid string) error {
 	hundred := 100
 	msg := G3ScanStatus{}
 	msg.MessageType = MSG_STATUS
+	msg.Seq = nextStatusSeq()
 	msg.SenderID = GetClientID(client)
 	msg.ScanID = scanid
 	msg.Status = STATUS_FINISHED

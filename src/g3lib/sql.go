@@ -285,8 +285,22 @@ func InsertScanProgress(db SQLDBClient, scanid string) error {
 	return err
 }
 
-// Update the progress of a scan.
+// Update the progress of a scan, unconditionally. Used for setup writes (e.g.
+// marking a scan MANAGED) that are not racing concurrent status messages.
 func UpdateScanProgress(db SQLDBClient, scanid string, status G3SCANSTATUS, progress *int, message string) error {
+	return updateScanProgress(db, scanid, status, progress, message, nil)
+}
+
+// UpdateScanProgressSeq updates a scan's progress only if seq is newer than the
+// last persisted sequence number for that scan. g3api processes status messages
+// concurrently (SetOrderMatters(false)), so a stale update — e.g. a RUNNING that
+// lost the race to a near-simultaneous FINISHED — must not overwrite a newer
+// one. Makes persistence order-independent and idempotent under duplicate delivery.
+func UpdateScanProgressSeq(db SQLDBClient, scanid string, status G3SCANSTATUS, progress *int, message string, seq uint64) error {
+	return updateScanProgress(db, scanid, status, progress, message, &seq)
+}
+
+func updateScanProgress(db SQLDBClient, scanid string, status G3SCANSTATUS, progress *int, message string, seq *uint64) error {
 	var query string
 	var args []interface{}
 
@@ -326,11 +340,25 @@ func UpdateScanProgress(db SQLDBClient, scanid string, status G3SCANSTATUS, prog
 		correct = true
 	}
 
+	if seq != nil {
+		query = query + "`last_seq` = ?, "
+		args = append(args, *seq)
+		correct = true
+	}
+
 	if !correct {
 		return errors.New("invalid call to UpdateScanProgress(), nothing to update")
 	}
 	query = query[:len(query)-2] + " WHERE `scanid` = ?"
 	args = append(args, scanid)
+
+	if seq != nil {
+		// Ordering guard: apply only if this message is newer than the last one
+		// persisted for this scan. Stale, out-of-order updates match zero rows.
+		query = query + " AND `last_seq` < ?"
+		args = append(args, *seq)
+	}
+
 	_, err := db.db.ExecContext(context.Background(), query, args...)
 	return err
 }
