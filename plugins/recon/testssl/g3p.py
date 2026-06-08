@@ -27,6 +27,7 @@ def ip_slug(ip):
 base_args = [
     "testssl.sh",
     "--sneaky",
+    "--nodns=min",
     "--phone-out",
     "--hints",
     "--connect-timeout",
