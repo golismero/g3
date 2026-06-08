@@ -13,7 +13,7 @@ RUN git clone https://github.com/golismero/magenta.git && \
         -r {} \;
 
 # Add the Golismero3 wrapper.
-COPY --chmod=0755 g3r.sh /usr/bin/g3r
+COPY --chmod=0755 g3r.py /usr/bin/g3r
 
 # Change the entrypoint to our wrapper.
 ENTRYPOINT ["/usr/bin/g3r"]
