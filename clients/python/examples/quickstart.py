@@ -3,8 +3,8 @@
 
 Demonstrates both high-level tiers against a live g3api server:
 
-  * Tier 2 (Scanner) — an orchestrated scan that returns a report.
-  * Tier 3 (Manager) — a managed scan that runs a single tool.
+  * Scanner — an orchestrated scan that returns a report.
+  * Manager — a managed scan that runs a single tool.
 
 Configuration is read from the environment (or pass --base-url / --token):
 
@@ -13,8 +13,9 @@ Configuration is read from the environment (or pass --base-url / --token):
 
 Usage:
 
-    python quickstart.py scanner scanme.example.com
-    python quickstart.py manager scanme.example.com --tool nmap
+    python quickstart.py scanner https://scanme.example.com --pipeline web.pipeline
+    python quickstart.py scanner example.net 192.168.1.1/24 --pipeline network.pipeline
+    python quickstart.py manager scanme.example.com --tool testssl
 
 This script talks to a real server; it is an example, not a test.
 """
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from g3client import (
     ClientError,
@@ -32,7 +34,7 @@ from g3client import (
 
 
 def run_scanner(args: argparse.Namespace) -> int:
-    """Tier 2: launch an orchestrated scan and print the report."""
+    """Launch an orchestrated scan and print the report."""
     scanner = Scanner.from_credentials(args.base_url, args.token)
 
     def on_progress(p) -> None:
@@ -41,9 +43,13 @@ def run_scanner(args: argparse.Namespace) -> int:
     def on_log(lines) -> None:
         print(f"  [logs] +{len(lines)} line(s)")
 
+    pipeline = None
+    if args.pipeline:
+        pipeline = Path(args.pipeline).read_text().splitlines()
+
     report = scanner.scan(
-        targets=[args.target],
-        pipeline=args.pipeline,
+        targets=args.target,
+        pipeline=pipeline,
         mode=args.mode,
         report=args.report,
         on_progress=on_progress,
@@ -61,7 +67,7 @@ def run_scanner(args: argparse.Namespace) -> int:
 
 
 def run_manager(args: argparse.Namespace) -> int:
-    """Tier 3: own a managed scan and run a single tool to completion."""
+    """Own a managed scan and run a single tool to completion."""
     mgr = Manager.from_credentials(args.base_url, args.token)
     try:
         objs = mgr.add_targets([args.target])
@@ -92,7 +98,7 @@ def run_manager(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
         "--base-url", default=None, help="g3api base URL (or G3_API_BASEURL)"
     )
@@ -103,10 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    s = sub.add_parser("scanner", help="orchestrated scan (Tier 2)")
-    s.add_argument("target", help="target host or URL")
+    s = sub.add_parser("scanner", help="orchestrated scan")
+    s.add_argument("target", nargs="+", help="one or more target hosts or URLs")
     s.add_argument(
-        "--pipeline", nargs="+", default=["testssl"], help="tools or piped chains"
+        "--pipeline",
+        default=None,
+        help="path to a file containing the pipeline (g3 script DSL lines)",
     )
     s.add_argument("--mode", default="parallel", choices=("parallel", "sequential"))
     s.add_argument(
@@ -114,7 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(func=run_scanner)
 
-    m = sub.add_parser("manager", help="managed scan (Tier 3)")
+    m = sub.add_parser("manager", help="managed scan")
     m.add_argument("target", help="target host or URL")
     m.add_argument("--tool", default="testssl", help="tool to run")
     m.add_argument("--preset", default=None, help="optional tool preset")
