@@ -27,7 +27,6 @@ import sys
 import tempfile
 
 INPUT_DIR = "/input"
-OUTPUT_FILE = "/output/report.md"
 MAGENTA = "/app/magenta/magenta.py"
 
 
@@ -57,7 +56,7 @@ def main():
     os.dup2(devnull, 0)
     os.close(devnull)
 
-    argv = ["python3", MAGENTA, "report", INPUT_DIR, "-o", OUTPUT_FILE]
+    argv = ["python3", MAGENTA, "report", INPUT_DIR]
 
     # G3ScanMetadata.config (optional) is, by construction, exactly magenta's
     # -m/--metadata schema. When present, materialize it to a temp file and pass
@@ -68,6 +67,9 @@ def main():
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(config, handle)
         argv += ["-m", path]
+
+    # Append any additional command line arguments defined in the command.
+    argv.extend(sys.argv[1:])
 
     # Hand off to magenta; exec replaces this process so magenta's exit code
     # becomes the task's exit code directly (exit !0 -> worker marks ERROR).
