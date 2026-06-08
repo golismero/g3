@@ -1349,6 +1349,7 @@ func Main() int {
 				plugin := plugins[name]
 				pluginData := map[string]string{}
 				pluginData["name"] = plugin.Name
+				pluginData["category"] = plugin.Category
 				pluginData["url"] = plugin.URL
 				pluginData["description"] = plugin.Description
 				pluginList = append(pluginList, pluginData)

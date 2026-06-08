@@ -1332,10 +1332,12 @@ func (cmd *ToolsCmd) Run(vars CmdContext) error {
 		fmt.Fprintln(fd, "")
 	}
 	for _, pluginData := range pluginList {
+		if pluginData["category"] == "Debug" { continue }
 		if CLI.Quiet {
 			fmt.Fprintln(fd, pluginData["name"])
 		} else {
 			fmt.Fprintln(fd, fmt.Sprint("Name:        "+pluginData["name"]))
+			fmt.Fprintln(fd, fmt.Sprint("Category:    "+pluginData["category"]))
 			fmt.Fprintln(fd, fmt.Sprint("Homepage:    "+pluginData["url"]))
 			fmt.Fprintln(fd, fmt.Sprint("Description: "+pluginData["description"]))
 			fmt.Fprintln(fd, "")

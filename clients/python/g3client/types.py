@@ -121,6 +121,7 @@ class RunOutcome:
 @dataclass(frozen=True)
 class PluginInfo:
     name: str
+    category: str
     url: str
     description: str
     raw: dict[str, Any] = field(default_factory=dict)
@@ -129,6 +130,7 @@ class PluginInfo:
     def from_raw(cls, d: dict[str, Any]) -> "PluginInfo":
         return cls(
             name=d.get("name", ""),
+            category=d.get("category", ""),
             url=d.get("url", ""),
             description=d.get("description", ""),
             raw=d,

@@ -185,6 +185,17 @@ func main() {
 			metadata.Image = "ghcr.io/golismero/" + metadata.Name
 		}
 
+		// If the plugin category is missing, use the name of the parent directory.
+		if metadata.Category == "" {
+			category := filepath.Base(filepath.Dir(filepath.Join(path, "..")))
+			if category == "." {
+				category = "Unknown"
+			} else {
+				category = strings.Title(category)
+			}
+			metadata.Category = category
+		}
+
 		// If the tool description is missing, add a default description.
 		if metadata.Description == "" {
 			metadata.Description = "Golismero3 integration with " + metadata.Name + "."
