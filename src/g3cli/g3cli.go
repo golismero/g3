@@ -1310,6 +1310,15 @@ func (cmd *ToolsCmd) Run(vars CmdContext) error {
 			return errors.New("malformed response from server")
 		}
 		pluginData["description"] = tmp9
+		tmp10, ok := tmp3["category"]
+		if !ok {
+			return errors.New("malformed response from server")
+		}
+		tmp11, ok := tmp10.(string)
+		if !ok {
+			return errors.New("malformed response from server")
+		}
+		pluginData["category"] = tmp11
 		pluginList = append(pluginList, pluginData)
 	}
 
