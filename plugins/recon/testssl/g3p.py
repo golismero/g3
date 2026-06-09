@@ -14,13 +14,11 @@ import subprocess
 # anything outside [0-9a-fA-F-] returns None (defense against malformed upstream data).
 _IP_SLUG_ALLOWED = set("0123456789abcdefABCDEF-")
 
-
 def ip_slug(ip):
     slug = ip.replace(":", "-").replace(".", "-")
     if not slug or not all(c in _IP_SLUG_ALLOWED for c in slug):
         return None
     return slug
-
 
 # Base arguments for testssl.
 # TODO some of this could come from environment variables

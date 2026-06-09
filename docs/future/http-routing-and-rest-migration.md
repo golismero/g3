@@ -180,6 +180,26 @@ These look like gaps but are deliberate. Comment near the route table to keep th
 - **`POST /scans/{scanid}/data/filter` is the *only* POST-as-search endpoint.** Justified by the Mongo-ID bulk problem. Keep this comment in the handler to prevent the pattern spreading.
 - **No PUT/PATCH anywhere.** g3api has nothing that's updated-in-place.
 
+### Response status-code contract (client-side)
+
+Today `g3lib.MakeApiRequest` accepts any `2xx` as success. It was broadened from `== 200` after `/scan/task/dispatch`'s legitimate `202 Accepted` was surfaced to the g3tui report view as `"Failed to load report: 202 Accepted"`. The sibling helpers `DownloadFile`/`UploadFile` already document the same "2xx = success" convention. This is deliberately *permissive*: the client trusts the server to only emit success codes it means, decodes the `{status,data}` envelope regardless of which 2xx it was, and keys behavior off the envelope's `status` field, not the HTTP code.
+
+That permissiveness is the right default for the current "everything is POST, everything returns 200 (plus one 202)" shape. An allowlist (`200,201,202`) would just re-introduce the exact bug it replaced: every new server-side code silently becomes a client "error" until someone remembers to extend the list.
+
+The REST migration changes the calculus, because verbs acquire well-defined success codes:
+
+- `GET` → `200 OK`
+- `POST` to a collection (create) → `201 Created` (likely + `Location`)
+- `POST .../{action}` async dispatch → `202 Accepted`
+- `DELETE` → `204 No Content` (no body) or `200 OK`
+
+Once success codes carry meaning, there's a real case to make the client contract *explicit per endpoint* — assert the expected code and treat anything else (even another 2xx) as a contract violation worth logging — rather than blanket-accepting the range. Tighter contracts catch server/client drift that the permissive check hides. Two concrete things to resolve when this is picked up:
+
+- **Bodyless 2xx.** `MakeApiRequest`'s success path unconditionally `json.Unmarshal`s the body, which errors on an empty one. A `DELETE → 204 No Content` would break it. Either keep DELETE on `200 + envelope`, or teach the client to treat an empty 2xx body as a no-data success.
+- **`201 Created` + `Location`.** If creates return `201` with the new id in a `Location` header rather than the `data` envelope, every client that reads the id from `data` updates in the same flag-day.
+
+Whether to keep the permissive "any 2xx" check or move to explicit per-endpoint expected codes is a client-contract decision to make *with* the route table, not before it.
+
 ---
 
 ## Migration considerations
@@ -258,5 +278,6 @@ Until one of those lands, the current shape works, every existing client knows h
 - **Logging strategy** — structured access logs become natural with stdlib mux; pick a logger that fits the existing `g3log` shape.
 - **`apiPath` prefix handling** — today every route is registered under a configurable prefix. Stdlib mux 1.22 patterns support this fine (just include `apiPath` in the pattern string) but verify the prefix-stripping behavior under sub-routers if chi is later adopted.
 - **Whether the singular→plural rename gets bundled** — slightly bigger client churn but you only pay flag-day once.
+- **Status-code contract** — keep the permissive "any 2xx = success" client check, or assert explicit expected codes per endpoint (see *Response status-code contract* under Key design decisions). Resolve the bodyless-`204` decode behavior either way.
 
 **Likely files when scheduled:** `src/g3api/g3api.go` (every route registration), `src/g3lib/api.go` (every `Req*.Decode` method), all clients (`src/g3cli/`, `src/g3tui/`, `clients/python/`).
