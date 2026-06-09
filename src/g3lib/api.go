@@ -90,8 +90,11 @@ func MakeApiRequest(ctx context.Context, baseurl string, endpoint string, token 
 	}
 
 	// If the HTTP request was successful...
+	// Any 2xx is a success, not just 200 OK: async endpoints like
+	// /scan/task/dispatch reply 202 Accepted with a normal {status,data}
+	// envelope. Mirrors the 2xx convention documented on DownloadFile/UploadFile.
 	var response APIResponse
-	if res.StatusCode == http.StatusOK {
+	if res.StatusCode >= 200 && res.StatusCode < 300 {
 
 		// Decode the response bytes.
 		// If there are none, this is an error, regardless of the HTTP status code.
@@ -103,7 +106,7 @@ func MakeApiRequest(ctx context.Context, baseurl string, endpoint string, token 
 		// Validate the response structure.
 		err = validator.New().Struct(response)
 
-		// We may get a 200 OK with an error status, in theory.
+		// We may get a 2xx with an error status, in theory.
 		// The server should never do this, but let's cover that case anyway.
 		if response.Status == "error" {
 			_, ok := response.Data.(string)

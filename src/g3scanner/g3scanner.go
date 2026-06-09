@@ -384,16 +384,17 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}()
 	log.Debug("Goroutine connected to SQL database.")
 
-	// Purge Redis task-state keys for this scan when the scan ends (whether
-	// terminal success, failure, or exception). The audit trail lives in the
-	// structured log lines we wrote to SQL; Redis is live-view only.
-	defer func() {
-		if err := g3lib.DeleteTaskStates(rdb_client, msg.ScanID); err != nil {
-			log.Error("Redis DeleteTaskStates failed: " + err.Error())
-		} else {
-			log.Debug("Cleared Redis task states for scan: " + msg.ScanID)
-		}
-	}()
+	// NB: we intentionally do NOT purge Redis task-state keys when the scan
+	// ends. They now live until the scan is deleted (the /scan/delete handler
+	// calls DeleteTaskStates). Clearing them on terminal used to corrupt the
+	// task-status view: once a scan finished and its keys were wiped, a reporter
+	// task later dispatched against it (e.g. "view report" in g3tui) would
+	// repopulate Redis with just that one task, and the status endpoint's
+	// "Redis non-empty wins, else fall back to SQL" rule would then hide all the
+	// original tasks. Retaining the keys for the scan's whole lifetime keeps
+	// Redis complete, so that rule holds. The SQL log lines remain the durable
+	// audit trail and the fallback source if Redis ever loses data
+	// (eviction/restart).
 
 	// Calculate the total number of steps in the script.
 	// This will be used later to determine the scan progress.

@@ -786,11 +786,12 @@ func Main() int {
 				return
 			}
 
-			// Redis is authoritative for live per-task state. When Redis has
-			// expired the data (terminated scan, after cleanup), we fall back to
-			// reconstructing from structured log markers — see the fallback
-			// further down. The SQL logs table supplies timestamps and line
-			// counts as augmentation.
+			// Redis is authoritative for per-task state and is retained for the
+			// scan's whole lifetime (cleared only by /scan/delete). When Redis
+			// has genuinely lost the data (eviction/restart, or a scan old enough
+			// to predate retained state), we fall back to reconstructing from
+			// structured log markers — see the fallback further down. The SQL
+			// logs table supplies timestamps and line counts as augmentation.
 			taskStates, err := g3lib.GetTaskStates(rdb_client, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
@@ -833,9 +834,17 @@ func Main() int {
 				return entries[i].DispatchTS < entries[j].DispatchTS
 			})
 
-			// If Redis has expired the per-task state, fall back to reconstructing
+			// If Redis has no per-task state at all, fall back to reconstructing
 			// from structured log markers. SQL `logs` is durable, so this works
-			// for terminated scans whose Redis keys have been cleaned up.
+			// for scans whose Redis keys were lost (eviction/restart) or deleted.
+			//
+			// TODO: this fallback is all-or-nothing — it assumes Redis is either
+			// complete or empty. If Redis is ever *partially* populated for a scan
+			// (some keys evicted, or a task added to a scan whose other keys are
+			// gone), the non-empty branch hides the missing tasks instead of
+			// merging in the SQL-reconstructed ones. Retaining task-state keys
+			// until /scan/delete (see g3scanner) keeps this from firing in normal
+			// operation; a fully robust fix would merge Redis over SQL by taskid.
 			if len(entries) == 0 {
 				reconstructed, rerr := g3lib.ReconstructTaskStatesFromLogs(sql_db, request.ScanID)
 				if rerr != nil {
