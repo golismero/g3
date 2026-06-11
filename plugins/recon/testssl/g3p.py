@@ -24,10 +24,12 @@ def ip_slug(ip):
 # TODO some of this could come from environment variables
 base_args = [
     "testssl.sh",
+    "--warnings=batch",
     "--sneaky",
     "--nodns=min",
     "--phone-out",
     "--hints",
+    "--show-each",
     "--connect-timeout",
     "10",
     "--openssl-timeout",

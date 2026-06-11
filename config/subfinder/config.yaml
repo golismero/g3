@@ -4,7 +4,7 @@
 #sources: []
 
 # use all sources for enumeration (slow)
-#all: false
+all: false
 
 # sources to exclude from enumeration (-es alienvault,zoomeye)
 #exclude-sources: []
