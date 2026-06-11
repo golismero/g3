@@ -191,7 +191,7 @@ func main() {
 			if category == "." {
 				category = "Unknown"
 			} else {
-				category = strings.Title(category)
+				category = strings.Title(category) //nolint:staticcheck
 			}
 			metadata.Category = category
 		}
