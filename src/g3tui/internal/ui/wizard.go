@@ -125,8 +125,15 @@ func NewWizard(cfg Config, cli *client.Client, pipes []pipelines.Pipeline, plugi
 	ta.Placeholder = "192.168.1.1, example.com — one per line"
 	ta.SetHeight(3)
 	ta.Focus()
-	sortedPlugins := make([]client.PluginListEntry, len(plugins))
-	copy(sortedPlugins, plugins)
+	// The dropdown drives the `import <tool> <file>` line, so it must only
+	// offer plugins that actually implement an importer — otherwise the user
+	// could pick a tool that has no way to consume the file.
+	sortedPlugins := make([]client.PluginListEntry, 0, len(plugins))
+	for _, p := range plugins {
+		if p.Importer {
+			sortedPlugins = append(sortedPlugins, p)
+		}
+	}
 	sort.Slice(sortedPlugins, func(i, j int) bool { return sortedPlugins[i].Name < sortedPlugins[j].Name })
 	return Wizard{
 		cfg:         cfg,

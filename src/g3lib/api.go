@@ -507,6 +507,24 @@ func (req *ReqGetEnv) Decode(r *http.Request) error {
 	return validator.New().Struct(req)
 }
 
+// PluginListItem is the human/GUI-facing plugin summary served by
+// /plugin/list. The three capability booleans are derived server-side from
+// the plugin definition; a plugin may expose any combination of them, so
+// consumers filter on the flags rather than inferring capability from the
+// name or category:
+//   Importer — accepts a file to import      (plugin.Importer != nil)
+//   Reporter — generates downloadable reports (plugin.Reporter != nil)
+//   Runnable — has at least one tool command  (len(plugin.Commands) > 0)
+type PluginListItem struct {
+	Name        string `json:"name"`
+	Category    string `json:"category"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	Importer    bool   `json:"importer"`
+	Reporter    bool   `json:"reporter"`
+	Runnable    bool   `json:"runnable"`
+}
+
 // PluginContractOperation describes one command variant a plugin exposes
 // (`/scan/task/dispatch` selects a variant by Index).
 // PluginContract is the LLM-facing contract for one plugin. Served by

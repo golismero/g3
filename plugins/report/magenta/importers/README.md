@@ -1,0 +1,1 @@
+These are "fake" importers that use Magenta underneath to parse input files for tools Golismero has no support for.

@@ -1,0 +1,9 @@
+{
+    category: "Importer",
+    url: "https://github.com/Bearer/bearer",
+    description: "Bearer CLI is a static application security testing (SAST) tool that scans your source code and analyzes your data flows to discover, filter and prioritize security and privacy risks.",
+    image: "ghcr.io/golismero/magenta",
+    importer: {
+        command: ["bearer"],
+    },
+}

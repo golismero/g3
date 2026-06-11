@@ -7,9 +7,7 @@ import socket
 import subprocess
 
 # Supported protocols. There are special cases for http, ldap, smtp.
-SUPPORTED_PROTOCOLS = "adam6500 asterisk cisco cisco-enable cvs firebird ftp fpts icq imap imaps irc memcached mongodb mssql mysql nntp oracle-listener oracle-sid pcanywhere pcnfs pop3 pop3s postgres radmin2 rdp redis rexec rlogin rpcap rsh rtsp s7-300 sip smb snmp socks5 ssh svn teamspeak telnet telnets vmauthd vnc xmpp".split(
-    " "
-)
+SUPPORTED_PROTOCOLS = "adam6500 asterisk cisco cisco-enable cvs firebird ftp fpts icq imap imaps irc memcached mongodb mssql mysql nntp oracle-listener oracle-sid pcanywhere pcnfs pop3 pop3s postgres radmin2 rdp redis rexec rlogin rpcap rsh rtsp s7-300 sip smb snmp socks5 ssh svn teamspeak telnet telnets vmauthd vnc xmpp".split(" ")
 
 # Base arguments for hydra.
 assert "HYDRA_LOGIN_FILE" in os.environ, "Missing environment variable HYDRA_LOGIN_FILE"
@@ -31,13 +29,11 @@ if "HYDRA_MAX_TASKS" in os.environ:
 # anything outside [0-9a-fA-F-] returns None (defense against malformed upstream data).
 _IP_SLUG_ALLOWED = set("0123456789abcdefABCDEF-")
 
-
 def ip_slug(ip):
     slug = ip.replace(":", "-").replace(".", "-")
     if not slug or not all(c in _IP_SLUG_ALLOWED for c in slug):
         return None
     return slug
-
 
 # Disable IPv6 unless explicitly enabled.
 is_ipv6_enabled = os.getenv("G3_ENV_IPV6_SUPPORTED")

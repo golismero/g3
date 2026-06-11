@@ -11,8 +11,10 @@ RUN git clone https://github.com/golismero/magenta.git && \
     find magenta -name requirements.txt -exec python3 -m pip install \
         --no-cache-dir --root-user-action=ignore --break-system-packages \
         -r {} \;
+ENV MAGENTA_HOME=/app
 
-# Add the Golismero3 wrapper.
+# Add the Golismero3 wrappers.
+COPY --chmod=0755 g3i.py /usr/bin/g3i
 COPY --chmod=0755 g3r.py /usr/bin/g3r
 
 # Change the entrypoint to our wrapper.

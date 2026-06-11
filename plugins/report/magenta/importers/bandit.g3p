@@ -1,0 +1,9 @@
+{
+    category: "Importer",
+    url: "https://github.com/PyCQA/bandit",
+    description:"Bandit is a tool designed to find common security issues in Python code.",
+    image: "ghcr.io/golismero/magenta",
+    importer: {
+        command: ["bandit"],
+    },
+}

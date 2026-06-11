@@ -192,16 +192,19 @@ func (c *Client) DeleteScan(ctx context.Context, scanID string) error {
 
 // ListPlugins → /plugin/list.
 func (c *Client) ListPlugins(ctx context.Context) ([]PluginListEntry, error) {
-	var raw []map[string]string
+	var raw []g3lib.PluginListItem
 	if err := c.call(ctx, "/plugin/list", g3lib.ReqListPlugins{}, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]PluginListEntry, 0, len(raw))
 	for _, m := range raw {
 		out = append(out, PluginListEntry{
-			Name:        m["name"],
-			URL:         m["url"],
-			Description: m["description"],
+			Name:        m.Name,
+			URL:         m.URL,
+			Description: m.Description,
+			Importer:    m.Importer,
+			Reporter:    m.Reporter,
+			Runnable:    m.Runnable,
 		})
 	}
 	return out, nil

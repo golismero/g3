@@ -102,6 +102,9 @@ type PluginListEntry struct {
 	Name        string
 	URL         string
 	Description string
+	Importer    bool // accepts a file to import
+	Reporter    bool // generates downloadable reports
+	Runnable    bool // has at least one runnable tool command
 }
 
 // ErrorMsg is the generic carrier for any failed call. The owning model

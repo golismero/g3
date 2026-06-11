@@ -1352,16 +1352,22 @@ func Main() int {
 			}
 			sort.Strings(pluginNames)
 
-			// Prepare a list of plugins with some human readable metadata.
-			var pluginList []map[string]string
+			// Prepare a list of plugins with human-readable metadata plus
+			// capability flags (importer/reporter/runnable). A plugin may
+			// expose any combination, so consumers filter on the booleans
+			// rather than inferring capability from the name or category.
+			var pluginList []g3lib.PluginListItem
 			for _, name := range pluginNames {
 				plugin := plugins[name]
-				pluginData := map[string]string{}
-				pluginData["name"] = plugin.Name
-				pluginData["category"] = plugin.Category
-				pluginData["url"] = plugin.URL
-				pluginData["description"] = plugin.Description
-				pluginList = append(pluginList, pluginData)
+				pluginList = append(pluginList, g3lib.PluginListItem{
+					Name:        plugin.Name,
+					Category:    plugin.Category,
+					URL:         plugin.URL,
+					Description: plugin.Description,
+					Importer:    plugin.Importer != nil,
+					Reporter:    plugin.Reporter != nil,
+					Runnable:    len(plugin.Commands) > 0,
+				})
 			}
 
 			// Send the response back to the caller.

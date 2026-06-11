@@ -1,0 +1,9 @@
+{
+    category: "Importer",
+    url: "https://github.com/dolevf/graphql-cop",
+    description: "GraphQL Cop is a small Python utility to run common security tests against GraphQL APIs.",
+    image: "ghcr.io/golismero/magenta",
+    importer: {
+        command: ["graphqlcop"],
+    },
+}
