@@ -1,11 +1,5 @@
 .PHONY: all update lint g3lib g3log
 
-# Optional build flags, empty by default so a bare `make` produces debuggable
-# binaries for local development. Release builds (the Dockerfile, CI) override
-# them on the command line to strip symbols, trim paths, and stamp a version:
-#   make all GO_FLAGS=-trimpath GO_LDFLAGS="-s -w -X main.Version=v1.2.3"
-# -X targets `main.Version`, which only g3/g3cli/g3tui define; the linker
-# silently ignores it for the daemons, so a single value is safe for all.
 GO_FLAGS   ?=
 GO_LDFLAGS ?=
 

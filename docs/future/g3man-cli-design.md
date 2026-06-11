@@ -44,7 +44,7 @@ src/g3man/
 **Build integration:**
 - `src/Makefile` — add a `../bin/g3man` rule following the existing per-binary pattern.
 - Root `Makefile` — `bin` builds it; `install` creates a `/usr/bin/g3man` symlink alongside `g3`, `g3cli`, etc.
-- `.github/workflows/CI.yml` — release matrix entry for `g3man` across linux/darwin/windows × amd64/arm64, with `-ldflags "-X main.Version=..."` for tagged builds.
+- `.github/workflows/CI.yml` — release matrix entry for `g3man` across linux/darwin/windows × amd64/arm64, with `-ldflags "-X g3lib.Version=..."` for tagged builds.
 - `golangci-lint` covers `src/g3man/` like every other module.
 
 **Documentation touches:**
@@ -159,7 +159,7 @@ Three lines of work per verb. Exempt: `new` (creates the managed scan) and `uplo
 |---|---|---|
 | `-q, --quiet` | Top-level | Silences logs (level → CRITICAL). On list verbs, also collapses output to IDs. |
 | `-b, --beautify` | Top-level | Pretty-print JSON output (`MarshalIndent`). |
-| `--version` | Top-level | Print version and exit. Linker-set via `-X main.Version=...`. |
+| `--version` | Top-level | Print version and exit. Linker-set via `-X g3lib.Version=...`. |
 | `-o, --output` | All commands | Output path. `-` = stdout. Default `-`. Declared per-command struct, matching the g3cli/g3 convention. |
 | `-i, --input` | `put`, `run` | Input path. `-` = stdin. Default `-`. |
 | `-f, --force` | `rm` | Skip the irreversible-deletion confirmation prompt. |

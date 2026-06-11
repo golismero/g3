@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"os"
 
+	"golismero.com/g3lib"
 	"golismero.com/g3tui/internal/cmd"
 )
 
-// Version is overwritten at link time by release builds via
-// -ldflags "-X main.Version=...". Stays "dev" for local builds.
-var Version = "dev"
-
 func main() {
-	err := cmd.Execute(Version)
+	err := cmd.Execute(g3lib.Version)
 	if err == nil {
 		return
 	}

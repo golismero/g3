@@ -24,6 +24,6 @@ RUN apk add --no-cache \
 
 # Add the Golismero3 Python wrapper.
 RUN pip install --no-cache-dir -U lxml
-WORKDIR /app/
+COPY LICENSE /
 COPY --chmod=0755 g3p.sh /usr/bin/g3p
 ENTRYPOINT ["/usr/bin/g3p"]

@@ -165,35 +165,12 @@ services:
 
   ############################################################################
 
-  # One-shot init service that regenerates the plugin/i18n cache files under
-  # ./config/ from the sources in ./plugins/ and ./i18n/. Every app service
-  # below waits for this to exit 0 before starting. Runs on every `up` cycle
-  # (container is recreated); if you use `--no-recreate`, the previous cache
-  # is reused. For Kubernetes/Nomad deployments, replicate this as an init
-  # container — do not rely on an entrypoint fallback in the app services,
-  # since parallel replicas would race on the same config/ bind mount.
-  g3config:
-    image: ghcr.io/golismero/g3:latest
-    entrypoint: /bin/g3config
-    restart: "no"
-    networks:
-      - g3net
-    volumes:
-      - ./config:/app/config
-      - ./plugins:/app/plugins:ro
-      - ./i18n:/app/i18n:ro
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - G3HOME=/app
-
   # There is only one instance of the web application, so there's only one API.
   g3api:
     image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3api
     restart: unless-stopped
     depends_on:
-      g3config:
-        condition: service_completed_successfully
       mariadb:
         condition: service_started
       mongo:
@@ -244,8 +221,6 @@ services:
     deploy:
       replicas: 2  # Scale horizontally by changing this number.
     depends_on:
-      g3config:
-        condition: service_completed_successfully
       mariadb:
         condition: service_started
       mongo:
@@ -289,8 +264,6 @@ services:
     entrypoint: /bin/g3worker
     restart: unless-stopped
     depends_on:
-      g3config:
-        condition: service_completed_successfully
       mariadb:
         condition: service_started
       mongo:
@@ -333,8 +306,6 @@ services:
     deploy:
       replicas: 4  # Scale worker pool by changing this number.
     depends_on:
-      g3config:
-        condition: service_completed_successfully
       mariadb:
         condition: service_started
       mongo:

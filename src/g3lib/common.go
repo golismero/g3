@@ -29,6 +29,10 @@ const G3CONFIG = "config"
 // Plugins cache file name.
 const G3PLUGINS = "g3plugins.json"
 
+// Version is overwritten at link time by release builds via
+// -ldflags "-X g3lib.Version=...". Stays "dev" for local builds.
+var Version = "dev"
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Get the G3HOME directory.

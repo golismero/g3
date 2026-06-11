@@ -121,6 +121,7 @@ func LoadPlugins() G3PluginMetadata {
 	if err != nil {
 		panic("Failed to process " + path + ": " + err.Error())
 	}
+	log.Debug("Loaded plugins from: " + path)
 
 	// Parse the JSON file.
 	plugins := G3PluginMetadata{}

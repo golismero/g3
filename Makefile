@@ -196,12 +196,9 @@ ifdef DOCKER
 ifdef GO
 plugins:
 	cd plugins && $(MAKE) all
-	cd src && $(MAKE) ../bin/g3config
-	./bin/g3config
 else
-plugins: docker
+plugins:
 	cd plugins && $(MAKE) all
-	docker compose run g3config
 endif
 endif
 

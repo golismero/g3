@@ -8,11 +8,13 @@ COPY src/ /app/
 # VERSION is resolved on the host (where .git lives) and passed in by the
 # `docker` make target; a bare `docker build` falls back to "dev". The flags
 # mirror release.yml: strip symbols (-s -w), trim build paths (-trimpath),
-# and stamp main.Version. Daemons without a Version symbol ignore the -X.
+# and stamp g3lib.Version.
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux make all \
       GO_FLAGS=-trimpath \
-      GO_LDFLAGS="-s -w -X main.Version=${VERSION}"
+      GO_LDFLAGS="-s -w -X g3lib.Version=${VERSION}"
+COPY plugins/ /app/plugins/
+RUN mkdir -p /app/config && G3HOME=/app /bin/g3config
 
 FROM debian:stable-slim
 ENV DEBIAN_FRONTEND=noninteractive
@@ -28,5 +30,8 @@ RUN apt-get update -y && \
     apt-get install -y --no-install-recommends docker-ce-cli && \
     apt-get clean -y && \
     rm -rf /var/lib/apt/lists/*
+COPY LICENSE /
 COPY --from=builder /bin/g3 /bin/g3api /bin/g3cli /bin/g3config /bin/g3tui /bin/g3scanner /bin/g3worker /bin/
+COPY --from=builder /app/config/g3plugins.json /etc/g3/
+ENV G3PLUGINS=/etc/g3/g3plugins.json
 CMD [ "/bin/g3" ]

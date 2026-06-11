@@ -11,6 +11,7 @@ RUN apt-get update \
     rm -rf /var/lib/apt/lists/*
 
 # Add the Golismero3 wrappers.
+COPY LICENSE /
 COPY --chmod=0755 g3p.py /usr/bin/g3p
 
 # Go back to the unprivileged user.

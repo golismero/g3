@@ -20,10 +20,6 @@ import (
 	log "golismero.com/g3log"
 )
 
-// Version is overwritten at link time by release builds via
-// -ldflags "-X main.Version=...". Stays "dev" for local builds.
-var Version = "dev"
-
 type InputCmd struct {
 	Input string `short:"i" type:"existingfile" default:"-" help:"Input file."`
 }
@@ -137,7 +133,7 @@ func main() {
 		kong.Description("Golismero3 - The Pentesting Swiss Army Knife"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
-		kong.Vars{"version": Version},
+		kong.Vars{"version": g3lib.Version},
 	)
 	// Short-circuits and exits when the shell invokes us with COMP_LINE set.
 	// No-op in normal invocation.

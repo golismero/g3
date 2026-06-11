@@ -24,10 +24,6 @@ import (
 	log "golismero.com/g3log"
 )
 
-// Version is overwritten at link time by release builds via
-// -ldflags "-X main.Version=...". Stays "dev" for local builds.
-var Version = "dev"
-
 const G3_API_BASEURL = "G3_API_BASEURL"
 const G3_API_WSURL = "G3_API_WSURL"
 const G3_API_TOKEN = "G3_API_TOKEN"
@@ -132,7 +128,7 @@ func main() {
 		kong.Description("Golismero3 - The Pentesting Swiss Army Knife"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
-		kong.Vars{"version": Version},
+		kong.Vars{"version": g3lib.Version},
 	)
 	// Short-circuits and exits when the shell invokes us with COMP_LINE set.
 	// No-op in normal invocation.
