@@ -5,6 +5,7 @@ import sys
 import json
 import socket
 import subprocess
+import traceback
 
 # Supported protocols. There are special cases for http, ldap, smtp.
 SUPPORTED_PROTOCOLS = "adam6500 asterisk cisco cisco-enable cvs firebird ftp fpts icq imap imaps irc memcached mongodb mssql mysql nntp oracle-listener oracle-sid pcanywhere pcnfs pop3 pop3s postgres radmin2 rdp redis rexec rlogin rpcap rsh rtsp s7-300 sip smb snmp socks5 ssh svn teamspeak telnet telnets vmauthd vnc xmpp".split(" ")
@@ -135,6 +136,24 @@ for ip in (
         # Claim the generated artifacts.
         if os.path.exists(output_file):
             output_data.append({"_artifacts": [artifact]})
+
+            # Run Magenta internally to flag vulnerabilities if successful.
+            # The artifact already exists on disk, so we hand its path to g3i's
+            # live-run mode rather than piping it through stdin.
+            try:
+                importer = subprocess.Popen(
+                    ["/usr/bin/g3i", "hydra", output_file],
+                    stdout=subprocess.PIPE,
+                    stderr=sys.stderr)
+                data = importer.communicate()[0]
+                if importer.returncode and not worst_rc:
+                    worst_rc = importer.returncode
+                if data:
+                    output_data.extend(json.loads(data))
+            except Exception:
+                traceback.print_exc()
+                if not worst_rc:
+                    worst_rc = 255
 
 # Send the JSON output array over stdout.
 json.dump(output_data, sys.stdout)

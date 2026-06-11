@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""g3r — golismero3 reporter entrypoint for magenta.
+"""Golismero3 reporter entrypoint for magenta.
 
 Contract (see docs/superpowers/specs/2026-05-16-reporter-plugins-design.md):
   stdin   : JSONL stream. Line 1 is the G3ScanMetadata object
