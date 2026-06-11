@@ -46,7 +46,6 @@ RUN apk add --update --no-cache --virtual .build-deps \
 
 # Add the Golismero3 wrapper
 RUN pip install --no-cache-dir --root-user-action=ignore python-libnmap
-COPY LICENSE /
 COPY --chmod=0755 g3p.sh /usr/bin/g3p
 COPY --chmod=0755 g3i.py /usr/bin/g3i
 ENTRYPOINT ["/usr/bin/g3p"]
