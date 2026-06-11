@@ -114,16 +114,14 @@ type ParsedPluginCommand struct {
 func LoadPlugins() G3PluginMetadata {
 
 	// Pull the location of the plugins cache file from the environment, if available.
-	override := os.Getenv(G3_PLUGINS_CACHE_FILE)
-	if override != "" {
-		return override
+	// If not, use the default location.
+	path := os.Getenv(G3_PLUGINS_CACHE_FILE)
+	if path == "" {
+		g3home := GetHomeDirectory()
+		path = filepath.Join(g3home, G3CONFIG, G3PLUGINS)
 	}
 
-	// Get the G3HOME directory.
-	g3home := GetHomeDirectory()
-
 	// Load the plugins cache JSON file.
-	path := filepath.Join(g3home, G3CONFIG, G3PLUGINS)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		panic("Failed to process " + path + ": " + err.Error())
