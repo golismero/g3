@@ -19,6 +19,7 @@ import (
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+const G3_PLUGINS_CACHE_FILE = "G3_PLUGINS_CACHE_FILE"
 const G3_DOCKER_NETWORK = "G3_DOCKER_NETWORK"
 
 // Environment variables for the shared artifacts volume.
@@ -111,6 +112,12 @@ type ParsedPluginCommand struct {
 // Load all plugins from the plugins cache.
 // This function will panic on error.
 func LoadPlugins() G3PluginMetadata {
+
+	// Pull the location of the plugins cache file from the environment, if available.
+	override := os.Getenv(G3_PLUGINS_CACHE_FILE)
+	if override != "" {
+		return override
+	}
 
 	// Get the G3HOME directory.
 	g3home := GetHomeDirectory()
