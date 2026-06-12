@@ -1379,10 +1379,10 @@ In `.env`, find the existing g3api configuration section:
 # Golismero g3api configuration.
 G3_API_ID=g3api-debug
 G3_API_TOKEN=changeme
-G3_WS_ADDR=127.0.0.1
-G3_WS_PORT=8888
-G3_WS_PATH=/g3api
-G3_WS_BUFFER=65536
+G3_HTTP_ADDR=127.0.0.1
+G3_HTTP_PORT=8888
+G3_HTTP_PATH=/g3api
+G3_HTTP_BUFFER=65536
 G3_FILE_UPLOAD_MAX=33554432
 ```
 

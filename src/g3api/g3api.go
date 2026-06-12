@@ -29,12 +29,12 @@ import (
 
 const G3_API_ID = "G3_API_ID"                   // MQTT client ID. Must be unique in your deployment or bad things will happen.
 const G3_API_TOKEN = "G3_API_TOKEN"             // Shared bearer token required on every HTTP and WebSocket call.
-const G3_WS_ADDR = "G3_WS_ADDR"                 // Address to bind to for the HTTP server.
-const G3_WS_PORT = "G3_WS_PORT"                 // Port to bind to for the HTTP server.
-const G3_WS_PATH = "G3_WS_PATH"                 // Path to route the API.
+const G3_HTTP_ADDR = "G3_HTTP_ADDR"             // Address to bind to for the HTTP server.
+const G3_HTTP_PORT = "G3_HTTP_PORT"             // Port to bind to for the HTTP server.
+const G3_HTTP_PATH = "G3_HTTP_PATH"             // Path to route the API.
 const G3_FILE_UPLOAD_MAX = "G3_FILE_UPLOAD_MAX" // Maximum file size for uploads.
 const G3_UPLOAD_TTL = "G3_UPLOAD_TTL"           // time.ParseDuration string. 0 (default) disables the _uploads/ orphan sweep.
-const G3_WS_BUFFER = "G3_WS_BUFFER"             // Buffer size for the websocket.
+const G3_HTTP_BUFFER = "G3_HTTP_BUFFER"         // Buffer size for the websocket.
 
 // requireToken wraps an http.HandlerFunc with a bearer-token check.
 // The check runs before upgrader.Upgrade() on the WebSocket path, so a
@@ -299,9 +299,9 @@ func Main() int {
 	removeNotify := NewNotifyTracker()
 
 	// Create the webserver object.
-	bindAddr := os.Getenv(G3_WS_ADDR)
-	bindPort := os.Getenv(G3_WS_PORT)
-	apiPath := os.Getenv(G3_WS_PATH)
+	bindAddr := os.Getenv(G3_HTTP_ADDR)
+	bindPort := os.Getenv(G3_HTTP_PORT)
+	apiPath := os.Getenv(G3_HTTP_PATH)
 	if bindAddr == "" {
 		bindAddr = "0.0.0.0"
 	}
@@ -432,14 +432,14 @@ func Main() int {
 		defer wg.Done()
 
 		// Initialize the websocket upgrader.
-		strBufferSize := os.Getenv(G3_WS_BUFFER)
+		strBufferSize := os.Getenv(G3_HTTP_BUFFER)
 		if strBufferSize == "" {
 			strBufferSize = "65535"
 		}
 		bufferSize, err := strconv.Atoi(strBufferSize)
 		if err != nil {
 			bufferSize = 65536
-			log.Noticef("Invalid value for %s, using default %d", G3_WS_BUFFER, bufferSize)
+			log.Noticef("Invalid value for %s, using default %d", G3_HTTP_BUFFER, bufferSize)
 		}
 		var upgrader = websocket.Upgrader{
 			ReadBufferSize:  bufferSize,
