@@ -197,7 +197,7 @@ services:
       - G3_API_ID=g3api
       - G3_API_TOKEN
       - G3_WS_ADDR=0.0.0.0
-      - G3_WS_PORT=80
+      - G3_WS_PORT
       - G3_WS_PATH=
       - G3_WS_BUFFER
       - G3_FILE_UPLOAD_MAX
