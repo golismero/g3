@@ -410,7 +410,13 @@ func formatScanRow(e g3lib.ScanStatusEntry, selected bool, idWidth int) (idLine,
 	} else {
 		idLine = "  " + id
 	}
-	statusLine = fmt.Sprintf("    %s %3d%%", pill, e.Progress)
+	// Managed scans are driven externally; g3scanner never emits a
+	// progress value for them, so the percentage is meaningless noise.
+	if e.Status == g3lib.STATUS_MANAGED {
+		statusLine = "    " + pill
+	} else {
+		statusLine = fmt.Sprintf("    %s %3d%%", pill, e.Progress)
+	}
 	return idLine, statusLine
 }
 
