@@ -694,6 +694,7 @@ func main() {
 				}
 			}
 		}()
+
 		// Materialize this task's artifact slot and bind-mount it into the
 		// plugin container as /artifacts. The plugin sees only its own slot —
 		// the scanid/taskid layout above it is invisible and unreachable.
@@ -847,10 +848,28 @@ func main() {
 		}
 
 		// FUEL (state-independent): persist + send for every non-canceled task.
-		// Seeds the cache (including ERROR); the pipeline advances iff actionable
+		// Seeds the cache (including ERROR); the pipeline advances if actionable
 		// data was produced — the scanner skips nils.
-		if len(toPersist) > 0 {
-			if _, e := g3lib.SaveData(mdb_client, task.ScanID, task.TaskID, toPersist); e != nil {
+		//
+		// Orchestrated scans follow this convention: an object that already carries
+		// an _id is an existing DB object re-emitted to indicate it must persist as
+		// input for the next step in the pipeline; an object without an _id is a new
+		// one, which needs to be persisted in the database in addition to making it
+		// to the next step; an input object not re-emitted is thus dropped from the
+		// pipeline intentionally.
+		//
+		// Managed scans are trickier - there is no scanner to read the response from
+		// the task, so the list of object IDs is lost. This will be fixed soon. For
+		// now, the managed scan's response is partially reconstructed from db queries,
+		// so re-emitted objects are dropped - a known gap.
+		newobjs := make([]g3lib.G3Data, 0, len(toPersist))
+		for _, d := range toPersist {
+			if _, ok := d["_id"]; !ok {
+				newobjs = append(newobjs, d)
+			}
+		}
+		if len(newobjs) > 0 {
+			if _, e := g3lib.SaveData(mdb_client, task.ScanID, task.TaskID, newobjs); e != nil {
 				log.Error("Error saving data to MongoDB: " + e.Error())
 			}
 		}
