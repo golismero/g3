@@ -83,7 +83,7 @@ if "url" in input_data:
 # Process hosts. This means we are running a network test.
 # Process IPv4 and IPv6 separately since we can only pass one using "--ip".
 else:
-    input_data["_artifacts"] = []
+    artifacts = []
     for ip in (
         input_data.get("ipv4", ""),
         input_data.get("ipv6", "") if is_ipv6_enabled else "",
@@ -178,14 +178,14 @@ else:
             if proc.returncode and not worst_rc:
                 worst_rc = proc.returncode
 
-            # Link the artifacts to the input object.
+            # Claim the artifacts.
             if os.path.exists(txt_path):
-                input_data["_artifacts"].append(os.path.basename(txt_path))
+                artifacts.append(os.path.basename(txt_path))
             if os.path.exists(json_path):
-                input_data["_artifacts"].append(os.path.basename(json_path))
+                artifacts.append(os.path.basename(json_path))
 
 # Send the JSON output array over stdout.
-json.dump([input_data], sys.stdout)
+json.dump([{"_type": "nil", "_artifacts": artifacts}], sys.stdout)
 sys.stdout.flush()
 
 # Propagate testssl's exit code (folded across all invocations). 0 = clean;
