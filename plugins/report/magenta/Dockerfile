@@ -10,9 +10,7 @@ ENV PYTHONUNBUFFERED=1
 RUN git clone https://github.com/golismero/magenta.git && \
     find magenta -name requirements.txt -exec python3 -m pip install \
         --no-cache-dir --root-user-action=ignore --break-system-packages \
-        -r {} \; && \
-    python3 -m pip install -e . \
-        --no-cache-dir --root-user-action=ignore --break-system-packages
+        -r {} \;
 ENV MAGENTA_HOME=/app
 
 # Add the Golismero3 wrappers.
