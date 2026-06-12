@@ -10,19 +10,7 @@ RUN apt-get update \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install magenta from sources.
-WORKDIR /app
-ENV PYTHONUNBUFFERED=1
-RUN git clone https://github.com/golismero/magenta.git && \
-    find magenta -name requirements.txt -exec python3 -m pip install \
-        --no-cache-dir --root-user-action=ignore --break-system-packages \
-        -r {} \; && \
-    python3 -m pip install -e . \
-        --no-cache-dir --root-user-action=ignore --break-system-packages
-ENV MAGENTA_HOME=/app
-
-# Add the Golismero3 wrappers.
-COPY --chmod=0755 g3i.py /usr/bin/g3i
+# Add the Golismero3 wrapper.
 COPY --chmod=0755 g3p.py /usr/bin/g3p
 
 # Go back to the unprivileged user.
