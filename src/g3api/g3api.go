@@ -944,48 +944,52 @@ func Main() int {
 
 			// Delete the scan data.
 			scanid := request.ScanID
-			log.Infof("Deleting scan with ID: %s", scanid)
-			err = g3lib.DeleteScanMetadata(rdb_client, scanid)
-			if err != nil {
-				log.Critical("Error deleting report info: " + err.Error())
-				reterr = reterr + "Error deleting report info: " + err.Error() + "\n"
+			if g3lib.DoDebugAPI() {
+				log.Infof("Scan with ID %s protected from deletion due to server debug mode.", scanid)
 			} else {
-				log.Debug("Deleted report info.")
-			}
-			err = g3lib.DeleteTaskStates(rdb_client, scanid)
-			if err != nil {
-				log.Critical("Error deleting task states: " + err.Error())
-				reterr = reterr + "Error deleting task states: " + err.Error() + "\n"
-			} else {
-				log.Debug("Deleted task states.")
-			}
-			err = g3lib.ClearLogs(sql_db, scanid)
-			if err != nil {
-				log.Critical("Error clearing logs: " + err.Error())
-				reterr = reterr + "Error clearing logs: " + err.Error() + "\n"
-			} else {
-				log.Debug("Deleted report logs.")
-			}
-			err = g3lib.DropScanData(mdb_client, scanid)
-			if err != nil {
-				log.Critical("Error dropping database: " + err.Error())
-				reterr = reterr + "Error dropping database: " + err.Error() + "\n"
-			} else {
-				log.Debug("Dropping Mongo database.")
-			}
-			err = g3lib.DeleteScanProgress(sql_db, scanid)
-			if err != nil {
-				log.Critical("Error clearing scan progress: " + err.Error())
-				reterr = reterr + "Error clearing scan progress: " + err.Error() + "\n"
-			} else {
-				log.Debug("Cleared scan progress.")
-			}
-			err = os.RemoveAll(filepath.Join(artifactsRoot, scanid))
-			if err != nil {
-				log.Critical("Error removing scan artifacts: " + err.Error())
-				reterr = reterr + "Error removing scan artifacts: " + err.Error() + "\n"
-			} else {
-				log.Debug("Removed scan artifacts.")
+				log.Infof("Deleting scan with ID: %s", scanid)
+				err = g3lib.DeleteScanMetadata(rdb_client, scanid)
+				if err != nil {
+					log.Critical("Error deleting report info: " + err.Error())
+					reterr = reterr + "Error deleting report info: " + err.Error() + "\n"
+				} else {
+					log.Debug("Deleted report info.")
+				}
+				err = g3lib.DeleteTaskStates(rdb_client, scanid)
+				if err != nil {
+					log.Critical("Error deleting task states: " + err.Error())
+					reterr = reterr + "Error deleting task states: " + err.Error() + "\n"
+				} else {
+					log.Debug("Deleted task states.")
+				}
+				err = g3lib.ClearLogs(sql_db, scanid)
+				if err != nil {
+					log.Critical("Error clearing logs: " + err.Error())
+					reterr = reterr + "Error clearing logs: " + err.Error() + "\n"
+				} else {
+					log.Debug("Deleted report logs.")
+				}
+				err = g3lib.DropScanData(mdb_client, scanid)
+				if err != nil {
+					log.Critical("Error dropping database: " + err.Error())
+					reterr = reterr + "Error dropping database: " + err.Error() + "\n"
+				} else {
+					log.Debug("Dropping Mongo database.")
+				}
+				err = g3lib.DeleteScanProgress(sql_db, scanid)
+				if err != nil {
+					log.Critical("Error clearing scan progress: " + err.Error())
+					reterr = reterr + "Error clearing scan progress: " + err.Error() + "\n"
+				} else {
+					log.Debug("Cleared scan progress.")
+				}
+				err = os.RemoveAll(filepath.Join(artifactsRoot, scanid))
+				if err != nil {
+					log.Critical("Error removing scan artifacts: " + err.Error())
+					reterr = reterr + "Error removing scan artifacts: " + err.Error() + "\n"
+				} else {
+					log.Debug("Removed scan artifacts.")
+				}
 			}
 
 			// If we logged any errors, return with an error condition.
