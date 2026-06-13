@@ -517,8 +517,10 @@ func main() {
 	// markTerminal writes the per-task terminal state to Redis and emits the
 	// [g3:done] audit log line. Called from every task-termination site below
 	// so the UI's live state and the SQL audit trail always agree.
+	// MUST BE THE LAST OPERATION MADE BEFORE RETURNING.
 	markTerminal := func(scanid, taskid, state string) {
 		completeTS := time.Now().Unix()
+		log.Debugf("Task %s marked terminal with state %s at %v", taskid, state, completeTS)
 		if err := g3lib.SetTaskTerminal(rdb_client, scanid, taskid, state, completeTS, ""); err != nil {
 			log.Error("Redis SetTaskTerminal failed: " + err.Error())
 		}
@@ -572,7 +574,6 @@ func main() {
 		// it up (CancelTracker.rejectTasks held it). State transitions to CANCELED.
 		case 1:
 			log.Debug("Rejected task ID: " + task.TaskID)
-			markTerminal(task.ScanID, task.TaskID, "CANCELED")
 			err := g3lib.SendTaskCancelHandled(mq_client, task.ScanID, []string{task.TaskID})
 			if err != nil {
 				log.Error(err.Error())
@@ -593,11 +594,11 @@ func main() {
 		// This should not happen.
 		default:
 			log.Error("internal error")
-			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
 			}
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			return
 		}
 
@@ -605,31 +606,32 @@ func main() {
 		// This should not fail.
 		if !slices.Contains(selected, task.Tool) {
 			log.Error("Tool is not supported by this worker: " + task.Tool)
-			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
 			}
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			return
 		}
 
 		// Get the plugin for the tool we are going to run.
+		// This should not fail.
 		plugin, ok := plugins[task.Tool]
 		if !ok {
 			log.Error("Tool is not supported by this worker: " + task.Tool)
-			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
 			}
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			return
 		}
 		if len(plugin.Commands) <= task.Index {
 			log.Errorf("Tool does not have command #%d", task.Index)
-			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			return
 		}
 
@@ -637,11 +639,11 @@ func main() {
 		data, err := g3lib.LoadOne(mdb_client, task.ScanID, task.DataID)
 		if err != nil {
 			log.Error("Error fetching data object: " + err.Error())
-			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
 			}
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			return
 		}
 
@@ -652,11 +654,11 @@ func main() {
 			for i, err := range buildErrs {
 				log.Errorf("%d) %s", i, err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID)
 			if err != nil {
 				log.Error(err.Error())
 			}
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			return
 		}
 
@@ -701,10 +703,10 @@ func main() {
 		slotDir := filepath.Join(artifactsRoot, task.ScanID, task.TaskID)
 		if err := os.MkdirAll(slotDir, 0o755); err != nil {
 			log.Error("Cannot create artifact slot " + slotDir + ": " + err.Error())
-			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
+			markTerminal(task.ScanID, task.TaskID, "ERROR")
 			return
 		}
 		hostSlotDir := filepath.Join(artifactsHostRoot, task.ScanID, task.TaskID)
@@ -838,15 +840,6 @@ func main() {
 			state = "ERROR" // a task without a written manifest is incomplete
 		}
 
-		// CANCELED: no save, no cache seed, empty response.
-		if canceled {
-			markTerminal(task.ScanID, task.TaskID, "CANCELED")
-			if e := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); e != nil {
-				log.Error(e.Error())
-			}
-			return
-		}
-
 		// FUEL (state-independent): persist + send for every non-canceled task.
 		// Seeds the cache (including ERROR); the pipeline advances if actionable
 		// data was produced — the scanner skips nils.
@@ -891,7 +884,6 @@ func main() {
 			}
 		}
 
-		markTerminal(task.ScanID, task.TaskID, state)
 		if len(persistentOutput) > 0 {
 			if _, e := g3lib.SendResponse(client, task, persistentOutput); e != nil {
 				log.Error("Error sending response to the broker: " + e.Error())
@@ -901,6 +893,7 @@ func main() {
 				log.Error(e.Error())
 			}
 		}
+		markTerminal(task.ScanID, task.TaskID, state)
 	})
 
 	reporterTopics := g3lib.SubscribeAsReporter(mq_client, reporterSelected, func(client g3lib.MessageQueueClient, task g3lib.G3ReportTask) {
