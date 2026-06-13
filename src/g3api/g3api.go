@@ -540,6 +540,7 @@ func Main() int {
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
+			log.Info("Started scan with ID: " + scanID)
 
 			// Return the response.
 			g3lib.SendApiResponse(w, scanID)
@@ -583,6 +584,7 @@ func Main() int {
 			}
 
 			g3lib.SendApiResponse(w, scanid)
+			log.Info("Created managed scan with ID: " + scanID)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -890,6 +892,7 @@ func Main() int {
 			}
 
 			// Send the cancel message.
+			log.Info("Canceling scan with ID: " + scanID)
 			err = g3lib.SendScanStop(mq_client, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
@@ -1130,6 +1133,7 @@ func Main() int {
 				return
 			}
 
+			log.Infof("Scan %s - Canceling task(s) with IDs: %v", request.ScanID, request.TaskIDs)
 			if err := g3lib.SendTaskCancel(mq_client, request.ScanID, request.TaskIDs); err != nil {
 				log.Error("SendTaskCancel failed: " + err.Error())
 				g3lib.SendApiError(w, http.StatusInternalServerError, "failed to publish cancel")
@@ -1160,6 +1164,7 @@ func Main() int {
 				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
+			log.Info("Dispatching tasks to scan with ID: " + request.ScanID)
 
 			plugin, ok := plugins[request.Tool]
 			if !ok {
@@ -1238,9 +1243,11 @@ func Main() int {
 			}
 
 			// Publish a dispatch per matched index; collect the task_ids.
+			// TODO: better error handling if one of many tasks fails.
 			taskIds := make([]string, 0, len(indices))
 			for _, idx := range indices {
 				taskid := uuid.NewString()
+				log.Info("Dispatching manual task with ID: " + taskid)
 				dispatch := g3lib.G3Dispatch{
 					G3TaskMessage: g3lib.G3TaskMessage{
 						G3Message: g3lib.G3Message{
