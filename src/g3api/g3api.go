@@ -584,7 +584,7 @@ func Main() int {
 			}
 
 			g3lib.SendApiResponse(w, scanid)
-			log.Info("Created managed scan with ID: " + scanID)
+			log.Info("Created managed scan with ID: " + scanid)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -892,7 +892,7 @@ func Main() int {
 			}
 
 			// Send the cancel message.
-			log.Info("Canceling scan with ID: " + scanID)
+			log.Info("Canceling scan with ID: " + request.ScanID)
 			err = g3lib.SendScanStop(mq_client, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
