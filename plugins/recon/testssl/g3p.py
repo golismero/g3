@@ -49,6 +49,9 @@ worst_rc = 0
 # Get the G3 data object.
 input_data = json.load(sys.stdin)
 
+# Generated artifacts (if any) in this run.
+artifacts = []
+
 # Process URLs. This means we are running a web test.
 # TODO this could be run in parallel using the multiprocessing library, would need to resolve IPs manually.
 if "url" in input_data:
@@ -83,7 +86,6 @@ if "url" in input_data:
 # Process hosts. This means we are running a network test.
 # Process IPv4 and IPv6 separately since we can only pass one using "--ip".
 else:
-    artifacts = []
     for ip in (
         input_data.get("ipv4", ""),
         input_data.get("ipv6", "") if is_ipv6_enabled else "",
@@ -185,7 +187,7 @@ else:
                 artifacts.append(os.path.basename(json_path))
 
 # Send the JSON output array over stdout.
-json.dump([{"_type": "nil", "_artifacts": artifacts}], sys.stdout)
+json.dump([{"_type": "nil", "_artifacts": artifacts}] if artifacts else [], sys.stdout)
 sys.stdout.flush()
 
 # Propagate testssl's exit code (folded across all invocations). 0 = clean;
