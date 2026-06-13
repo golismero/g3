@@ -6,6 +6,8 @@
 ## Please do not use this in production !!! ##
 ##############################################
 
+name: example
+
 # We're going to put everything into the same network since this is a
 # trivial example where all containers run in the same host anyway.
 networks:
