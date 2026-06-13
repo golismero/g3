@@ -43,7 +43,8 @@ const G3CANCELTOPIC         = "cancel"
 const G3RESPONSETOPIC       = "response/"
 const G3REPORTSUBTOPIC      = "$share/g3worker/report/"
 const G3REPORTPUBTOPIC      = "report/"
-const G3DISPATCHTOPIC       = "dispatch"
+const G3DISPATCHSUBTOPIC    = "$share/g3scanner/dispatch"
+const G3DISPATCHPUBTOPIC    = "dispatch"
 
 type G3MESSAGETYPE string
 const (
@@ -397,7 +398,7 @@ func SendDispatch(client MessageQueueClient, msg G3Dispatch) error {
 	if err := validator.New().Struct(msg); err != nil {
 		return err
 	}
-	return SendMQPayload(client, G3DISPATCHTOPIC, msg)
+	return SendMQPayload(client, G3DISPATCHPUBTOPIC, msg)
 }
 
 // Send a report task to the MQTT broker. Mirrors SendTask but uses the
@@ -654,8 +655,13 @@ func SubscribeAsScanner(client MessageQueueClient, callback NewScanHandler) stri
 // handles dispatches for any scan — including ones with no active ScanRunner
 // (e.g. dispatching a reporter for a terminated scan).
 func SubscribeAsDispatcher(client MessageQueueClient, callback DispatchHandler) string {
-	log.Debug("Subscribing to: " + G3DISPATCHTOPIC)
-	client.Subscribe(G3DISPATCHTOPIC, MQTT_QOS, func(client mqtt.Client, msg mqtt.Message) {
+	// Shared subscription so a single dispatch published by g3api is handled by
+	// exactly ONE scanner replica. A plain subscription here fans the dispatch
+	// out to every replica, each of which forwards the task to a worker — so a
+	// single managed task gets run by N workers (N = scanner replica count) and
+	// the worker collision-detection then cancels it. See G3DISPATCHSUBTOPIC.
+	log.Debug("Subscribing to: " + G3DISPATCHSUBTOPIC)
+	client.Subscribe(G3DISPATCHSUBTOPIC, MQTT_QOS, func(client mqtt.Client, msg mqtt.Message) {
 
 		// Decode the JSON payload.
 		var dispatch G3Dispatch
@@ -681,7 +687,7 @@ func SubscribeAsDispatcher(client MessageQueueClient, callback DispatchHandler) 
 		// goroutine per message would be premature.
 		callback(client, dispatch)
 	})
-	return G3DISPATCHTOPIC
+	return G3DISPATCHSUBTOPIC
 }
 
 // Subscribe to the scanner stop topic to receive scan stop requests.
