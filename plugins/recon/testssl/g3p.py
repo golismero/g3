@@ -186,6 +186,10 @@ else:
             if os.path.exists(json_path):
                 artifacts.append(os.path.basename(json_path))
 
+                # Testssl writes its output json with very strict permissions.
+                # This can cause artifact retrieval later to fail.
+                os.chmod(json_path, 0644)
+
 # Send the JSON output array over stdout.
 json.dump([{"_type": "nil", "_artifacts": artifacts}] if artifacts else [], sys.stdout)
 sys.stdout.flush()
