@@ -1,5 +1,25 @@
 # MQTT Delivery Hardening — Future Work & Known Limitations
 
+> **Largely superseded (2026-06-14)** by
+> [`nats-jetstream-consolidation.md`](nats-jetstream-consolidation.md), which proposes moving
+> the bus off MQTT entirely to NATS JetStream. Note this *overturns* the "Replacing MQTT with
+> a different broker" out-of-scope stance below — but for a **consolidation** rationale (one
+> substrate for bus + coordination + claim store + trust boundary), **not** the delivery-bug
+> rationale this doc rightly parked (Tiers 1–5 did close the delivery gaps). If the bus stays
+> MQTT, everything here still applies as written.
+>
+> Under the JetStream direction, most items here are **absorbed**: durable streams are the
+> "durable outbox" (Known-limitation #4); consumer `AckWait` + `MaxDeliver` → DLQ is the
+> crash-detection that LWT couldn't give (Deferred #2, Known #3); KV authoritative state is
+> the "SQL-as-source-of-truth before publish" principle (Deferred #1); durable consumer state
+> gives scanner-restart recovery (Known #2); atomic KV `Create` removes the non-atomic
+> EXISTS-guard race (Known #1).
+>
+> **What carries over regardless of transport:** Deferred #2's *substance* — collecting
+> per-plugin runtime data (to size `AckWait`/timeouts) and a **janitor for orphan plugin
+> containers** (a dead worker leaves its container running in dockerd no matter what the bus
+> is). Those remain real, bus-independent work.
+
 Carry-over notes from [`2026-04-23-mqtt-delivery-hardening.md`](./2026-04-23-mqtt-delivery-hardening.md) (issue [#5](https://github.com/golismero/g3/issues/5), now closed). The bulk of that plan shipped; this file captures only what's left unfinished or shipped-with-caveats, so neither needs to be rediscovered from a 500-line plan doc later.
 
 This is a watchlist, not a plan. Each item names:

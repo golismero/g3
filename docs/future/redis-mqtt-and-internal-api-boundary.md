@@ -1,5 +1,12 @@
 # Coordination Substrate & Trust Boundary — Future Work
 
+> **Superseded (2026-06-14):** the "keep MQTT + drop Redis + build g3bouncer as a separate
+> HTTPS gateway" conclusion below is revised by
+> [`nats-jetstream-consolidation.md`](nats-jetstream-consolidation.md), where a single NATS
+> JetStream substrate fills the bus, coordination, and trust-boundary roles at once. The
+> threat model, scope analysis, and "races are a state-machine problem, not a transport
+> problem" reasoning here all still hold and carry over.
+
 Discussion notes from an architecture session on 2026-06-09. Triggered by a g3tui bug
 (a finished scan's tasks vanishing from the status view) that opened into a broader
 review of **what Redis is for**, **whether MQTT is the right bus**, and **where the
