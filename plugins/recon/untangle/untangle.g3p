@@ -1,0 +1,25 @@
+{
+    url: "https://github.com/cemtopcuoglu/untangle",
+    description: "Untangle is a multi-layer web server fingerprinting tool that identifies the ordered stack of servers/CDNs/proxies (e.g. cloudflare -> varnish -> nginx) in front of an HTTPS site.",
+
+    commands: [
+
+        // Domain objects: fingerprint the domain over HTTPS.
+        {
+            condition: "{{if .domain}} true {{else}} false {{end}}",
+            fingerprint: ["untangle https://{{.domain}}/"],
+            command: ["{{.domain}}"],
+            returns: "url",
+        },
+
+        // HTTPS url objects on the default port only. untangle hardcodes port
+        // 443, so a url whose .host carries an explicit port (contains ":") is
+        // skipped. See docs/notes/untangle-port-patch.md.
+        {
+            condition: "{{if and .url (eq .scheme \"https\") (not (contains .host \":\"))}} true {{else}} false {{end}}",
+            fingerprint: ["untangle https://{{.host}}/"],
+            command: ["{{.host}}"],
+            returns: "url",
+        },
+    ],
+}
