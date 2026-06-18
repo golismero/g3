@@ -90,6 +90,8 @@ jobs:
             context: plugins/recon/subfinder
           - image: testssl
             context: plugins/recon/testssl
+          - image: untangle
+            context: plugins/recon/untangle
           - image: wafw00f
             context: plugins/recon/wafw00f
           - image: magenta
