@@ -9,10 +9,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-# Fetch and pin untangle (includes behavior_repository.out).
+# Fetch and pin untangle (includes behavior_repository.out). Use "git -C" instead
+# of "cd" so we avoid hadolint DL3003 without a WORKDIR-before-clone dance.
 RUN git clone https://github.com/cemtopcuoglu/untangle.git /opt/untangle \
-    && cd /opt/untangle \
-    && git checkout ab877e54aee8d584a9477cc215d7a4e7c57df850
+    && git -C /opt/untangle checkout ab877e54aee8d584a9477cc215d7a4e7c57df850
 
 # Install untangle's Python dependencies (configargparse, simphile).
 RUN pip3 install --no-cache-dir -r /opt/untangle/requirements.txt
