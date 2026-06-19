@@ -1,4 +1,4 @@
-.PHONY: all bin dist clean docker plugins pull update install uninstall lint help
+.PHONY: all bin dist clean refresh_build docker plugins pull update install uninstall lint help
 
 # Default target — show help when invoked as bare `make`.
 .DEFAULT_GOAL := help
@@ -191,19 +191,24 @@ all: help
 endif
 endif
 
+# Pull all of the base Docker images before builds.
+# This ensures fresh builds without completely disabling the build cache.
+ifdef DOCKER
+refresh_build:
+	for i in $(shell find Dockerfile plugins -name Dockerfile -exec grep "FROM" {} \; | sed -n 's/FROM \(\S\+\).*/\1/p' | sort -u); do docker pull "$$i"; done
+else
+refresh_build:
+endif
+
 # Build all of the Docker images for the plugins.
 ifdef DOCKER
-ifdef GO
-plugins:
+plugins: refresh_build
 	cd plugins && $(MAKE) all
-else
-plugins:
-	cd plugins && $(MAKE) all
-endif
 endif
 
 # Build the g3 Docker image.
-docker:
+ifdef DOCKER
+docker: refresh_build
 ifdef PYTHON
 	rm -f ./misc/deps.txt
 ifdef GO
@@ -214,6 +219,7 @@ else
 	touch ./misc/deps.txt
 endif
 	docker build --build-arg VERSION="$$(./misc/git-version.sh)" -t ghcr.io/golismero/g3 .
+endif
 
 # Pull the main g3 image and all plugin images from ghcr.io.
 ifdef DOCKER
