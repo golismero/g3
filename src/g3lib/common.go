@@ -264,17 +264,6 @@ func IsValidData(data G3Data) (bool, error) {
 		}
 	}
 
-	// If this is an issue, check the issue properties valid.
-	if data["_type"].(string) == "issue" {
-		if value, ok := data["severity"]; !ok || value == nil {
-			return false, fmt.Errorf("invalid severity field: %s", value)
-		}
-		severity := int(data["severity"].(float64))
-		if severity < 0 || severity > 3 {
-			return false, fmt.Errorf("invalid severity field: %d", severity)
-		}
-	}
-
 	// Everything is ok!
 	return true, nil
 }

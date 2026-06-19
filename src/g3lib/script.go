@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -406,7 +407,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 		// IPv4 and IPv6 addresses get turned into host.
 		// We need to test for IPv6 first if we want IPv4-to-IPv6 addresses to work as IPv6.
 		// Otherwise they get automatically converted to IPv4.
-		// TODO: reevaluate this, do we want this to work or not?
+		// If someone specifically used this syntax they're trying to force IPv6.
 		if govalidator.IsIPv6(target) {
 			ip, err := netip.ParseAddr(target)
 			if err != nil {
@@ -435,6 +436,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			data["ipv4"] = target
 
 		// IP ranges get turned into cidr.
+		// We also need to parse IPv6 before IPv4 to prevent conversion.
 		} else if ipaddr, iprange, err := net.ParseCIDR(target); err == nil {
 			target = iprange.String()
 			ipstr := ipaddr.String()
@@ -448,10 +450,10 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 				return []G3Data{}, err
 			}
 			data["_type"] = "cidr"
-			if govalidator.IsIPv4(ipstr) {
-				data["ipv4"] = target
-			} else if govalidator.IsIPv6(ipstr) {
+			if govalidator.IsIPv6(ipstr) {
 				data["ipv6"] = target
+			} else if govalidator.IsIPv4(ipstr) {
+				data["ipv4"] = target
 			} else {
 				err = errors.New("internal error")
 				return []G3Data{}, err
@@ -501,12 +503,24 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			data["host"] = url.Host
 			data["path"] = url.Path
 
+			// Split domain and port for easier handling.
+			if ip := net.ParseIP(url.Hostname()); ip == nil {
+				if url.Port() != "" {
+					data["domain"] = url.Hostname()
+					data["port"], _ = strconv.Atoi(url.Port())
+				} else if defaultPort, ok := SchemeDefaultPorts[url.Scheme]; ok {
+					data["domain"] = url.Hostname()
+					data["port"], _ = strconv.Atoi(defaultPort)
+				}
+			}
+
 		/////////////////////////////
 		// TODO add new types here //
 		/////////////////////////////
 
 		// Domain names get turned into domain.
 		// This check must go last since it may accidentally match something else.
+		// We're intentionally not allowing local hostnames (without a dot).
 		} else if target == "localhost" {
 			err = errors.New("localhost domain not allowed: " + target)
 			return []G3Data{}, err
