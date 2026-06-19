@@ -80,6 +80,10 @@ if "url" in input_data:
         # Copy the temporary file to the artifacts folder.
         shutil.copy(tmp, "/artifacts/testssl.json")
 
+        # Testssl writes its output json with very strict permissions.
+        # This can cause artifact retrieval later to fail.
+        os.chmod("/artifacts/testssl.json", 0o644)
+
     finally:
         os.unlink(tmp)
 
