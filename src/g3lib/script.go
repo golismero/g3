@@ -404,10 +404,10 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 		data["_start"] = timestamp
 		data["_end"] = timestamp
 
-		// IPv4 and IPv6 addresses get turned into host.
+		// IPv4 and IPv6 addresses get turned into "host".
 		// We need to test for IPv6 first if we want IPv4-to-IPv6 addresses to work as IPv6.
 		// Otherwise they get automatically converted to IPv4.
-		// If someone specifically used this syntax they're trying to force IPv6.
+		// If someone specifically used this syntax, they're trying to force IPv6.
 		if govalidator.IsIPv6(target) {
 			ip, err := netip.ParseAddr(target)
 			if err != nil {
@@ -435,7 +435,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			data["_type"] = "host"
 			data["ipv4"] = target
 
-		// IP ranges get turned into cidr.
+		// IP ranges get turned into "cidr".
 		// We also need to parse IPv6 before IPv4 to prevent conversion.
 		} else if ipaddr, iprange, err := net.ParseCIDR(target); err == nil {
 			target = iprange.String()
@@ -459,8 +459,8 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 				return []G3Data{}, err
 			}
 
-		// URLs get turned into url. The resulting URL must be canonicalized.
-		} else if url, err := url.Parse(target); err == nil && url.Host != "" && url.Scheme != "file" {
+		// URLs get turned into "url". The resulting URL must be canonicalized.
+		} else if url, err := url.Parse(target); err == nil && url.Host != "" && url.Scheme != "file" && url.Path != "*" {
 			if url.Hostname() == "localhost" {
 				err = errors.New("localhost domain not allowed: " + target)
 				return []G3Data{}, err
@@ -475,6 +475,8 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			if url.Path == "" {
 				url.Path = "/"
 			}
+
+			// Strip the fragment - it's unusable outside of a browser context.
 			url.Fragment = ""
 			url.RawFragment = ""
 
@@ -504,7 +506,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			data["path"] = url.Path
 
 			// Split domain and port for easier handling.
-			if ip := net.ParseIP(url.Hostname()); ip == nil {
+			if ip := net.ParseIP(url.Hostname()); ip == nil && string.Contains(url.Hostname(), ".") {
 				if url.Port() != "" {
 					data["domain"] = url.Hostname()
 					data["port"], _ = strconv.Atoi(url.Port())
@@ -518,7 +520,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 		// TODO add new types here //
 		/////////////////////////////
 
-		// Domain names get turned into domain.
+		// Domain names get turned into "domain".
 		// This check must go last since it may accidentally match something else.
 		// We're intentionally not allowing local hostnames (without a dot).
 		} else if target == "localhost" {
