@@ -35,6 +35,8 @@ base_args = [
     "--openssl-timeout",
     "10",
     "--wide",
+    "--color",
+    "2",
 ]
 
 # Disable IPv6 unless explicitly enabled.
