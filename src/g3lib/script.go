@@ -480,11 +480,13 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			url.Fragment = ""
 			url.RawFragment = ""
 
+			// I'm gonna reuse this one a lot below.
+			hostname := url.Hostname()
+
 			// Scheme-based normalization (RFC 3986 §6.2.3): strip the default
 			// port so equivalent URLs canonicalize identically. Go's net/url
 			// preserves whatever port was in the input, unlike JavaScript's URL.
 			if defaultPort, ok := SchemeDefaultPorts[url.Scheme]; ok && url.Port() == defaultPort {
-				hostname := url.Hostname()
 				if strings.Contains(hostname, ":") {
 					url.Host = "[" + hostname + "]" // IPv6 literal needs brackets
 				} else {
@@ -492,6 +494,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 				}
 			}
 
+			// Start building the "url" type object.
 			target = url.String()
 			data["_type"] = "url"
 			data["url"] = target
@@ -506,12 +509,12 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			data["path"] = url.Path
 
 			// Split domain and port for easier handling.
-			if ip := net.ParseIP(url.Hostname()); ip == nil && strings.Contains(url.Hostname(), ".") {
+			if ip := net.ParseIP(hostname); ip == nil && strings.Contains(hostname, ".") {
 				if url.Port() != "" {
-					data["domain"] = url.Hostname()
+					data["domain"] = hostname
 					data["port"], _ = strconv.Atoi(url.Port())
 				} else if defaultPort, ok := SchemeDefaultPorts[url.Scheme]; ok {
-					data["domain"] = url.Hostname()
+					data["domain"] = hostname
 					data["port"], _ = strconv.Atoi(defaultPort)
 				}
 			}
