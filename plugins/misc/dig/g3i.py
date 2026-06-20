@@ -26,6 +26,7 @@ if len(sys.argv) == 2 and sys.argv[1] == "r":
     SOURCE = json.load(sys.stdin)
     ARTIFACTS = ["dig.txt"]
     INPUT = open("/artifacts/dig.txt", "r").read()
+    pprint(SOURCE, sys.stderr)
 else:
     SOURCE = None
     ARTIFACTS = []
@@ -126,10 +127,16 @@ for response in input:
             else:
                 assert False, domain
 
-# Block input domain objects (we're creating a newer version).
+# This needs to be replaced for more nuanced logic if we want dig to be selectively reentrant.
+# Now I can see why past me made the dig plugin so limited, to prevent this kind of reentry.
+# This isn't so terrible (pipelines have a fixed length) but will bite me in the ass quickly
+# if I try to add a fully recursive mode at some point.
+""" # Block input domain objects (we're creating a newer version).
 # Do not block other objects (for example URLs).
-if SOURCE is not None and SOURCE["_type"] != "domain":
+if SOURCE is not None and SOURCE["_type"] not in ("domain", "host"):
     output.append(SOURCE)
+ """
 
 # Print out the output data in JSON format.
+pprint(output, sys.stderr)
 json.dump(output, sys.stdout)
