@@ -88,7 +88,7 @@ for response in input:
                 }
             )
         if answer["type"] == "PTR":
-            if domain.endswith(".in-addr.arpa."):
+            if domain.endswith(".in-addr.arpa"):
                 output.append(
                     {
                         "_type": "host",
@@ -99,7 +99,7 @@ for response in input:
                         "hostnames": [answer["data"][:-1]],
                     }
                 )
-            elif domain.endswith(".ip6.arpa."):
+            elif domain.endswith(".ip6.arpa"):
                 output.append(
                     {
                         "_type": "host",
