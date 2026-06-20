@@ -35,7 +35,7 @@ for response in input:
     if "question" not in response or "answer" not in response:
         continue
 
-    # Get the domain name.
+    # Get the augmented "domain" object.
     domain = response["question"]["name"]
     assert domain.endswith(".")
     domain = domain[:-1]
@@ -48,19 +48,20 @@ for response in input:
     server = "@" + server[p:q]
     cmd = shlex.join(["dig", "-t", response["question"]["type"], domain, server])
     fp = ["dig " + domain]
-    obj = {
-        "_type": "domain",
-        "_cmd": cmd,
-        "_fp": fp,
-        "_artifacts": ARTIFACTS,
-        "domain": domain,
-        "records": response["answer"],
-    }
-    if "authority" in response:
-        obj["authority"] = response["authority"]
-    output.append(obj)
+    if not domain.endswith(".in-addr.arpa.") and not domain.endswith(".ip6.arpa."):
+        obj = {
+            "_type": "domain",
+            "_cmd": cmd,
+            "_fp": fp,
+            "_artifacts": ARTIFACTS,
+            "domain": domain,
+            "records": response["answer"],
+        }
+        if "authority" in response:
+            obj["authority"] = response["authority"]
+        output.append(obj)
 
-    # Get the IP addresses.
+    # Get the "host" objects.
     for answer in response["answer"]:
         if answer["type"] == "A":
             output.append(
