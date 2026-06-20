@@ -482,6 +482,8 @@ func Main() int {
 				g3lib.SendApiError(w, http.StatusBadRequest, "Empty scan: a scan must declare at least one import, or at least one pipeline run with a target.")
 				return
 			}
+
+			// Mint a new scan ID.
 			scanID := uuid.NewString()
 
 			// Log the parsed script.
@@ -527,8 +529,15 @@ func Main() int {
 			}
 			for _, parsedImport := range parsed.Imports {
 				if !importOne(parsedImport) {
-					return
+					return	// SendApiError already called at this point
 				}
+			}
+
+			// Insert the new scan ID into the SQL database before dispatching the MQTT message.
+			if err := g3lib.InsertScanProgress(sql_db, scanID); err != nil {
+				log.Error(err)
+				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				return
 			}
 
 			// Send the new scan message. parsed.Report is nil when the script
@@ -537,6 +546,9 @@ func Main() int {
 			err = g3lib.SendNewScan(mq_client, scanID, parsed.Mode, parsed.Pipelines, parsed.Report)
 			if err != nil {
 				log.Error(err)
+				if err = g3lib.UpdateScanProgress(sql_db, scanID, g3lib.STATUS_ERROR, nil, "Internal server error."); err != nil {
+					log.Error(err)
+				}
 				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}

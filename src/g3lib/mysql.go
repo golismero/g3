@@ -174,11 +174,11 @@ func QueryTaskIDsFromLog(db SQLDBClient, scanid string) ([]string, error) {
 	var tasklist []string
 	var err error
 
-	// Get the task IDs from the log. Since we always output on line of log
+	// Get the task IDs from the log. Since we always output one line of log
 	// before the task is even run, this should work well enough for our
 	// purposes, which is mostly recovering logs anyway.
-	query := "SELECT DISTINCT `taskid` FROM `logs` ORDER BY `timestamp`, `id` ASC"
-	rows, err := db.db.Query(query)
+	query := "SELECT DISTINCT `taskid` FROM `logs` WHERE `scanid` = ? ORDER BY `timestamp`, `id` ASC"
+	rows, err := db.db.Query(query, scanid)
 	if err != nil {
 		return tasklist, err
 	}

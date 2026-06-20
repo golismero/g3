@@ -254,8 +254,7 @@ func main() {
 		// Check that we aren't already running that scan.
 		// Note that this is just a very basic sanity check,
 		// not an actual guarantee that you can't run the same
-		// scan twice at the same time. You could have more
-		// instances of g3scanner using the same MQTT broker.
+		// scan twice at the same time if g3api messes up.
 		if msg.ScanID == currentScanID {
 			log.Error("Ignoring duplicate scan start message: " + msg.ScanID)
 			return
@@ -284,16 +283,13 @@ func main() {
 			for _, pipeline := range msg.Pipelines {
 				if len(pipeline) > maxPipeDepth {
 					log.Errorf("Got script with a pipeline that's %d commands deep, but we can only run up to %d, aborted.", len(pipeline), maxPipeDepth)
-					if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Pipeline too deep in script (>%d)", maxPipeDepth)); err != nil {
+					if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Pipeline too deep in script (%d)", len(pipeline))); err != nil {
 						log.Error(err.Error())
 					}
 					return
 				}
 			}
 		}
-
-		// Add the scan to the progress table.
-		g3lib.InsertScanProgress(sql_db, msg.ScanID) //nolint:errcheck
 
 		// Send the new task to the task runner.
 		scanChannel <- msg

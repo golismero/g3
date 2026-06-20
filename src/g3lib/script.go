@@ -621,7 +621,7 @@ func GetBuiltInPipelines(compact bool) map[string]string {
 		raw, err := pipelinesFS.ReadFile("res/" + e.Name())
 		if err != nil {
 			panic("internal error reading embedded file: res/" + e.Name())
-			continue
+			//continue
 		}
 		name := strings.TrimSuffix(e.Name(), ".pipeline")
 		script := string(raw)
