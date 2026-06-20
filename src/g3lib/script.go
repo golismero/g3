@@ -506,7 +506,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			data["path"] = url.Path
 
 			// Split domain and port for easier handling.
-			if ip := net.ParseIP(url.Hostname()); ip == nil && string.Contains(url.Hostname(), ".") {
+			if ip := net.ParseIP(url.Hostname()); ip == nil && strings.Contains(url.Hostname(), ".") {
 				if url.Port() != "" {
 					data["domain"] = url.Hostname()
 					data["port"], _ = strconv.Atoi(url.Port())
