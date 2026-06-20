@@ -1,0 +1,27 @@
+# This pipeline will attempt to run basically everything we got against everything we discover.
+# Probably overkill but what the hell. Many of these pipelines won't even be hit.
+
+# Recon tools.
+untangle
+wafw00f
+testssl
+subfinder | untangle
+subfinder | wafw00f
+subfinder | testssl
+dig | subfinder | untangle
+dig | subfinder | wafw00f
+dig | subfinder | testssl
+nmap-full | testssl
+dig | nmap-full | testssl
+subfinder | dig | nmap-full | testssl
+dig | subfinder | dig | nmap-full | testssl
+
+# Attack tools.
+nikto
+subfinder | nikto
+dig | subfinder | nikto
+hydra
+nmap-full | hydra
+dig | nmap-full | hydra
+subfinder | dig | nmap-full | hydra
+dig | subfinder | dig | nmap-full | hydra

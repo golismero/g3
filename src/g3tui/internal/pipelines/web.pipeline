@@ -1,8 +1,16 @@
-testssl
-nmap-fast | testssl
-dig | nmap-fast | testssl
-subfinder | dig | nmap-fast | testssl
-nikto
-subfinder | nikto
+# Web pentest pipeline.
+# Currently rather barren, since most g3 plugins are for network scanning.
+# Hopefully that will change soon.
+
+# Run tests against every URL in scope.
+untangle
 wafw00f
+testssl
+nikto
+
+# Run the same tests against any discovered subdomains too.
+# This implicitly adds them to the pentest scope!
+subfinder | untangle
 subfinder | wafw00f
+subfinder | testssl
+subfinder | nikto

@@ -1,4 +1,15 @@
+# Network scan pipeline.
+
+# URLs get tested by TestSSL. I wouldn't normally expect users to pass a web URL to a network scan, but... y'know.
 testssl
+
+# Hosts get port scanned, then SSL ports get tested by TestSSL.
 nmap-full | testssl
+
+# Domain names get resolved into IP addresses, then... I'm sure you got it by now.
+# Since web urls also have a domain property, they enter this pipeline too.
 dig | nmap-full | testssl
+
+# Passive subdomain finder (this will implicitly add every subdomain to the scope, but only for this pipeline).
+# Of course since this pipeline does the same as everything else... :D
 subfinder | dig | nmap-full | testssl

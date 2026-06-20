@@ -89,3 +89,4 @@ target https://xn--n1aae7f7o.badssl.com
 
 # Now let's give these bad boys to testssl, see if it can handle them. ;)
 testssl
+dig | nmap | testssl
