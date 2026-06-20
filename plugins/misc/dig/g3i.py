@@ -52,12 +52,10 @@ for response in input:
     assert p < q, (p, q)
     server = "@" + server[p:q]
     cmd = shlex.join(["dig", "-t", response["question"]["type"], domain, server])
-    fp = ["dig " + domain]
     if not domain.endswith(".in-addr.arpa") and not domain.endswith(".ip6.arpa"):
         obj = {
             "_type": "domain",
             "_cmd": cmd,
-            "_fp": fp,
             "_artifacts": ARTIFACTS,
             "domain": domain,
             "records": response["answer"],
@@ -73,7 +71,6 @@ for response in input:
                 {
                     "_type": "host",
                     "_cmd": cmd,
-                    "_fp": fp,
                     "_artifacts": ARTIFACTS,
                     "ipv4": answer["data"][:-1],
                     "hostnames": sorted(set([answer["name"][:-1], domain])),
@@ -84,7 +81,6 @@ for response in input:
                 {
                     "_type": "host",
                     "_cmd": cmd,
-                    "_fp": fp,
                     "_artifacts": ARTIFACTS,
                     "ipv6": answer["data"],
                     "hostnames": sorted(set([answer["name"][:-1], domain])),
@@ -96,7 +92,6 @@ for response in input:
                     {
                         "_type": "host",
                         "_cmd": cmd,
-                        "_fp": fp,
                         "_artifacts": ARTIFACTS,
                         "ipv4": arpa_to_ipv4(answer["name"]),
                         "hostnames": [answer["data"][:-1]],
@@ -106,7 +101,6 @@ for response in input:
                     {
                         "_type": "domain",
                         "_cmd": cmd,
-                        "_fp": fp,
                         "_artifacts": ARTIFACTS,
                         "domain": answer["data"][:-1],
                     }
@@ -116,7 +110,6 @@ for response in input:
                     {
                         "_type": "host",
                         "_cmd": cmd,
-                        "_fp": fp,
                         "_artifacts": ARTIFACTS,
                         "ipv6": arpa_to_ipv6(answer["name"]),
                         "hostnames": [answer["data"][:-1]],
@@ -126,7 +119,6 @@ for response in input:
                     {
                         "_type": "domain",
                         "_cmd": cmd,
-                        "_fp": fp,
                         "_artifacts": ARTIFACTS,
                         "domain": answer["data"][:-1],
                     }
