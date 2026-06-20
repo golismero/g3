@@ -59,7 +59,7 @@
         // Special case: reverse DNS queries.
         {
             condition: |||
-                {{if .dnsrecords}}
+                {{if .hostnames}}
                     false
                 {{else}}
                     {{if .ipv4}}
@@ -77,7 +77,7 @@
                 {{if not (eq (env).G3_ENV_IPV6_SUPPORTED "true")}}
                     false
                 {{else}}
-                    {{if .dnsrecords}}
+                    {{if .hostnames}}
                         false
                     {{else}}
                         {{if .ipv6}}

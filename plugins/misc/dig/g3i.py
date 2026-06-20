@@ -6,6 +6,8 @@ import json
 import shlex
 import ipaddress
 
+from pprint import pprint
+
 def arpa_to_ipv6(arpa):
     arpa = arpa.lower().rstrip('.').removesuffix('.ip6.arpa')
     nibbles = arpa.split('.')[::-1]   # arpa stores nibbles least-significant-first
@@ -31,6 +33,7 @@ else:
 
 # Parse the input data.
 input = jc.parse("dig", INPUT)
+pprint(input, sys.stderr)
 assert input
 assert isinstance(input, list)
 for response in input:
@@ -42,7 +45,7 @@ for response in input:
     assert domain.endswith(".")
     domain = domain[:-1]
     server = response["server"]
-    p = server.find("(")
+    p = server.find("(") + 1
     q = server.find(")", p)
     assert p >= 0, (p, q)
     assert q >= 0, (p, q)
@@ -50,7 +53,7 @@ for response in input:
     server = "@" + server[p:q]
     cmd = shlex.join(["dig", "-t", response["question"]["type"], domain, server])
     fp = ["dig " + domain]
-    if not domain.endswith(".in-addr.arpa.") and not domain.endswith(".ip6.arpa."):
+    if not domain.endswith(".in-addr.arpa") and not domain.endswith(".ip6.arpa"):
         obj = {
             "_type": "domain",
             "_cmd": cmd,
@@ -63,7 +66,7 @@ for response in input:
             obj["authority"] = response["authority"]
         output.append(obj)
 
-    # Get the "host" objects.
+    # Get the derived objects.
     for answer in response["answer"]:
         if answer["type"] == "A":
             output.append(
@@ -73,10 +76,10 @@ for response in input:
                     "_fp": fp,
                     "_artifacts": ARTIFACTS,
                     "ipv4": answer["data"][:-1],
-                    "hostnames": [answer["name"][:-1]],
+                    "hostnames": sorted(set([answer["name"][:-1], domain])),
                 }
             )
-        if answer["type"] == "AAAA":
+        elif answer["type"] == "AAAA":
             output.append(
                 {
                     "_type": "host",
@@ -84,10 +87,10 @@ for response in input:
                     "_fp": fp,
                     "_artifacts": ARTIFACTS,
                     "ipv6": answer["data"],
-                    "hostnames": [answer["name"][:-1]],
+                    "hostnames": sorted(set([answer["name"][:-1], domain])),
                 }
             )
-        if answer["type"] == "PTR":
+        elif answer["type"] == "PTR":
             if domain.endswith(".in-addr.arpa"):
                 output.append(
                     {
@@ -99,6 +102,15 @@ for response in input:
                         "hostnames": [answer["data"][:-1]],
                     }
                 )
+                output.append(
+                    {
+                        "_type": "domain",
+                        "_cmd": cmd,
+                        "_fp": fp,
+                        "_artifacts": ARTIFACTS,
+                        "domain": answer["data"][:-1],
+                    }
+                )
             elif domain.endswith(".ip6.arpa"):
                 output.append(
                     {
@@ -108,6 +120,15 @@ for response in input:
                         "_artifacts": ARTIFACTS,
                         "ipv6": arpa_to_ipv6(answer["name"]),
                         "hostnames": [answer["data"][:-1]],
+                    }
+                )
+                output.append(
+                    {
+                        "_type": "domain",
+                        "_cmd": cmd,
+                        "_fp": fp,
+                        "_artifacts": ARTIFACTS,
+                        "domain": answer["data"][:-1],
                     }
                 )
             else:
