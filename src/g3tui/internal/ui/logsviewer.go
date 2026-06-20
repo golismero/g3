@@ -328,7 +328,7 @@ func (v *LogsViewer) applyContent() {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		prefix, prefixWidth := viewerLinePrefix(e.Timestamp, v.toolFor(e.TaskID), v.toolWidth)
+		prefix, prefixWidth := viewerLinePrefix(e.Timestamp, v.toolFor(e.TaskID), shortTaskID(e.TaskID), v.toolWidth)
 		body := g3lib.StripAnsi(e.Text)
 		b.WriteString(wrapLogLine(prefix, prefixWidth, body, v.viewport.Width, v.wrap))
 	}
@@ -342,69 +342,83 @@ func (v LogsViewer) toolFor(taskID string) string {
 	return "?"
 }
 
-// renderForSave returns the viewer's current entries formatted as
-// plain text for [S] save. Same line shape as applyContent (timestamp,
-// tool, body) but with no Lipgloss styling, no ANSI in the body, no
-// hanging-indent line wrapping. Used by the [S] save handler.
+// renderForSave returns the viewer's entries formatted for [S] save, grouped
+// by task into g3cli-style blocks (separator, Scan ID, Task ID, separator,
+// then each line as "<full-timestamp>: <text>", then a trailing blank line).
+// Tasks appear in first-appearance order; each task's lines keep their
+// existing order. Plain text — no ANSI styling. Built entirely from
+// v.entries, so there is no re-query.
 func (v LogsViewer) renderForSave() string {
 	if len(v.entries) == 0 {
 		return ""
 	}
+	const sep = "--------------------------------------------------------------------------------"
+
+	order := make([]string, 0)
+	byTask := make(map[string][]g3lib.LogEntry)
+	for _, e := range v.entries {
+		if _, ok := byTask[e.TaskID]; !ok {
+			order = append(order, e.TaskID)
+		}
+		byTask[e.TaskID] = append(byTask[e.TaskID], e)
+	}
+
 	var b strings.Builder
-	for i, e := range v.entries {
-		if i > 0 {
+	for _, taskID := range order {
+		b.WriteString(sep)
+		b.WriteByte('\n')
+		b.WriteString("--- Scan ID: " + v.scanID)
+		b.WriteByte('\n')
+		b.WriteString("--- Task ID: " + taskID)
+		b.WriteByte('\n')
+		b.WriteString(sep)
+		b.WriteByte('\n')
+		for _, e := range byTask[taskID] {
+			b.WriteString(time.Unix(e.Timestamp, 0).String())
+			b.WriteString(": ")
+			b.WriteString(g3lib.StripAnsi(e.Text))
 			b.WriteByte('\n')
 		}
-		when := time.Unix(e.Timestamp, 0).Format("15:04:05")
-		tool := v.toolFor(e.TaskID)
-		cell := tool
-		width := v.toolWidth
-		if lipgloss.Width(cell) > width {
-			runes := []rune(cell)
-			if width <= 1 {
-				cell = "…"
-			} else {
-				cell = string(runes[:width-1]) + "…"
-			}
-		}
-		pad := width - lipgloss.Width(cell)
-		if pad < 0 {
-			pad = 0
-		}
-		b.WriteString(when)
-		b.WriteString(" [")
-		b.WriteString(cell)
-		b.WriteString("]")
-		b.WriteString(strings.Repeat(" ", pad))
-		b.WriteString("  ")
-		b.WriteString(g3lib.StripAnsi(e.Text))
+		b.WriteByte('\n')
 	}
 	return b.String()
 }
 
-// viewerLinePrefix builds the styled "HH:MM:SS [tool]  " prefix for a
-// log row and returns its visible column width. The tool cell is
-// end-ellipsised to width; the returned prefixWidth accounts for the
-// padded cell so the body column aligns across rows.
-func viewerLinePrefix(ts int64, tool string, width int) (string, int) {
+// shortTaskID returns the first 8 characters of a task UUID for use as a
+// compact per-line identity tag. Shorter ids (shouldn't happen for valid
+// uuid4) are returned whole.
+func shortTaskID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+
+// viewerLinePrefix builds the styled "HH:MM:SS [tool·xxxxxxxx]  " prefix for
+// a log row and returns its visible column width. The tool portion is
+// end-ellipsised to toolWidth and right-padded so the body column aligns
+// across rows; the 8-char short task id is fixed width and never truncated,
+// so concurrent tasks of the same tool stay distinguishable.
+func viewerLinePrefix(ts int64, tool, shortID string, toolWidth int) (string, int) {
 	when := time.Unix(ts, 0).Format("15:04:05")
 	cell := tool
-	if lipgloss.Width(cell) > width {
+	if lipgloss.Width(cell) > toolWidth {
 		runes := []rune(cell)
-		if width <= 1 {
+		if toolWidth <= 1 {
 			cell = "…"
 		} else {
-			cell = string(runes[:width-1]) + "…"
+			cell = string(runes[:toolWidth-1]) + "…"
 		}
 	}
-	pad := width - lipgloss.Width(cell)
+	pad := toolWidth - lipgloss.Width(cell)
 	if pad < 0 {
 		pad = 0
 	}
-	bracketed := "[" + LogTool.Render(cell) + "]" + strings.Repeat(" ", pad)
+	bracketed := "[" + LogTool.Render(cell) + "·" + LogTool.Render(shortID) + "]" + strings.Repeat(" ", pad)
 	prefix := LogTimestamp.Render(when) + " " + bracketed + "  "
-	// 8 (timestamp) + 1 (space) + 1 ("[") + width (cell) + 1 ("]") + 2 ("  ")
-	return prefix, 13 + width
+	// 8 (timestamp) + 1 (space) + 1 ("[") + toolWidth (tool cell) + 1 ("·")
+	// + 8 (short id) + 1 ("]") + 2 ("  ") = 22 + toolWidth
+	return prefix, 22 + toolWidth
 }
 
 func (v LogsViewer) fetchNowCmd() tea.Cmd {
