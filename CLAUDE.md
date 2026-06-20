@@ -73,7 +73,7 @@ User (CLI / HTTP)
 ### Plugin System
 
 Plugins live under `plugins/*/`. Each plugin directory contains:
-- `<name>.g3p` — JSON5 plugin definition (commands, conditions, fingerprints, importers, mergers)
+- `<name>.g3p` — Jsonnet plugin definition (commands, conditions, fingerprints, importers, mergers). Jsonnet is a JSON superset (comments, trailing commas, `|||` multiline text blocks, plus variables/imports/std library if ever needed); `g3config` evaluates each file to JSON.
 - `Dockerfile` — Containerized tool
 - `g3i.py` — Importer: parses raw tool output → G3Data JSON
 - `g3m.py` — Merger: deduplicates results across runs

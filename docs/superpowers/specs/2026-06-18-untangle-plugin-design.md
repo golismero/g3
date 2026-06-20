@@ -45,7 +45,7 @@ Normalize every result to a `url` G3Data object (`https://<host>/`) — same app
 wafw00f — and attach an ordered **`layers`** array of server names. The `commands` declare
 `returns: "url"`.
 
-```json5
+```jsonnet
 {
     url: "https://github.com/cemtopcuoglu/untangle",
     description: "Untangle is a multi-layer web server fingerprinting tool that identifies the ordered stack of servers/CDNs/proxies (e.g. cloudflare -> varnish -> nginx) in front of an HTTPS site.",

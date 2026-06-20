@@ -307,7 +307,7 @@ if metadata.Reporter != nil {
 }
 ```
 
-The empty string is a valid `Name` value at the JSON level (`required` on the validator tag catches missing field, not empty string after JSONnet expansion — but `re.MatchString` with `^[a-zA-Z0-9_\-]*$` accepts the empty string too). If empty-name presets are a concern, change `*` to `+` in g3lib's intent later; for Tier 1 the user-facing constraint is the validator tag on the type.
+The empty string is a valid `Name` value at the JSON level (`required` on the validator tag catches missing field, not empty string after Jsonnet expansion — but `re.MatchString` with `^[a-zA-Z0-9_\-]*$` accepts the empty string too). If empty-name presets are a concern, change `*` to `+` in g3lib's intent later; for Tier 1 the user-facing constraint is the validator tag on the type.
 
 - [ ] **Step 3: Verify the module still builds**
 

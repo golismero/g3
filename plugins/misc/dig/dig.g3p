@@ -7,32 +7,90 @@
     // Only run against objects that do not have any discovered DNS records (prevents data reentry).
     commands: [
         {
-            condition: "{{if .dnsrecords}} false {{else}} {{if .domain}} true {{else}} false {{end}} {{end}}",
+            condition: |||
+                {{if .dnsrecords}}
+                    false
+                {{else}}
+                    {{if .domain}}
+                        true
+                    {{else}}
+                        false
+                    {{end}}
+                {{end}}
+            |||,
             fingerprint: ["dig -t A {{.domain}}"],
             command: ["dig", "-t", "A", "{{.domain}}", "@8.8.8.8"],
         },
         {
-            condition: "{{if (eq (env).G3_ENV_IPV6_SUPPORTED \"true\")}} {{if .dnsrecords}} false {{else}} {{if .domain}} true {{else}} false {{end}} {{end}} {{else}} false {{end}}",
+            condition: |||
+                {{if not (eq (env).G3_ENV_IPV6_SUPPORTED "true")}}
+                    false
+                {{else}}
+                    {{if .dnsrecords}}
+                        false
+                    {{else}}
+                        {{if .domain}}
+                            true
+                        {{else}}
+                            false
+                        {{end}}
+                    {{end}}
+                {{end}}
+            |||,
             fingerprint: ["dig -t AAAA {{.domain}}"],
             command: ["dig", "-t", "AAAA", "{{.domain}}", "@8.8.8.8"],
         },
         {
-            condition: "{{if .dnsrecords}} false {{else}} {{if .domain}} true {{else}} false {{end}} {{end}}",
+            condition: |||
+                {{if .dnsrecords}}
+                    false
+                {{else}}
+                    {{if .domain}}
+                        true
+                    {{else}}
+                        false
+                    {{end}}
+                {{end}}
+            |||,
             fingerprint: ["dig -t any {{.domain}}"],
             command: ["dig", "-t", "any", "{{.domain}}", "@8.8.8.8"],
         },
 
         // Special case: reverse DNS queries.
         {
-            condition: "{{.if .dnsrecords}} false {{else}} {{if .ipv4}} true {{else}} false {{end}} {{end}}",
+            condition: |||
+                {{if .dnsrecords}}
+                    false
+                {{else}}
+                    {{if .ipv4}}
+                        true
+                    {{else}}
+                        false
+                    {{end}}
+                {{end}}
+            |||,
             fingerprint: ["dig -x {{.ipv4}}"],
             command: ["dig", "-x", "{{.ipv4}}", "@8.8.8.8"],
-        }
+        },
         {
-            condition: "{{if (eq (env).G3_ENV_IPV6_SUPPORTED \"true\")}} {{.if .dnsrecords}} false {{else}} {{if .ipv6}} true {{else}} false {{end}} {{end}} {{else}} false {{end}}",
+            condition: |||
+                {{if not (eq (env).G3_ENV_IPV6_SUPPORTED "true")}}
+                    false
+                {{else}}
+                    {{if .dnsrecords}}
+                        false
+                    {{else}}
+                        {{if .ipv6}}
+                            true
+                        {{else}}
+                            false
+                        {{end}}
+                    {{end}}
+                {{end}}
+            |||,
             fingerprint: ["dig -x {{.ipv6}}"],
             command: ["dig", "-x", "{{.ipv6}}", "@8.8.8.8"],
-        }
+        },
     ],
 
     importer: {},

@@ -1,6 +1,13 @@
-// Golismero3 plugins are defined using JSON5 for simplicity and maintainability.
-// The g3config tool will convert all JSON5 files into a single JSON object for internal use.
+// Golismero3 plugins are defined using Jsonnet (https://jsonnet.org/), a superset of
+// JSON that adds comments, unquoted keys, trailing commas, and multiline text blocks (|||).
+// Today these files only use that "nicer JSON" subset, but the full language (variables,
+// imports, std library) is available should a plugin ever need it.
+//
+// The g3config tool evaluates every .g3p file and compiles them into a single JSON object
+// (config/g3plugins.json), which is what every other binary actually loads at runtime.
+//
 // Each plugin represents an external tool to be integrated with Golismero.
+//
 {
     // (Optional) Tool name (for example: nmap, nikto, testssl).
     // If ommitted the filename without extension is used instead.
@@ -15,6 +22,7 @@
 
     // Docker image required for this tool.
     // These are images prepared especially for use with Golismero3.
+    // If ommitted, the plugin name is used to derive the image name.
     image: "ghcr.io/golismero/nmap",
 
     // Command definitions for this tool.
@@ -36,7 +44,17 @@
             // This prevents the tool from being launched against incompatible
             // targets - for example if you're about to run nmap you want to
             // check if the target is an IP address or not.
-            condition: "{{if .services}} false {{else}} {{if .ipv4}} true {{else}} false {{end}} {{end}}",
+            condition: |||
+                {{if .services}}
+                    false
+                {{else}}
+                    {{if .ipv4}}
+                        true
+                    {{else}}
+                        false
+                    {{end}}
+                {{end}}
+            |||,
 
             // Fingerprint of the tool execution.
             // This helps Golismero avoid running the same test twice.
@@ -61,13 +79,24 @@
 
             // (Optional) Default data type returned by the command.
             // If not given, the command MUST produce objects with the correct _type property.
+            // Note that this does NOT mean a plugin is limited to a single return type!
             returns: "host",
         },
 
         // You'll need to enable IPv6 on Docker and on your host for this to work:
         // https://docs.docker.com/config/daemon/ipv6/
         {
-            condition: "{{if .services}} false {{else}} {{if and .ipv6 (eq (env).G3_ENV_IPV6_SUPPORTED \"true\")}} true {{else}} false {{end}} {{end}}",
+            condition: |||
+                {{if .services}}
+                    false
+                {{else}}
+                    {{if and .ipv6 (eq (env).G3_ENV_IPV6_SUPPORTED "true") }}
+                        true
+                    {{else}}
+                        false
+                    {{end}}
+                {{end}}
+            |||,
             fingerprint: ["nmap {{.ipv6}}"],
             command: ["-6", "-A", "-O", "-Pn", "-vvv", "--", "{{.ipv6}}"],
             dockeropt: ["-i", "--rm", "--cap-add", "NET_ADMIN"],

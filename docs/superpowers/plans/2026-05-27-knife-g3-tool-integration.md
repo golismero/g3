@@ -6,7 +6,7 @@
 
 **Architecture:** Build on g3api (not the CLI, not direct-to-infra). Add a `MANAGED` scan status the orchestrator never touches, a handful of managed-only endpoints for seeding data / importing / dispatching / fetching results, a `/plugin/describe` tool-contract endpoint sourced from additive `.g3p` `llm` metadata, and a `/config/env` endpoint. Ship a Python library that wraps all of this in scan-scoped, data-only calls.
 
-**Tech Stack:** Go 1.25 (g3lib + g3api + g3config, separate modules with `replace` directives), JSON5/Jsonnet (`.g3p`), Python 3 (client library), Docker.
+**Tech Stack:** Go 1.25 (g3lib + g3api + g3config, separate modules with `replace` directives), Jsonnet/Jsonnet (`.g3p`), Python 3 (client library), Docker.
 
 **Spec:** `docs/superpowers/specs/2026-05-27-knife-g3-tool-integration-design.md`
 
@@ -963,7 +963,7 @@ Insert a blank line and then this `llm:` block immediately after the `image:` li
 
 Preserve 4-space indentation (matching the rest of this file — note: this is the one place where indentation differs from Go's tabs).
 
-- [ ] **Step 2: Verify the file is syntactically valid JSON5/jsonnet**
+- [ ] **Step 2: Verify the file is syntactically valid Jsonnet/jsonnet**
 
 No binary execution. Visually confirm:
 - All keys are followed by `:`
@@ -1003,7 +1003,7 @@ Insert a blank line and then this `llm:` block IMMEDIATELY AFTER the `image:` li
 
 Preserve 4-space indentation. Do NOT remove or reorder the existing comments — they document the schema for plugin authors.
 
-- [ ] **Step 2: Visually verify JSON5/jsonnet validity**
+- [ ] **Step 2: Visually verify Jsonnet/jsonnet validity**
 
 Same checks as Task 4.
 
@@ -1046,7 +1046,7 @@ Hydra has no `image:` field (it inherits the default from `g3config`). Insert th
 
 Preserve 4-space indentation and trailing-comma style.
 
-- [ ] **Step 2: Visually verify JSON5/jsonnet validity**
+- [ ] **Step 2: Visually verify Jsonnet/jsonnet validity**
 
 Same checks as Task 4.
 

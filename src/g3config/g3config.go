@@ -53,7 +53,7 @@ func main() {
 	// Initialize the validator.
 	var validate = validator.New()
 
-	// Initialize the JSONnet parser.
+	// Initialize the Jsonnet parser.
 	vm := jsonnet.MakeVM()
 
 	// This regular expression will validate plugin names.
@@ -91,7 +91,7 @@ func main() {
 			return err
 		}
 
-		// Parse the file contents as JSONnet.
+		// Parse the file contents as Jsonnet.
 		// This produces JSON data.
 		jsonStr, err := vm.EvaluateAnonymousSnippet(path, string(dat))
 		if err != nil {

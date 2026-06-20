@@ -220,7 +220,7 @@ metadata for reports/GUIs, available via the existing `/plugin/list`.
 
 The `.g3p` block (parsed into `G3LLMMetadata` in `src/g3lib/plugin.go`):
 
-```json5
+```jsonnet
 {
   // …existing fields…
   llm: {

@@ -6,7 +6,7 @@
 
 **Architecture:** A `.g3p` definition triggers on domain objects and default-port HTTPS url objects, passing a bare hostname to a containerized untangle. A shell entrypoint (`g3p.sh`) runs untangle from its install dir (where its `behavior_repository.out` pickle lives), tees the plain-text output to an artifact, and pipes it — along with the target host — to a Python importer (`g3i.py`). The importer parses untangle's noisy `Layer N: <server>` stdout against a known-server allowlist and emits one `url` G3Data object carrying an ordered `layers` array. Non-detections are dropped.
 
-**Tech Stack:** JSON5 plugin definition, POSIX shell, Python 3 (importer), Docker (`python:3-slim`, git-clone-and-pin of untangle). Tests: pytest driving `g3i.py` via subprocess.
+**Tech Stack:** Jsonnet plugin definition, POSIX shell, Python 3 (importer), Docker (`python:3-slim`, git-clone-and-pin of untangle). Tests: pytest driving `g3i.py` via subprocess.
 
 **Spec:** `docs/superpowers/specs/2026-06-18-untangle-plugin-design.md`
 
@@ -18,7 +18,7 @@
 
 - `plugins/recon/untangle/g3i.py` — importer: parse untangle stdout → G3Data JSON (the only logic-bearing file; gets unit tests).
 - `plugins/recon/untangle/test_g3i.py` — pytest suite driving `g3i.py` via subprocess. Not copied into the image.
-- `plugins/recon/untangle/untangle.g3p` — JSON5 plugin definition (commands, conditions, importer).
+- `plugins/recon/untangle/untangle.g3p` — Jsonnet plugin definition (commands, conditions, importer).
 - `plugins/recon/untangle/g3p.sh` — container entrypoint: run untangle, tee artifact, pipe to importer.
 - `plugins/recon/untangle/Dockerfile` — clone-and-pin untangle on `python:3-slim`, install deps, add wrappers.
 - `plugins/recon/untangle/Makefile` — build/pull `ghcr.io/golismero/untangle`.
@@ -247,7 +247,7 @@ Stop and let the repo owner commit `plugins/recon/untangle/g3i.py` and `plugins/
 
 Create `plugins/recon/untangle/untangle.g3p`:
 
-```json5
+```jsonnet
 {
     url: "https://github.com/cemtopcuoglu/untangle",
     description: "Untangle is a multi-layer web server fingerprinting tool that identifies the ordered stack of servers/CDNs/proxies (e.g. cloudflare -> varnish -> nginx) in front of an HTTPS site.",
@@ -279,12 +279,13 @@ Create `plugins/recon/untangle/untangle.g3p`:
 }
 ```
 
-- [ ] **Step 2: Validate JSON5 parses**
+- [ ] **Step 2: Validate Jsonnet parses**
 
-Run: `python3 -c "import json5" 2>/dev/null && echo has-json5 || echo no-json5`
-- If `has-json5`: `python3 -c "import json5; json5.load(open('plugins/recon/untangle/untangle.g3p'))" && echo OK`
-  Expected: `OK` (no exception).
-- If `no-json5`: skip — Task 4's `g3config` run is the authoritative parse check.
+`.g3p` files are Jsonnet, so the authoritative parse check is `g3config` itself
+(it evaluates the Jsonnet and validates the resulting struct). Run Task 4's
+`g3config` step and confirm it reports the plugin without error. There is no
+standalone pre-check — Python's `json5` cannot parse Jsonnet (`|||` text blocks,
+in particular), so it would give false negatives.
 
 - [ ] **Step 3: Commit checkpoint**
 

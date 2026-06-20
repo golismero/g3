@@ -6,7 +6,7 @@
 
 **Architecture:** The engine's issue-handling plumbing is *retained* (Magenta will be the future sole issue producer). We delete only the in-process `MarkdownReporter` + i18n, and rewrite the four issue-producing plugins so each emits its **input asset enriched with `_artifacts`** (the existing nmap host pattern) instead of an issue. hydra additionally emits a new `credential` asset type. `report` becomes a dispatch of the already-registered Magenta reporter plugin.
 
-**Tech Stack:** Go 1.25 (six binaries under `src/`), Python 3 plugin scripts, JSON5 `.g3p` definitions, Docker, MQTT/Mongo/Redis/MariaDB. **No test harness exists in this repo** — verification is `make bin` / `go build` for compilation, `g3config` for plugin re-registration, and functional command runs. Each task's verification reflects that.
+**Tech Stack:** Go 1.25 (six binaries under `src/`), Python 3 plugin scripts, Jsonnet `.g3p` definitions, Docker, MQTT/Mongo/Redis/MariaDB. **No test harness exists in this repo** — verification is `make bin` / `go build` for compilation, `g3config` for plugin re-registration, and functional command runs. Each task's verification reflects that.
 
 **Design spec:** [docs/superpowers/specs/2026-06-03-de-issue-and-externalize-reporting-design.md](../specs/2026-06-03-de-issue-and-externalize-reporting-design.md)
 
@@ -191,7 +191,7 @@ In `src/g3lib/plugin.go` (~line 92), change `plugin.Description["en"]` to `plugi
 
 - [ ] **Step 3: Update the g3config parse + auto-fill**
 
-In `src/g3config/g3config.go`, where the `.g3p` `description` object is parsed into the registry (and the auto-fill at ~line 347), collapse the `{en: "..."}` JSON5 object to its English string. The `.g3p` files keep `description: { en: "..." }` on disk; g3config reads `description.en` (falling back to empty) and stores a plain string in `config/g3plugins.json`.
+In `src/g3config/g3config.go`, where the `.g3p` `description` object is parsed into the registry (and the auto-fill at ~line 347), collapse the `{en: "..."}` Jsonnet object to its English string. The `.g3p` files keep `description: { en: "..." }` on disk; g3config reads `description.en` (falling back to empty) and stores a plain string in `config/g3plugins.json`.
 
 ```go
 // where the raw .g3p description (map[string]string) is read:
