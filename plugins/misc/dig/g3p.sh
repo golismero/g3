@@ -7,5 +7,5 @@ set -e
 set -o pipefail
 rc=0
 "$@" | tee /artifacts/dig.txt 1>&2 || rc=$?
-cat /artifacts/dig.txt | /usr/bin/g3i r
+/usr/bin/g3i r
 exit $rc

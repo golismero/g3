@@ -23,12 +23,14 @@ output = []
 if len(sys.argv) == 2 and sys.argv[1] == "r":
     SOURCE = json.load(sys.stdin)
     ARTIFACTS = ["dig.txt"]
+    INPUT = open("/artifacts/dig.txt", "r").read()
 else:
     SOURCE = None
     ARTIFACTS = []
+    INPUT = sys.stdin.read()
 
 # Parse the input data.
-input = jc.parse("dig", sys.stdin.read())
+input = jc.parse("dig", INPUT)
 assert input
 assert isinstance(input, list)
 for response in input:
