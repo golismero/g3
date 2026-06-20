@@ -2,6 +2,7 @@ package g3lib
 
 import (
 	"bufio"
+	"embed"
 	"errors"
 	"fmt"
 	"net"
@@ -601,4 +602,53 @@ func LoadTargetsFromFile(filepath string) ([]string, error) {
 		targets = append(targets, line)
 	}
 	return targets, scanner.Err()
+}
+
+// Reusable pipelines for building scripts.
+//go:embed res/*.pipeline
+var pipelinesFS embed.FS
+func GetBuiltInPipelines(compact bool) map[string]string {
+	out := map[string]string{}
+	entries, err := pipelinesFS.ReadDir("res")
+	if err != nil {
+		panic("internal error looking for embedded pipelines")
+		//return out
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".pipeline") {
+			continue
+		}
+		raw, err := pipelinesFS.ReadFile("res/" + e.Name())
+		if err != nil {
+			panic("internal error reading embedded file: res/" + e.Name())
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".pipeline")
+		script := string(raw)
+		if compact {
+			pipelines := []string{}
+			for _, line := range strings.Split(string(raw), "\n") {
+				line = strings.TrimSpace(line)
+				if len(line) == 0 {
+					continue
+				}
+				if len(line) > 1 && line[0] == byte(35) {	// #
+					continue
+				}
+				var tools []string
+				for _, token := range strings.Split(line, "|") {
+					token = strings.TrimSpace(token)
+					if token == "" {
+						continue
+					}
+					tools = append(tools, token)
+				}
+				line = strings.Join(tools, "|")
+				pipelines = append(pipelines, line)
+			}
+			script = strings.Join(pipelines, "\n") + "\n"
+		}
+		out[name] = script
+	}
+	return out
 }

@@ -35,7 +35,7 @@ type Pipeline struct {
 func Load(userDir string) ([]Pipeline, error) {
 	merged := map[string]Pipeline{}
 
-	for name, content := range embedded() {
+	for name, content := range g3lib.GetBuiltInPipelines(true) {
 		merged[name] = Pipeline{Name: name, Source: SourceEmbedded, Content: content}
 	}
 
