@@ -1,8 +1,65 @@
 # HTTP Routing & REST Migration — Future Work
 
-Discussion notes from an architecture chat on 2026-05-29. Captures a proposal to migrate `g3api` from its current "POST + JSON body for everything on `net/http`" shape to **Go 1.22+ enhanced `ServeMux`** with method+path routing, GET for read endpoints, and path parameters. Not scheduled.
+Discussion notes from architecture chats on 2026-05-29 and 2026-06-24. The original proposal (2026-05-29) was to migrate `g3api` from its current "POST + JSON body for everything on `net/http`" shape to **Go 1.22+ enhanced `ServeMux`** with method+path routing, GET for read endpoints, and path parameters.
+
+The 2026-06-24 discussion went further: the right modernization isn't a hand-refactored `net/http` route table, it's a **code-first OpenAPI** approach — define the API as Go types, generate the spec, generate the clients. That subsumes the original proposal and dissolves several of its open questions. See **Direction (2026-06-24)** below. Still not scheduled.
 
 This is a watchlist, not a plan. When picked up, write a fresh plan with concrete file edits, tier structure, and a coordinated client-update strategy.
+
+---
+
+## Direction (2026-06-24): code-first OpenAPI
+
+The 2026-05-29 notes below describe migrating the hand-written `net/http` route table to Go 1.22 `ServeMux` and rewriting every `Req*.Decode`. That's still a faithful description of the **target API surface** (verbs, paths, plural names — see the endpoint table), but it's no longer how we'd *build* it. Decision:
+
+**Define the API code-first with [huma](https://github.com/danielgtaylor/huma), generate the OpenAPI 3.1 spec as a build artifact, and generate clients from that spec.**
+
+Rationale:
+
+- **The recurring cost here is client coordination, not server code.** Every API change is a flag-day across `g3cli`, `g3tui`, and `clients/python`. A generated spec turns the boring half of each client — types, per-operation methods, request/response validation — into regenerated code that never drifts. The ergonomic layers stay hand-written (see *Client story*).
+- **Go is a smaller maintenance surface than hand-authored YAML, and the spec stays verifiable.** With code-first the Go types are the single source of truth; the OpenAPI doc is generated, committed as an artifact, and gated in CI (lint with spectral, breaking-change diff with oasdiff). Because it's regenerated from the implementation it *cannot* drift from the handlers — strictly stronger than a hand-maintained YAML that can.
+- **Code-first wins on cross-transport type reuse.** REST and the WebSocket event surface share domain structs (see *WebSockets*). With code-first those are plain Go types both transports import; with spec-first YAML the types are generated from the spec and the WS layer would couple to that output or duplicate it.
+
+(The "spec-first vs code-first" distinction is mostly philosophical here — both produce the spec that generates clients. Code-first wins on the three points above; the only thing it costs is the "hand-authored contract" feeling, which we don't need.)
+
+### What huma dissolves
+
+huma extracts and validates request fields from struct tags and maps handler return values / typed errors to responses. Several 2026-05-29 open questions stop existing:
+
+- **`Req*.Decode` shape** (was open) — gone. Input structs use `path:`/`query:`/`json:` tags; there is no `Decode` method to write. The 21 identical `Decode` methods in `src/g3lib/api.go` are deleted.
+- **Path-param validation** (was open) — gone. `format:"uuid"` on the input field validates before the handler runs; the matcher no longer needs to be trusted for shape.
+- **`Validate*` helpers** — `ValidateHttpRequest` / `ValidateHttpGetRequest` retire entirely.
+
+### What still applies from the 2026-05-29 notes
+
+- **The endpoint table** is the target surface huma will express (one `huma.Operation` per row), minus `/plugins/describe` (removed — see below).
+- **Plural collection names** — still bundled; expressed as huma `Path` strings. Same flag-day logic.
+- **Routing substrate** — huma mounts on Go 1.22 `ServeMux` (`humago`) or chi (`humachi`); the stdlib-vs-chi reasoning still holds, now reduced to one adapter choice. `apiPath` is the mount prefix.
+- **Skipped versioning, client coordination** — unchanged; one flag-day, all clients updated together.
+
+### Response envelope: a real breaking change
+
+huma's default error shape is RFC 7807 `problem+json`, not g3api's `{status, data}` envelope. Adopting huma means changing the response shape — folded into the same flag-day, but a genuine decision (see *Status-code contract* and *Open questions*). The permissive "any 2xx = success" client check becomes largely moot for *generated* clients, which key off the operation contract rather than a hand-written 2xx range.
+
+### Client story
+
+Today there is no real client SDK: `g3cli` calls `g3lib.MakeApiRequest(...)` directly with hand-written endpoint strings (15+ sites), and `g3tui` wraps the same call in a thin `internal/client` package. So **`g3lib` is the de-facto client transport today** — `MakeApiRequest`/`DownloadFile`/`UploadFile` + the `Req*` structs all live in `src/g3lib/api.go`. That accidental role goes away:
+
+- **Go (`g3cli`, `g3tui`)** — the generated Go client lives in its **own package outside `g3lib`** (e.g. `clients/go/`, mirroring `clients/python/`); the binaries import it and stop calling `g3lib.MakeApiRequest`. `g3lib` keeps domain types (`G3Data`/`G3Task`/`G3Plugin`), MQTT, datastore, SQL — but is no longer the HTTP client. Because the two binaries are end-user *apps* (not a published SDK), they consume the generated client directly; no extra hand-written Go facade needed. This realizes the "Go client outside `g3lib`" idea floated earlier — codegen makes it the natural choice, not a judgment call.
+- **Python (`clients/python`)** — it *is* a published SDK (Knife consumes it), so it keeps its hand-written ergonomic facade (`scanner`/`manager` tiers, LLM-safe naming) over a **regenerated** transport. The current bespoke `_transport.py` (retries/backoff, zip-safe extraction, the async-ready seam, envelope parsing) and the `api/` submodule are what the generated transport replaces — so those bespoke behaviors either come from the generator or relocate up into the facade. Per the existing design the facade gets *adjusted, not rewritten*, on each spec change. "Close to free" — by design, not as a failure.
+
+### `/plugin/describe` removed
+
+`POST /plugin/describe` (the LLM-contract list) is **phased out**. The original intent — integrating LLM support into g3api — has been dropped in favor of a clean API; LLM tooling becomes a separate project consuming the generated clients. `GET /plugins` (human-facing list) stays. This also voids the "LLM client caches `/plugin/describe`" rationale that was blocking the deferred `GET /plugin/{name}` — re-evaluate that on its own merits.
+
+### WebSockets (sequel, not this doc)
+
+The current `/ws` is a near-PoC single feed. A planned expansion adds more subscribable event types and finer-grained subscription filters (by `scanid`/`taskid`) — **a subscription protocol over the existing socket, not a second API.** Two boundaries to record now:
+
+- **OpenAPI does not describe WebSockets.** The event surface lives outside the generated REST clients. If generated WS clients are ever wanted, **AsyncAPI** is the counterpart spec and can `$ref` the same schema components as the OpenAPI doc. For "a few more events + filters," a documented message protocol is enough — no spec generator required.
+- **Reuse domain payload types, not the HTTP decode path.** Separate transport (HTTP envelope vs WS frame) from payload (shared Go structs): WS events carry the same domain structs as their `data`. Driving WS through the request-decode machinery is the anti-pattern to avoid.
+
+Its own design doc when picked up.
 
 ---
 
@@ -26,6 +83,8 @@ None of those are urgent on an internal, bearer-token-auth'd API consumed by tru
 
 ## What the change looks like
 
+> **Note (2026-06-24):** this section describes the *target API surface* (verbs, paths, names). The *implementation mechanism* is now code-first OpenAPI via huma, which subsumes moves #1 and #2 — see **Direction (2026-06-24)** above. Kept for the verb/path/naming rationale, which still holds.
+
 Three coupled moves, executed together (separating them creates work that gets thrown away — every one of these is a breaking client-side change, and clients only want to update once):
 
 ### 1. Go 1.22+ enhanced `ServeMux`
@@ -48,7 +107,7 @@ mux.HandleFunc("GET "  + apiPath + "/scans/{scanid}/tasks",            requireTo
 
 Method routing replaces the per-handler `ValidateHttpRequest` method check. Path parameters extract via `r.PathValue("scanid")`. `requireToken`'s signature (`func(http.HandlerFunc) http.HandlerFunc`) needs no change — stdlib mux uses the same shape.
 
-**Why not chi/gin/echo/fiber?** chi is the natural escalation if middleware ever grows past `requireToken`, but the stdlib mux covers everything g3api currently needs. gin/echo are heavier than this codebase wants; fiber breaks `net/http` compatibility (would require rewriting `requireToken`). Stay on stdlib until a concrete reason to leave.
+**Why not chi/gin/echo/fiber?** chi is the natural escalation if middleware ever grows past `requireToken`, but the stdlib mux covers everything g3api currently needs. gin/echo are heavier than this codebase wants; fiber breaks `net/http` compatibility (would require rewriting `requireToken`). Stay on stdlib until a concrete reason to leave. *(2026-06-24: huma mounts on top of either stdlib mux (`humago`) or chi (`humachi`), so this is now just which adapter huma sits on — `net/http` compatibility is preserved either way. See Direction.)*
 
 ### 2. GET for reads, POST for mutations, path params for resources
 
@@ -127,8 +186,9 @@ After a systematic symmetry check (every collection answers list-with-data / lis
 | Method | Path | Was | Notes |
 |---|---|---|---|
 | `GET` | `/plugins` | `POST /plugin/list` | Human-facing list (name/url/description/image). |
-| `GET` | `/plugins/describe` | `POST /plugin/describe` | LLM contract list. |
 | `GET` | `/config/env` | `POST /config/env` | Shared `G3_ENV_*` map. `/config` is a singleton, stays singular. |
+
+(`POST /plugin/describe` — the LLM-contract list — is **removed**; LLM tooling moves to a separate project. See *Direction (2026-06-24)*.)
 
 ### WebSocket (unchanged)
 
@@ -136,7 +196,7 @@ After a systematic symmetry check (every collection answers list-with-data / lis
 |---|---|---|---|
 | `GET` | `/ws` | `GET /ws` | HTTP/1.1 Upgrade — already GET, nothing changes. |
 
-**Net: 27 endpoints, two new (`GET /scans/{scanid}/tasks/{taskid}`, `GET /scans/{scanid}/data/{dataid}`), one verb change (`POST .../tasks/{id}/stop` instead of `DELETE`).**
+**Net: 26 endpoints, two new (`GET /scans/{scanid}/tasks/{taskid}`, `GET /scans/{scanid}/data/{dataid}`), one verb change (`POST .../tasks/{id}/stop` instead of `DELETE`), and `POST /plugin/describe` removed (2026-06-24, see Direction).**
 
 ---
 
@@ -200,6 +260,8 @@ Once success codes carry meaning, there's a real case to make the client contrac
 
 Whether to keep the permissive "any 2xx" check or move to explicit per-endpoint expected codes is a client-contract decision to make *with* the route table, not before it.
 
+**Decided (2026-06-24):** adopt RFC 7807 `problem+json` end-to-end and **drop the `{status,data}` envelope** — it was a convenience hack, not a contract worth keeping. Success codes become real (`200`/`201`/`202`, `DELETE → 204 No Content` with no body); errors become `problem+json`. The bodyless-`204` problem disappears *with* `MakeApiRequest` itself — the generated client handles an empty 2xx natively — so the old "keep DELETE on 200+envelope" workaround is moot. The permissive "any 2xx" check is gone; generated clients key off the per-operation contract. Both Go and Python transports stop parsing `{status,data}` (the Python `_transport._envelope` + `errors.ApiError` get reworked for `problem+json`).
+
 ---
 
 ## Migration considerations
@@ -210,27 +272,60 @@ Every change is a breaking API change. Clients to update in the same PR:
 
 - **`src/g3cli/`** — the existing Go CLI client.
 - **`src/g3tui/`** — the TUI client.
-- **`clients/python/`** — the Python client (Tier 4 of the knife integration work). **If the knife integration is built first against the current API shape, the Python client will need rewriting during this migration. If this migration is done first, the Python client is born on the new shape.** Sequencing decision; not free either way.
+- **`clients/python/`** — the Python client. **Knife couples only to the `manager` facade**, so as long as that facade's public surface is preserved, the transport beneath it (and the rest of the client) can be regenerated/rewritten at zero cost to Knife. The earlier "sequencing dilemma" (knife-first vs migration-first) therefore mostly dissolves: do the migration whenever, keep `manager`'s surface stable.
 - **Any external scripts** hitting `g3api` directly — internal use only, but document the breaking change in release notes.
+
+Note that `g3lib` itself stops being a client (see *Client story*): the transport (`MakeApiRequest`/`DownloadFile`/`UploadFile`, `Req*`) is deleted from `src/g3lib/api.go` and replaced by a generated Go client in its own package.
+
+### Module & package layout
+
+No separate git repo is needed — `clients/go/` is a separate Go *module* (its own `go.mod`) in the same repo, mirroring `clients/python/`. Two decisions make it clean:
+
+- **The SDK owns its types (decoupled from `g3lib`).** The generator emits model structs from the spec, so this is the *default* output, not extra work. The decisive reason is **dependency contamination**: `g3lib` drags a heavy tree, and `g3cli`'s `go.mod` already lists `mongo-driver`, `redis`, and `paho.mqtt` as *indirect* deps purely because it imports `g3lib`. A publishable SDK cannot inherit that — no matter how its module path is named. Owning its types lets `clients/go` keep **zero `replace` directives** and a clean dependency graph, go-gettable at `github.com/golismero/g3/clients/go`.
+- **The server keeps sharing `g3lib` types.** `g3api` defines huma input/output structs referencing `g3lib` domain types (`G3Data`, …); it is never published, so it can depend on `g3lib` freely. The chain is `g3api` (source of truth) → spec → SDK; server and SDK types are kept in sync *through the spec*, not a shared package — exactly how `clients/python` already works (its `types.py` is independent of `g3lib`).
+
+Payoff: `g3cli`/`g3tui` import the SDK and shed their accidental `g3lib` (hence mongo/redis/mqtt) indirect dependencies. In-repo submodule tags use the `clients/go/vX.Y.Z` prefix; a separate repo is only worth it if you later want app-independent SDK semver, but the monorepo decision below (and symmetry with `clients/python` once it's folded back) says keep it in-repo.
+
+**Monorepo for all clients (decided 2026-06-24).** All generated clients live in this repo — `clients/go/` and `clients/python/` — not in per-client repos. Generated clients are *derived artifacts* of the spec, so co-location makes a breaking change one atomic PR (huma → spec → all clients regenerated in one CI run) instead of a cross-repo flag-day. This holds *because consumption is decoupled from repo layout via published artifacts*:
+
+- **Python → PyPI** (`pip install g3client`) — repo size irrelevant to consumers.
+- **Go → module proxy** (`go get github.com/golismero/g3/clients/go@vX` once a tag is pushed) — no repo clone.
+
+Committing to publishing is the hinge that makes monorepo strictly better than polyrepo here; it removes the "a client drags the whole server repo" cost.
+
+**Submodule fold-back + sequencing.** `clients/python` is *currently a git submodule* pointing at a separate `g3client-python` repo, and Knife depends on it via a git URL (`g3client @ git+https://github.com/golismero/g3client-python.git@main`), not PyPI. Fold the submodule back into `clients/python/` **after** the PyPI publish path exists, then migrate Knife to a plain `g3client>=X` PyPI dependency — in that order, so Knife never regresses to cloning the whole monorepo. If a fold-back lands before PyPI is ready, the interim dependency is `git+https://github.com/golismero/g3.git@main#subdirectory=clients/python` — works, but shallow-clones the full monorepo tree on each install (temporary network/disk cost, no correctness impact). History: copy-and-archive the old repo, or `git subtree`/`git-filter-repo` to fold its history inline — an execution detail for fold-back time.
+
+**Related cleanup — drop the vanity module paths (decided 2026-06-24).** The internal modules use `golismero.com/g3lib`-style vanity paths that only resolve via `replace ../` — a pre-public-repo artifact from before the code was on GitHub. Rename them repo-wide to real paths under the actual remote (`github.com/golismero/g3/src/g3lib`, `…/src/g3log`, …). This is a mechanical change across every `go.mod` `module`/`replace`/`require` line and every import statement, **orthogonal to the REST migration** (do it as its own small cleanup), but a natural companion: once done, the SDK's go-gettable path is just one consistent scheme rather than a special case, and the per-module `replace ../` directives can retire in favor of a single repo-root `go.work` workspace (the modern idiom for local cross-module development).
+
+### SDK generators
+
+**Decided (2026-06-24):** open-source generators, one per language, wired into the build — no commercial/cloud SDK services (Speakeasy/Fern), which clash with the fork-friendly OSS posture and add account friction for forks.
+
+- **Go → [ogen](https://github.com/ogen-go/ogen)** — reflection-free, type-safe, native OpenAPI v3, generates a complete idiomatic client. `g3cli`/`g3tui` consume it directly, so a complete client (not just transport) is the right fit. Conservative fallback if ogen's 3.1 support disappoints: `oapi-codegen` (widely used but 3.0-focused — would need huma to emit 3.0.3).
+- **Python → [openapi-python-client](https://github.com/openapi-generators/openapi-python-client)** — modern, `httpx`-based, fully-typed models. Produces exactly the **transport + models** layer the hand-written `scanner`/`manager` facade wraps — not a competing opinionated SDK. Preferred over `openapi-generator`'s verbose `urllib3` output.
+
+huma emits OpenAPI 3.1 by default and can also emit 3.0.3 for tooling that lags. **The one empirical thing to confirm at plan time** (generator 3.1 support shifts release-to-release): generate the prototype endpoint with each tool and eyeball output quality + whether 3.1 or 3.0.3 is needed. Direction is locked; this is a verification, not a re-decision.
 
 ### Skipped versioning
 
 `g3api` is internal and all clients are controlled. URL versioning (`/v2/scans/...`) adds permanent complexity for a benefit that doesn't apply. Ship the migration as one flag-day breaking change with simultaneous client updates. If `g3api` ever gets exposed to a BFF or third party, *that's* the moment to add `/v1/` and start versioning forward.
 
-### `Req*.Decode` rewrite
+### `Req*.Decode` rewrite — obsolete under huma
 
-Today every `Req*.Decode` does `ValidateHttpRequest` + `json.NewDecoder(r.Body).Decode(req)` + `validator.New().Struct(req)`. After the migration:
+**Superseded by the 2026-06-24 code-first decision.** The original plan rerouted each `Req*.Decode` to pull from `r.PathValue(...)` / `r.URL.Query()` / body, with per-source helpers or reflection. Under huma there is no `Decode` method at all: input structs declare `path:`/`query:`/`json:` tags and huma does extraction + validation. The 21 identical `Decode` methods in `src/g3lib/api.go` are deleted, not rewritten. (Historical: the open question was per-source helpers vs reflection vs hand-written per-Req — moot now.)
 
-- **For GET endpoints:** populate fields from `r.PathValue(...)` and `r.URL.Query()`. No body. The `validator.Struct` step is unchanged — the struct fields' `validate:` tags still gate correctness.
-- **For POST/DELETE endpoints with path params:** populate path fields from `r.PathValue(...)`, body fields from `json.Decode`. The `ScanID` field becomes path-sourced; the rest stays body-sourced.
+### `Validate*` helpers retire
 
-A small per-source helper (`decodePathParams`, `decodeQueryParams`, `decodeBody`) inside the decode method keeps the pattern uniform. Or hand-write per-Req — both work; the choice is "boilerplate vs reflection" with no obvious winner at g3api's size.
+Under huma both `ValidateHttpRequest` and `ValidateHttpGetRequest` retire entirely — method, content-type, and body validation are handled by huma from the operation definition and input-struct tags. (The earlier "shrink to Content-Type/Content-Length" plan applied only to the hand-rolled mux approach.)
 
-### `Validate*` helpers retire (or shrink)
+### Logging: retire `g3log` for `log/slog`
 
-- `ValidateHttpRequest` shrinks to checking only `Content-Type` and `Content-Length` (method check moves to the router).
-- `ValidateHttpGetRequest` is a no-op (the router handles method).
-- Both probably collapse into the `Decode` method's helpers and disappear as standalone functions.
+**Decided (2026-06-24).** `src/g3log/` is an 85-line syntactic-sugar wrapper over the (unmaintained) `github.com/apsdehal/go-logger` — leveled stderr logging, bare `%{message}` format, `G3_LOG_LEVEL` switch. No DB/MQTT log-shipping, no hidden function; it's a separate module only for dependency isolation + sharing across the six binaries. Replace it with stdlib `log/slog`. This also makes structured access logs (the original logging open question) fall out naturally, and drops a dependency. Migration notes:
+
+- Custom levels `NOTICE`/`CRITICAL` collapse to slog's four (or become custom `slog.Level` ints).
+- Bare `%{message}` output becomes structured (`time/level/msg`) — desired for access logs, but a visible change.
+- `G3_LOG_LEVEL` and the exported `g3log.LogLevel` var (read in `src/g3lib/mqtt.go:516` to gate debug behavior) move to a `slog.LevelVar`.
+- Wide but mechanical: every `log.*` call site across all binaries (13 files import it today). Somewhat orthogonal to the API migration — can ship as its own small precursor tier.
 
 ### Behavior changes to verify carefully during migration
 
@@ -243,9 +338,9 @@ A small per-source helper (`decodePathParams`, `decodeQueryParams`, `decodeBody`
 
 ## Deferred items (don't tackle in this migration)
 
-### Single-plugin lookup (`GET /plugin/{name}`)
+### Single-plugin lookup (`GET /plugins/{name}`)
 
-Mostly useful for inspection / debugging. The LLM client caches the full `/plugin/describe` response, so it doesn't need per-plugin lookup. Defer until a real consumer asks for it.
+Mostly useful for inspection / debugging. (The earlier "LLM client caches `/plugin/describe`, so no per-plugin lookup needed" reason is void now that `/plugin/describe` is removed — re-evaluate on its own merits.) Defer until a real consumer asks for it.
 
 ### File-orphan cleanup (`GET /file`, `DELETE /file/{fileid}`)
 
@@ -273,11 +368,22 @@ Until one of those lands, the current shape works, every existing client knows h
 
 ## Open questions for when this is scheduled
 
-- **Exact `Req*.Decode` shape** — per-source helpers vs reflection vs hand-written per-Req.
-- **Where path-param validation lives** — at decode time (re-validate `validate:"uuid"` tags) or trust the mux pattern matcher.
-- **Logging strategy** — structured access logs become natural with stdlib mux; pick a logger that fits the existing `g3log` shape.
-- **`apiPath` prefix handling** — today every route is registered under a configurable prefix. Stdlib mux 1.22 patterns support this fine (just include `apiPath` in the pattern string) but verify the prefix-stripping behavior under sub-routers if chi is later adopted.
-- **Whether the singular→plural rename gets bundled** — slightly bigger client churn but you only pay flag-day once.
-- **Status-code contract** — keep the permissive "any 2xx = success" client check, or assert explicit expected codes per endpoint (see *Response status-code contract* under Key design decisions). Resolve the bodyless-`204` decode behavior either way.
+Resolved by the 2026-06-24 direction:
 
-**Likely files when scheduled:** `src/g3api/g3api.go` (every route registration), `src/g3lib/api.go` (every `Req*.Decode` method), all clients (`src/g3cli/`, `src/g3tui/`, `clients/python/`).
+- ~~**Exact `Req*.Decode` shape**~~ — dissolved; huma owns extraction via input-struct tags, no `Decode` methods.
+- ~~**Where path-param validation lives**~~ — dissolved; `format:`/validation tags on the input struct, checked by huma before the handler.
+- ~~**Whether the singular→plural rename gets bundled**~~ — decided: bundle it (pay flag-day once).
+- ~~**`apiPath` prefix handling**~~ — it's the huma mount prefix (`humago`/`humachi`); verify trailing-slash redirect behavior once.
+- ~~**Response shape / status codes**~~ — decided: RFC 7807 `problem+json` end-to-end, no `{status,data}` envelope, real success codes incl. `204`. (See *Response status-code contract*.)
+- ~~**huma confirmation**~~ — confirmed; no prototype needed.
+- ~~**Logging**~~ — decided: remove `g3log`, adopt `log/slog`. (See *Logging: retire g3log*.)
+- ~~**Go client location**~~ — decided: `clients/go/`, a separate module in the same repo (no separate git repo), owning its generated types, decoupled from `g3lib`. (See *Module & package layout*.)
+- ~~**Client SDK generators**~~ — decided: `ogen` (Go) + `openapi-python-client` (Python); no commercial generators. (See *SDK generators*.)
+
+Still open:
+
+- **Python transport niceties** — the generated transport replaces the bespoke `_transport.py`; decide where its current behaviors (retries/backoff, zip-safe extraction, async-ready seam) end up — generator config vs relocated into the `scanner`/`manager` facade. The `manager` facade's public surface must stay stable for Knife.
+- **Generator 3.1 verification** — confirm ogen / openapi-python-client output quality and whether huma emits 3.1 or 3.0.3 for them; a plan-time check, not a re-decision. (See *SDK generators*.)
+- **WebSocket expansion** — its own design doc (event types, subscription filters, OpenAPI/AsyncAPI boundary). Out of scope here.
+
+**Likely files when scheduled:** `src/g3api/g3api.go` (route table → huma operations), `src/g3lib/api.go` (`Req*` structs → huma input/output types; `Decode`/`Validate*`/`MakeApiRequest` deleted), `src/g3log/` (removed; all `log.*` call sites → `slog`), a new `clients/go/` generated client + the binaries (`src/g3cli/`, `src/g3tui/`) that import it, `clients/python/` (regenerated transport under the kept facade), plus a generated-spec artifact + client-generation tooling in the build.
