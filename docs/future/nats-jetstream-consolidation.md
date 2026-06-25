@@ -322,3 +322,9 @@ mandatory and clearly worth it.
   regardless of bus).
 - Managed-scan reply-consumer gap — the missing persisted task-result model *is* the KV
   authoritative state here; this closes that gap.
+- [`websocket-event-protocol.md`](websocket-event-protocol.md) — the WS event-expansion
+  sequel **consumes** this substrate: its Tier 2 task-event source is the KV authoritative
+  task state, and its Tier 3 live-log feed is the log stream (`logs.<scanid>.<taskid>`),
+  whose subject hierarchy maps directly onto the WS per-scan/per-task filter. NATS terminates
+  at g3api; the g3api→client fan-out (and its backpressure handling) stays g3api's job
+  regardless of substrate.

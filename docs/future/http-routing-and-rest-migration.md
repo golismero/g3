@@ -61,7 +61,7 @@ The current `/ws` is a near-PoC single feed. A planned expansion adds more subsc
 - **OpenAPI does not describe WebSockets.** The event surface lives outside the generated REST clients. If generated WS clients are ever wanted, **AsyncAPI** is the counterpart spec and can `$ref` the same schema components as the OpenAPI doc. For "a few more events + filters," a documented message protocol is enough — no spec generator required.
 - **Reuse domain payload types, not the HTTP decode path.** Separate transport (HTTP envelope vs WS frame) from payload (shared Go structs): WS events carry the same domain structs as their `data`. Driving WS through the request-decode machinery is the anti-pattern to avoid.
 
-Its own design doc when picked up.
+Its own design doc, written: **[`websocket-event-protocol.md`](websocket-event-protocol.md)** (2026-06-25) — flat subscription protocol, tiered event taxonomy (scan → task → logs → data/artifacts), server-side filtering + backpressure fix, and managed-vs-regular limit gating. Deferred like this doc.
 
 ---
 
@@ -390,6 +390,6 @@ Still open:
 
 - **Python transport niceties** — the generated transport replaces the bespoke `_transport.py`; decide where its current behaviors (retries/backoff, zip-safe extraction, async-ready seam) end up — generator config vs relocated into the `scanner`/`manager` facade. The `manager` facade's public surface must stay stable for Knife.
 - **Generator 3.1 verification** — confirm ogen / openapi-python-client output quality and whether huma emits 3.1 or 3.0.3 for them; a plan-time check, not a re-decision. (See *SDK generators*.)
-- **WebSocket expansion** — its own design doc (event types, subscription filters, OpenAPI/AsyncAPI boundary). Out of scope here.
+- **WebSocket expansion** — written up in **[`websocket-event-protocol.md`](websocket-event-protocol.md)** (event types, subscription filters, OpenAPI/AsyncAPI boundary). Deferred, out of scope here.
 
 **Likely files when scheduled:** `src/g3api/g3api.go` (route table → huma operations), `src/g3lib/api.go` (`Req*` structs → huma input/output types; `Decode`/`Validate*`/`MakeApiRequest` deleted), a new `sdk/go/` generated client + the binaries (`src/g3cli/`, `src/g3tui/`) that import it, `sdk/python/` (regenerated transport under the kept facade), plus a generated-spec artifact + client-generation tooling in the build. (The `src/g3log/` removal is *not* in this list — it's the separate deferred logging cleanup.)
