@@ -1,4 +1,0 @@
-[submodule "clients/python"]
-	path = clients/python
-	url = https://github.com/golismero/g3client-python.git
-	branch = main
