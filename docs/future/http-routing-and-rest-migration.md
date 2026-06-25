@@ -50,6 +50,8 @@ Today there is no real client SDK: `g3cli` calls `g3lib.MakeApiRequest(...)` dir
 
 ### `/plugin/describe` removed
 
+> **✅ Done (2026-06-25):** removed standalone ahead of the migration — handler/route, `g3lib` `PluginContract`/`G3LLMMetadata`/`G3Plugin.LLM`, and the Python SDK `describe()`/`PluginContract` are all deleted. See `docs/superpowers/specs/2026-06-25-remove-plugin-describe-design.md`.
+
 `POST /plugin/describe` (the LLM-contract list) is **phased out**. The original intent — integrating LLM support into g3api — has been dropped in favor of a clean API; LLM tooling becomes a separate project consuming the generated clients. `GET /plugins` (human-facing list) stays. This also voids the "LLM client caches `/plugin/describe`" rationale that was blocking the deferred `GET /plugin/{name}` — re-evaluate that on its own merits.
 
 ### WebSockets (sequel, not this doc)
@@ -188,7 +190,7 @@ After a systematic symmetry check (every collection answers list-with-data / lis
 | `GET` | `/plugins` | `POST /plugin/list` | Human-facing list (name/url/description/image). |
 | `GET` | `/config/env` | `POST /config/env` | Shared `G3_ENV_*` map. `/config` is a singleton, stays singular. |
 
-(`POST /plugin/describe` — the LLM-contract list — is **removed**; LLM tooling moves to a separate project. See *Direction (2026-06-24)*.)
+(`POST /plugin/describe` — the LLM-contract list — is **removed**; LLM tooling moves to a separate project. See *Direction (2026-06-24)*. ✅ Done 2026-06-25.)
 
 ### WebSocket (unchanged)
 

@@ -63,18 +63,6 @@ type G3ReporterPhase struct {
 	Commands []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"` // (Optional) Named presets. Empty means "entrypoint runs with no args".
 }
 
-// G3LLMMetadata is the additive plugin metadata that opts a plugin in to the
-// LLM-facing /plugin/describe surface. Presence of this block is the opt-in
-// signal; all three fields are required and non-empty when the block is
-// present (g3config validates this at plugin load time). There is no
-// fallback derivation — what /plugin/describe returns is exactly what plugin
-// authors declared here.
-type G3LLMMetadata struct {
-	Summary  string   `json:"summary"  validate:"required"`               // LLM-specific one-line explanation of the tool.
-	Accepts  []string `json:"accepts"  validate:"required,min=1,dive,required"` // G3Data _type(s) this plugin consumes.
-	Produces []string `json:"produces" validate:"required,min=1,dive,required"` // G3Data _type(s) this plugin emits (an importer routinely emits multiple types).
-}
-
 type G3Plugin struct {
 	Name        string              `json:"name"`                                           // Tool name. Must be unique.
 	Category    string              `json:"category"`                                       // Defaults to parent directory name.
@@ -85,7 +73,6 @@ type G3Plugin struct {
 	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty"`       // (Optional) Command for importing files.
 	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty"`       // (Optional) Command for merging issues.
 	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty"`       // (Optional) Phase for generating downloadable reports.
-	LLM         *G3LLMMetadata      `json:"llm,omitempty"       validate:"omitempty"`       // (Optional) Additive metadata for LLM/MCP consumers.
 }
 func (plugin G3Plugin) String() string {
 	output := ""

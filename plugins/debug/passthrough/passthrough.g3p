@@ -3,7 +3,6 @@
 {
     url: "https://github.com/golismero/g3",
     description: "Debug/stress-test plugin. Echoes the input data object back to the engine as a single-item list.",
-    // Intentionally no `llm:` block: debug-only plugin, not exposed via /plugin/describe.
     commands: [
         {
             condition: "true",

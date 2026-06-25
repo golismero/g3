@@ -134,19 +134,6 @@ func runImport(plugins g3lib.G3PluginMetadata, mdb g3lib.DatastoreClient, artifa
 	return ids, 0, nil
 }
 
-// buildPluginContract assembles the LLM-facing contract for one plugin. The
-// caller MUST have ensured plugin.LLM != nil; plugins without the LLM block
-// are not reachable to LLM consumers and are filtered out at the handler
-// before reaching this function.
-func buildPluginContract(plugin g3lib.G3Plugin) g3lib.PluginContract {
-	return g3lib.PluginContract{
-		Name:     plugin.Name,
-		Summary:  plugin.LLM.Summary,
-		Accepts:  plugin.LLM.Accepts,
-		Produces: plugin.LLM.Produces,
-	}
-}
-
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // This structure tracks scan IDs to channels of goroutines who asked for updates on that scan.
 
@@ -1395,41 +1382,6 @@ func Main() int {
 
 			// Send the response back to the caller.
 			g3lib.SendApiResponse(w, pluginList)
-		}))
-
-		///////////////////////////////////////////////////////////////////////////////////////////
-		// LLM-facing tool contract: per-plugin Summary/Accepts/Produces/Operations
-		// sourced from optional .g3p `llm:` metadata, with graceful fallback when
-		// the block is absent. Excludes Description/URL/Image (those stay on
-		// /plugin/list for humans and GUIs).
-		http.HandleFunc(apiPath+"/plugin/describe", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
-			log.Debug("Handling: plugin/describe")
-			var request g3lib.ReqListPlugins
-			if err := request.Decode(r); err != nil {
-				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
-				return
-			}
-
-			pluginNames := make([]string, 0, len(plugins))
-			for key := range plugins {
-				pluginNames = append(pluginNames, key)
-			}
-			sort.Strings(pluginNames)
-
-			contracts := make([]g3lib.PluginContract, 0, len(plugins))
-			for _, name := range pluginNames {
-				plugin := plugins[name]
-				// Tools without an `llm:` block in their .g3p are not reachable
-				// to LLM consumers — the absence of the block is the opt-out
-				// signal. Present-but-empty (`llm: {}`) still counts as opt-in.
-				if plugin.LLM == nil {
-					continue
-				}
-				contracts = append(contracts, buildPluginContract(plugin))
-			}
-
-			g3lib.SendApiResponse(w, contracts)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////

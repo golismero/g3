@@ -525,19 +525,6 @@ type PluginListItem struct {
 	Runnable    bool   `json:"runnable"`
 }
 
-// PluginContractOperation describes one command variant a plugin exposes
-// (`/scan/task/dispatch` selects a variant by Index).
-// PluginContract is the LLM-facing contract for one plugin. Served by
-// /plugin/describe. Excludes Description/URL/Image (those stay on /plugin/list
-// for humans and GUIs). All fields are author-populated from the plugin's
-// `llm:` block — no auto-derivation, no fallbacks.
-type PluginContract struct {
-	Name     string   `json:"name"`
-	Summary  string   `json:"summary"`
-	Accepts  []string `json:"accepts"`
-	Produces []string `json:"produces"`
-}
-
 type ReqCheckScriptSyntax struct {
 	Script string               `json:"script"              validate:"required"`
 }
