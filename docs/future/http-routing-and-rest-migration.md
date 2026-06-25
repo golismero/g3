@@ -320,15 +320,6 @@ huma emits OpenAPI 3.1 by default and can also emit 3.0.3 for tooling that lags.
 
 Under huma both `ValidateHttpRequest` and `ValidateHttpGetRequest` retire entirely — method, content-type, and body validation are handled by huma from the operation definition and input-struct tags. (The earlier "shrink to Content-Type/Content-Length" plan applied only to the hand-rolled mux approach.)
 
-### Logging: retire `g3log` for `log/slog`
-
-**Decided (2026-06-24).** `src/g3log/` is an 85-line syntactic-sugar wrapper over the (unmaintained) `github.com/apsdehal/go-logger` — leveled stderr logging, bare `%{message}` format, `G3_LOG_LEVEL` switch. No DB/MQTT log-shipping, no hidden function; it's a separate module only for dependency isolation + sharing across the six binaries. Replace it with stdlib `log/slog`. This also makes structured access logs (the original logging open question) fall out naturally, and drops a dependency. Migration notes:
-
-- Custom levels `NOTICE`/`CRITICAL` collapse to slog's four (or become custom `slog.Level` ints).
-- Bare `%{message}` output becomes structured (`time/level/msg`) — desired for access logs, but a visible change.
-- `G3_LOG_LEVEL` and the exported `g3log.LogLevel` var (read in `src/g3lib/mqtt.go:516` to gate debug behavior) move to a `slog.LevelVar`.
-- Wide but mechanical: every `log.*` call site across all binaries (13 files import it today). Somewhat orthogonal to the API migration — can ship as its own small precursor tier.
-
 ### Behavior changes to verify carefully during migration
 
 - **Trailing slashes.** Stdlib mux has specific behavior (`/scans/` redirects to `/scans`). Worth a one-time audit.
@@ -351,6 +342,19 @@ Files uploaded via `POST /file` that are never imported sit in `_uploads/` forev
 ### Migration to chi
 
 If/when middleware grows beyond just `requireToken` (request IDs, structured access logs, panic recovery, per-route timeouts, route groups, sub-routers), chi is the natural step. Stdlib mux gives routing but not declarative middleware chains. Don't preempt.
+
+### Logging: retire `g3log` for `log/slog`
+
+**Deferred (2026-06-25).** Fully orthogonal to the REST migration and to every other tier here — it touches no HTTP code, so there is no reason to bundle it. Carve it out as its own self-contained cleanup whenever it's worth doing, not as a precursor to this work.
+
+The shape: `src/g3log/` is an 85-line syntactic-sugar wrapper over the (unmaintained) `github.com/apsdehal/go-logger` — leveled stderr logging, bare `%{message}` format, `G3_LOG_LEVEL` switch. No DB/MQTT log-shipping, no hidden function; it's a separate module only for dependency isolation + sharing across the six binaries. The endpoint is stdlib `log/slog`: drops a dependency and makes structured access logs fall out naturally.
+
+In practice it's more involved than a mechanical find-replace, which is why it's not free to fold into another tier:
+
+- **Semantics, not just calls.** Custom levels `NOTICE`/`CRITICAL` have no slog equivalent — each needs a deliberate mapping (collapse into slog's four, or define custom `slog.Level` ints) and every call site re-leveled accordingly, not blindly rewritten.
+- **User-visible output change across all six binaries.** Bare `%{message}` becomes structured `time/level/msg`. Desirable for access logs, but anything parsing stderr today breaks, and the handler/format choice has to be made (and made consistently) per binary.
+- **Cross-module coupling.** The exported `g3log.LogLevel` var is read outside the logger — `src/g3lib/mqtt.go:516` gates debug behavior on it. That, plus `G3_LOG_LEVEL`, has to move to a shared `slog.LevelVar` without breaking the gate.
+- **Wide and multi-module.** Every `log.*` call site across all binaries (13 files import it today), spread over six separate Go modules each with its own `go.mod` — so it also brushes up against the module-path / `go.work` cleanup.
 
 ---
 
@@ -378,7 +382,7 @@ Resolved by the 2026-06-24 direction:
 - ~~**`apiPath` prefix handling**~~ — it's the huma mount prefix (`humago`/`humachi`); verify trailing-slash redirect behavior once.
 - ~~**Response shape / status codes**~~ — decided: RFC 7807 `problem+json` end-to-end, no `{status,data}` envelope, real success codes incl. `204`. (See *Response status-code contract*.)
 - ~~**huma confirmation**~~ — confirmed; no prototype needed.
-- ~~**Logging**~~ — decided: remove `g3log`, adopt `log/slog`. (See *Logging: retire g3log*.)
+- ~~**Logging**~~ — split out: orthogonal to this migration, deferred as its own standalone cleanup. (See *Deferred items → Logging: retire g3log*.)
 - ~~**Go client location**~~ — decided: `sdk/go/`, a separate module in the same repo (no separate git repo), owning its generated types, decoupled from `g3lib`. (See *Module & package layout*.)
 - ~~**Client SDK generators**~~ — decided: `ogen` (Go) + `openapi-python-client` (Python); no commercial generators. (See *SDK generators*.)
 
@@ -388,4 +392,4 @@ Still open:
 - **Generator 3.1 verification** — confirm ogen / openapi-python-client output quality and whether huma emits 3.1 or 3.0.3 for them; a plan-time check, not a re-decision. (See *SDK generators*.)
 - **WebSocket expansion** — its own design doc (event types, subscription filters, OpenAPI/AsyncAPI boundary). Out of scope here.
 
-**Likely files when scheduled:** `src/g3api/g3api.go` (route table → huma operations), `src/g3lib/api.go` (`Req*` structs → huma input/output types; `Decode`/`Validate*`/`MakeApiRequest` deleted), `src/g3log/` (removed; all `log.*` call sites → `slog`), a new `sdk/go/` generated client + the binaries (`src/g3cli/`, `src/g3tui/`) that import it, `sdk/python/` (regenerated transport under the kept facade), plus a generated-spec artifact + client-generation tooling in the build.
+**Likely files when scheduled:** `src/g3api/g3api.go` (route table → huma operations), `src/g3lib/api.go` (`Req*` structs → huma input/output types; `Decode`/`Validate*`/`MakeApiRequest` deleted), a new `sdk/go/` generated client + the binaries (`src/g3cli/`, `src/g3tui/`) that import it, `sdk/python/` (regenerated transport under the kept facade), plus a generated-spec artifact + client-generation tooling in the build. (The `src/g3log/` removal is *not* in this list — it's the separate deferred logging cleanup.)
