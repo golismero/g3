@@ -14,8 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"golismero.com/g3lib"
-	"golismero.com/g3tui/internal/client"
+	"github.com/golismero/g3/src/g3lib"
+	"github.com/golismero/g3/src/g3tui/internal/client"
 )
 
 // reportPaneGenCounter is a process-wide monotonic counter mirroring

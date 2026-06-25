@@ -15,7 +15,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/websocket"
 
-	log "golismero.com/g3log"
+	log "github.com/golismero/g3/src/g3log"
 )
 
 const G3_DEBUG_API = "G3_DEBUG_API"

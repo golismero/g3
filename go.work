@@ -1,0 +1,13 @@
+go 1.26.2
+
+use (
+	./src/g3
+	./src/g3api
+	./src/g3cli
+	./src/g3config
+	./src/g3lib
+	./src/g3log
+	./src/g3scanner
+	./src/g3tui
+	./src/g3worker
+)

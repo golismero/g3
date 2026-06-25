@@ -11,8 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"golismero.com/g3lib"
-	"golismero.com/g3tui/internal/client"
+	"github.com/golismero/g3/src/g3lib"
+	"github.com/golismero/g3/src/g3tui/internal/client"
 )
 
 // logsBindingChangedMsg is dispatched by App when the (scanID, taskID)

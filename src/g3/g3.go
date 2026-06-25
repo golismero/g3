@@ -16,8 +16,8 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/willabides/kongplete"
 
-	"golismero.com/g3lib"
-	log "golismero.com/g3log"
+	"github.com/golismero/g3/src/g3lib"
+	log "github.com/golismero/g3/src/g3log"
 )
 
 type InputCmd struct {

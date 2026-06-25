@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"golismero.com/g3lib"
-	"golismero.com/g3tui/internal/cmd"
+	"github.com/golismero/g3/src/g3lib"
+	"github.com/golismero/g3/src/g3tui/internal/cmd"
 )
 
 func main() {

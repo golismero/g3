@@ -16,7 +16,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
-	log "golismero.com/g3log"
+	log "github.com/golismero/g3/src/g3log"
 )
 
 const MQTT_URL = "MQTT_URL"

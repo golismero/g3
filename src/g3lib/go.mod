@@ -1,21 +1,21 @@
-module golismero.com/g3lib
+module github.com/golismero/g3/src/g3lib
 
 go 1.26.2
 
-replace golismero.com/g3log => ../g3log
+replace github.com/golismero/g3/src/g3log => ../g3log
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/go-sql-driver/mysql v1.10.0
+	github.com/golismero/g3/src/g3log v0.0.0-20260624171601-ecc964cbb718
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/redis/go-redis/v9 v9.20.1
+	github.com/redis/go-redis/v9 v9.21.0
 	go.mongodb.org/mongo-driver v1.17.9
-	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
 
 require (

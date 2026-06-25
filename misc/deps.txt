@@ -22,7 +22,7 @@ github.com/charmbracelet/lipgloss@v1.1.1-0.20250404203927-76690c660834
 github.com/charmbracelet/x/ansi@v0.11.7
 github.com/charmbracelet/x/cellbuf@v0.0.15
 github.com/charmbracelet/x/exp/golden@v0.0.0-20241011142426-46044092ad91
-github.com/charmbracelet/x/exp/slice@v0.0.0-20260615092313-b57e5e6d29bb
+github.com/charmbracelet/x/exp/slice@v0.0.0-20260622092256-25656177ba8e
 github.com/charmbracelet/x/term@v0.2.2
 github.com/clipperhouse/displaywidth@v0.11.0
 github.com/clipperhouse/uax29/v2@v2.7.0
@@ -67,7 +67,7 @@ github.com/opencontainers/go-digest@v1.0.0
 github.com/opencontainers/image-spec@v1.1.1
 github.com/pmezard/go-difflib@v1.0.0
 github.com/posener/complete@v1.2.3
-github.com/redis/go-redis/v9@v9.20.1
+github.com/redis/go-redis/v9@v9.21.0
 github.com/rivo/uniseg@v0.4.7
 github.com/riywo/loginshell@v0.0.0-20200815045211-7d26008be1ab
 github.com/sergi/go-diff@v1.3.1

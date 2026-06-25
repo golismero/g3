@@ -165,9 +165,9 @@ ifdef GO
 update:
 	cd src && $(MAKE) update
 ifdef PYTHON
-	rm -f ./misc/deps.txt
 	./misc/collect-go-deps.py ./misc/deps.txt
 endif
+	go work sync
 endif
 
 # Lint all Go code.
@@ -209,15 +209,6 @@ endif
 # Build the g3 Docker image.
 ifdef DOCKER
 docker: refresh_build
-ifdef PYTHON
-	rm -f ./misc/deps.txt
-ifdef GO
-	cd src; for d in */; do cd "$$d"; go mod tidy; cd ..; done
-endif
-	./misc/collect-go-deps.py ./misc/deps.txt
-else
-	touch ./misc/deps.txt
-endif
 	docker build --build-arg VERSION="$$(./misc/git-version.sh)" -t ghcr.io/golismero/g3 .
 endif
 

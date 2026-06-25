@@ -15,8 +15,8 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/gorilla/websocket"
 
-	"golismero.com/g3tui/internal/client"
-	"golismero.com/g3tui/internal/pipelines"
+	"github.com/golismero/g3/src/g3tui/internal/client"
+	"github.com/golismero/g3/src/g3tui/internal/pipelines"
 )
 
 type DoctorCmd struct{}

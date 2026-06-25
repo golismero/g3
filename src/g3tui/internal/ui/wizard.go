@@ -12,10 +12,10 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"golismero.com/g3lib"
-	"golismero.com/g3tui/internal/client"
-	"golismero.com/g3tui/internal/pipelines"
-	"golismero.com/g3tui/internal/script"
+	"github.com/golismero/g3/src/g3lib"
+	"github.com/golismero/g3/src/g3tui/internal/client"
+	"github.com/golismero/g3/src/g3tui/internal/pipelines"
+	"github.com/golismero/g3/src/g3tui/internal/script"
 )
 
 // wizardSubmittedMsg fires after a successful /scan/start. Wizard

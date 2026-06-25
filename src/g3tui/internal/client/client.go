@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"golismero.com/g3lib"
+	"github.com/golismero/g3/src/g3lib"
 )
 
 type Client struct {

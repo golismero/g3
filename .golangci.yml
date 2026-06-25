@@ -23,9 +23,9 @@ linters:
         - (*github.com/gorilla/websocket.Conn).Close
         - (*go.mongodb.org/mongo-driver/mongo.Client).Disconnect
         - (*go.mongodb.org/mongo-driver/mongo.Cursor).Close
-        - (*golismero.com/g3lib.SyncWebSocket).WriteError
+        - (*github.com/golismero/g3/src/g3lib.SyncWebSocket).WriteError
         - fmt.Fprint
         - fmt.Fprintln
         - fmt.Fprintf
-        - golismero.com/g3lib.LoadDotEnvFile
-        - golismero.com/g3lib.DisconnectFromRedis
+        - github.com/golismero/g3/src/g3lib.LoadDotEnvFile
+        - github.com/golismero/g3/src/g3lib.DisconnectFromRedis

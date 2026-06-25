@@ -20,8 +20,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/willabides/kongplete"
 
-	"golismero.com/g3lib"
-	log "golismero.com/g3log"
+	"github.com/golismero/g3/src/g3lib"
+	log "github.com/golismero/g3/src/g3log"
 )
 
 const G3_API_BASEURL = "G3_API_BASEURL"

@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
-	log "golismero.com/g3log"
+	log "github.com/golismero/g3/src/g3log"
 )
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -30,7 +30,9 @@ const G3CONFIG = "config"
 const G3PLUGINS = "g3plugins.json"
 
 // Version is overwritten at link time by release builds via
-// -ldflags "-X g3lib.Version=...". Stays "dev" for local builds.
+// -ldflags "-X github.com/golismero/g3/src/g3lib.Version=...". The -X path must
+// be the full module import path, not the short "g3lib" — the short form
+// silently no-ops. Stays "dev" for local builds.
 var Version = "dev"
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,4 +1,4 @@
-module golismero.com/g3log
+module github.com/golismero/g3/src/g3log
 
 go 1.26.2
 

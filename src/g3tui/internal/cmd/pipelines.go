@@ -8,7 +8,7 @@ import (
 
 	"github.com/alecthomas/kong"
 
-	"golismero.com/g3tui/internal/pipelines"
+	"github.com/golismero/g3/src/g3tui/internal/pipelines"
 )
 
 type PipelinesCmd struct {

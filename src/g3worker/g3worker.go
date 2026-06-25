@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"golismero.com/g3lib"
-	log "golismero.com/g3log"
+	"github.com/golismero/g3/src/g3lib"
+	log "github.com/golismero/g3/src/g3log"
 )
 
 // Environment variable with the list of enabled plugins for a given worker.

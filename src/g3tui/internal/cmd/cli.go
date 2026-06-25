@@ -14,7 +14,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/willabides/kongplete"
 
-	"golismero.com/g3lib"
+	"github.com/golismero/g3/src/g3lib"
 )
 
 // Version is set by Execute (which receives it from main.go's ldflags-stamped

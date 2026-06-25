@@ -11,10 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 
-	log "golismero.com/g3log"
-	"golismero.com/g3tui/internal/client"
-	"golismero.com/g3tui/internal/pipelines"
-	"golismero.com/g3tui/internal/ui"
+	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3tui/internal/client"
+	"github.com/golismero/g3/src/g3tui/internal/pipelines"
+	"github.com/golismero/g3/src/g3tui/internal/ui"
 )
 
 // RunCmd carries the run-only behavior flags. The default Theme value of

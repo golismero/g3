@@ -1,19 +1,19 @@
-module golismero.com/g3cli
+module github.com/golismero/g3/src/g3cli
 
 go 1.26.2
 
-replace golismero.com/g3lib => ../g3lib
+replace github.com/golismero/g3/src/g3lib => ../g3lib
 
-replace golismero.com/g3log => ../g3log
+replace github.com/golismero/g3/src/g3log => ../g3log
 
 require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/go-playground/validator/v10 v10.30.3
+	github.com/golismero/g3/src/g3lib v0.0.0-20260624171601-ecc964cbb718
+	github.com/golismero/g3/src/g3log v0.0.0-20260624171601-ecc964cbb718
 	github.com/gorilla/websocket v1.5.3
 	github.com/willabides/kongplete v0.4.0
-	golismero.com/g3lib v0.0.0-00010101000000-000000000000
-	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -38,7 +38,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 	github.com/montanaflynn/stats v0.9.0 // indirect
 	github.com/posener/complete v1.2.3 // indirect
-	github.com/redis/go-redis/v9 v9.20.1 // indirect
+	github.com/redis/go-redis/v9 v9.21.0 // indirect
 	github.com/riywo/loginshell v0.0.0-20200815045211-7d26008be1ab // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect

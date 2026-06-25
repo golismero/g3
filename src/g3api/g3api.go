@@ -23,8 +23,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
-	"golismero.com/g3lib"
-	log "golismero.com/g3log"
+	"github.com/golismero/g3/src/g3lib"
+	log "github.com/golismero/g3/src/g3log"
 )
 
 const G3_API_ID = "G3_API_ID"                   // MQTT client ID. Must be unique in your deployment or bad things will happen.

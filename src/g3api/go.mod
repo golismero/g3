@@ -1,18 +1,18 @@
-module golismero.com/g3api
+module github.com/golismero/g3/src/g3api
 
 go 1.26.2
 
-replace golismero.com/g3lib => ../g3lib
+replace github.com/golismero/g3/src/g3lib => ../g3lib
 
-replace golismero.com/g3log => ../g3log
+replace github.com/golismero/g3/src/g3log => ../g3log
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/go-playground/validator/v10 v10.30.3
+	github.com/golismero/g3/src/g3lib v0.0.0-20260624171601-ecc964cbb718
+	github.com/golismero/g3/src/g3log v0.0.0-20260624171601-ecc964cbb718
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	golismero.com/g3lib v0.0.0-00010101000000-000000000000
-	golismero.com/g3log v0.0.0-00010101000000-000000000000
 )
 
 require (
@@ -30,7 +30,7 @@ require (
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/montanaflynn/stats v0.9.0 // indirect
-	github.com/redis/go-redis/v9 v9.20.1 // indirect
+	github.com/redis/go-redis/v9 v9.21.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect

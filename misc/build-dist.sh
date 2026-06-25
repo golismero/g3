@@ -70,7 +70,7 @@ LOCAL_TARGETS=(
 
 # Same strip + path-trim + version injection release.yml uses. CGO_ENABLED=0
 # is set per build invocation below so every target is a static binary.
-LDFLAGS="-s -w -X g3lib.Version=$VERSION"
+LDFLAGS="-s -w -X github.com/golismero/g3/src/g3lib.Version=$VERSION"
 
 # --- fresh dist/ -----------------------------------------------------------
 # Wipe prior artifacts but preserve the tracked dist/.gitignore (the same

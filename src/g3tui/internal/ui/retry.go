@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"golismero.com/g3tui/internal/client"
+	"github.com/golismero/g3/src/g3tui/internal/client"
 )
 
 // retrySeedResult carries the outcome of one /plugin/list retry attempt.

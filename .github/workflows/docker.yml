@@ -99,20 +99,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Toolchains for prep steps. The Dockerfile for g3 expects
-      # ./misc/deps.txt to exist before the build — it's generated from
-      # src/*/go.sum after `go mod tidy`, so Go must run on the host.
-      - name: Set up Go
-        if: matrix.prep == 'go-deps'
-        uses: actions/setup-go@v5
-
-      - name: Prep - collect Go module dependencies
-        if: matrix.prep == 'go-deps'
-        run: |
-          set -e
-          for d in src/*/; do (cd "$d" && go mod tidy); done
-          ./misc/collect-go-deps.py ./misc/deps.txt
-
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3

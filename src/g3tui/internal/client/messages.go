@@ -5,7 +5,7 @@
 package client
 
 import (
-	"golismero.com/g3lib"
+	"github.com/golismero/g3/src/g3lib"
 )
 
 // Snapshot of the scan list (id + status + progress + message) returned

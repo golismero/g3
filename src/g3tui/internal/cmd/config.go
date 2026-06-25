@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"golismero.com/g3lib"
+	"github.com/golismero/g3/src/g3lib"
 )
 
 const (

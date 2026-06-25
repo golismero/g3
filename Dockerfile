@@ -12,7 +12,7 @@ COPY src/ /app/
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux make all \
       GO_FLAGS=-trimpath \
-      GO_LDFLAGS="-s -w -X g3lib.Version=${VERSION}"
+      GO_LDFLAGS="-s -w -X github.com/golismero/g3/src/g3lib.Version=${VERSION}"
 COPY plugins/ /app/plugins/
 RUN mkdir -p /app/config && G3HOME=/app /bin/g3config
 

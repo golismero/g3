@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gorilla/websocket"
-	"golismero.com/g3lib"
+	"github.com/golismero/g3/src/g3lib"
 )
 
 type StreamState int
