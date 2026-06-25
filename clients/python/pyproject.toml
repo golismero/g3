@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "g3client"
+version = "0.1.0"
+description = "Python client library for the Golismero3 (g3api) pentesting framework."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Golismero" }]
+dependencies = ["requests>=2.28"]
+
+[project.urls]
+Homepage = "https://github.com/golismero"
+
+[tool.setuptools.packages.find]
+include = ["g3client", "g3client.*"]
