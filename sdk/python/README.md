@@ -18,7 +18,7 @@ The library is layered in three tiers, each built strictly on the one below:
 ## Install
 
 ```bash
-cd clients/python
+cd sdk/python
 pip install -e .
 ```
 

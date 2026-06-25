@@ -1,7 +1,7 @@
 # g3client — Cross-Language Architecture Blueprint
 
 **Status:** Living design document for the `g3client` library family.
-**Reference implementation:** Python, at [`clients/python/`](../../clients/python/).
+**Reference implementation:** Python, at [`sdk/python/`](../../sdk/python/).
 **Authoritative design spec:** [docs/superpowers/specs/2026-06-05-g3client-python-library-design.md](../superpowers/specs/2026-06-05-g3client-python-library-design.md).
 **Future REST shape this is modeled on:** [docs/future/http-routing-and-rest-migration.md](../future/http-routing-and-rest-migration.md).
 
@@ -16,7 +16,7 @@ end-to-end flows that g3cli/g3tui (orchestrated scans) and g3man (managed scans)
 
 **This document is the language-neutral blueprint.** It defines the abstractions,
 vocabulary, recipes, and contracts that *every* `g3client` port shares, so that future
-clients can be built cheaply and consistently. The Python package under `clients/python/`
+clients can be built cheaply and consistently. The Python package under `sdk/python/`
 is the reference implementation; the agnostic design is captured here, and the
 Python-specific bits are cordoned off in [§9](#9-what-is-language-specific).
 

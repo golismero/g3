@@ -155,14 +155,14 @@ Expected: builds clean, no errors. (This binary links `g3api` + `g3lib`, coverin
 ### Task 3: Remove the Python SDK `describe()` and `PluginContract`
 
 **Files:**
-- Modify: `clients/python/g3client/api/plugins.py` (delete `describe()` ~18-21; fix import line 6)
-- Modify: `clients/python/g3client/types.py` (delete `PluginContract` dataclass ~146-162)
+- Modify: `sdk/python/g3client/api/plugins.py` (delete `describe()` ~18-21; fix import line 6)
+- Modify: `sdk/python/g3client/types.py` (delete `PluginContract` dataclass ~146-162)
 
 **Interfaces:**
 - Consumes: nothing.
 - Produces: removes `PluginsResource.describe()` and the `PluginContract` dataclass. `PluginInfo`, `PluginsResource.list()`, and the `scanner`/`manager` facades are untouched, so Knife's `manager` contract is unaffected.
 
-- [ ] **Step 1: Delete the `describe()` method from `clients/python/g3client/api/plugins.py`.** Remove:
+- [ ] **Step 1: Delete the `describe()` method from `sdk/python/g3client/api/plugins.py`.** Remove:
 
 ```python
     def describe(self) -> list[PluginContract]:
@@ -185,7 +185,7 @@ to:
 from ..types import PluginInfo
 ```
 
-- [ ] **Step 3: Delete the `PluginContract` dataclass from `clients/python/g3client/types.py`.** Remove the whole block (including the blank separator line preceding it so `PluginInfo` and the next type keep their two-blank-line spacing):
+- [ ] **Step 3: Delete the `PluginContract` dataclass from `sdk/python/g3client/types.py`.** Remove the whole block (including the blank separator line preceding it so `PluginInfo` and the next type keep their two-blank-line spacing):
 
 ```python
 @dataclass(frozen=True)
@@ -212,7 +212,7 @@ class PluginContract:
 - [ ] **Step 4: Verify no stray `PluginContract`/`describe` references remain in the Python client.** Run:
 
 ```bash
-grep -rn "PluginContract\|/plugin/describe" clients/python/
+grep -rn "PluginContract\|/plugin/describe" sdk/python/
 ```
 
 Expected: no output. (The user runs the actual `import g3client` smoke check per project conventions.)
@@ -266,7 +266,7 @@ Append `✅ Done 2026-06-25.` to it:
 - [ ] **Step 4: Final sweep.** From the repo root run:
 
 ```bash
-grep -rn "plugin/describe\|PluginContract\|G3LLMMetadata" src/ clients/ plugins/
+grep -rn "plugin/describe\|PluginContract\|G3LLMMetadata" src/ sdk/ plugins/
 ```
 
 Expected: no output (all references gone). Matches inside `docs/` are expected and fine (the future doc and this plan/spec deliberately mention the removed endpoint).

@@ -36,7 +36,7 @@ stays.
 - `plugin.go`: delete the `G3LLMMetadata` struct (~66-76) and the `G3Plugin.LLM` field (~88).
 - **Keep** `ReqListPlugins` and its `Decode` — shared with `/plugin/list`.
 
-### 3. Python SDK — `clients/python/g3client/`
+### 3. Python SDK — `sdk/python/g3client/`
 - `api/plugins.py`: delete the `describe()` method (~18-21).
 - `types.py`: delete the `PluginContract` dataclass (~147-162).
 - Remove any now-dead `PluginContract` import / `__all__` export left behind.

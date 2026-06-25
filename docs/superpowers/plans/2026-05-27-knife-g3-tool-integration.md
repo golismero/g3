@@ -29,7 +29,7 @@ These reflect standing user preferences and **override** the writing-plans skill
 - **Tier 1 — g3lib foundations (DETAILED below).** Additive shared types/helpers every later tier depends on: `STATUS_MANAGED`, the `.g3p` `llm` metadata struct, a task-filtered data query, and a `G3_ENV_*` accessor. Pure additions to `src/g3lib`; no behavior changes to existing code.
 - **Tier 2 — g3api managed-scan endpoints (outline).** `/scan/create` (managed, no `SendNewScan`, `MkdirAll` scan dir), `/scan/target/add` (reuse `BuildTargets`), `/scan/data/insert` (reuse `IsValidData`), `/scan/import` (reuse `importOne`), and the `/scan/data` optional `taskid` filter. Shared managed-only gate helper. New request structs in `src/g3lib/api.go`.
 - **Tier 3 — tool contract surface (outline).** `/plugin/describe` (response shaping + fallback when `llm` absent) and `/config/env` (returns `GetSharedEnv()`). Add example `llm:` blocks to a few representative `.g3p` files (e.g. nikto, nmap, hydra). Confirm `g3config` passes the field through unchanged.
-- **Tier 4 — Python client library (outline).** New `clients/python/` package: transport (bearer auth, multipart upload, streaming artifact download + zip/tar.gz extraction to disk), scan-scoped data-only API, tool-contract discovery + cache, polling helper, and the `G3DATA_PRIMER` module constant.
+- **Tier 4 — Python client library (outline).** New `sdk/python/` package: transport (bearer auth, multipart upload, streaming artifact download + zip/tar.gz extraction to disk), scan-scoped data-only API, tool-contract discovery + cache, polling helper, and the `G3DATA_PRIMER` module constant.
 
 ---
 
@@ -1068,14 +1068,14 @@ When the user next runs `g3config` (or `make all`) to regenerate `config/g3plugi
 ## Tier 4 — Python client library
 
 **Resolved decisions:**
-- Package: **`g3client`** under `clients/python/`. License: GPL-3.0-or-later (matches repo). Python ≥ 3.10. Runtime dep: `requests` (no `httpx` — adds nothing and isn't in the project's Python stack today).
+- Package: **`g3client`** under `sdk/python/`. License: GPL-3.0-or-later (matches repo). Python ≥ 3.10. Runtime dep: `requests` (no `httpx` — adds nothing and isn't in the project's Python stack today).
 - Bundle handling: g3api's `BundleTaskSlot` returns **single-file pass-through or ZIP** (no tar.gz — the spec was loose). Single file is renamed to `<dest_dir>/<task_id>/<filename>`; ZIP is path-traversal-checked then extracted into the same directory.
 - "Build" verification for Python = **`ruff check`** only (no `python -m py_compile`, no `python -c`); per project convention agents don't run interpreters.
 
 ### Package layout
 
 ```
-clients/python/
+sdk/python/
 ├── pyproject.toml
 ├── README.md
 └── g3client/
@@ -1089,11 +1089,11 @@ clients/python/
 ### Task 1: Package scaffold
 
 **Files:**
-- Create: `clients/python/pyproject.toml`
-- Create: `clients/python/README.md`
-- Create: `clients/python/g3client/__init__.py` (placeholder; populated in Task 6)
+- Create: `sdk/python/pyproject.toml`
+- Create: `sdk/python/README.md`
+- Create: `sdk/python/g3client/__init__.py` (placeholder; populated in Task 6)
 
-- [ ] **Step 1: Create `clients/python/pyproject.toml`** with this content:
+- [ ] **Step 1: Create `sdk/python/pyproject.toml`** with this content:
 
 ```toml
 [build-system]
@@ -1114,7 +1114,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/golismero/golismero3"
-Source = "https://github.com/golismero/golismero3/tree/main/clients/python"
+Source = "https://github.com/golismero/golismero3/tree/main/sdk/python"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -1128,7 +1128,7 @@ select = ["E", "F"]
 ignore = ["E501"]
 ```
 
-- [ ] **Step 2: Create `clients/python/README.md`** with this content:
+- [ ] **Step 2: Create `sdk/python/README.md`** with this content:
 
 ```markdown
 # g3client
@@ -1140,7 +1140,7 @@ hosts on-demand task dispatch for external clients (knife agents and others).
 
 From the repo:
 
-    pip install ./clients/python
+    pip install ./sdk/python
 
 ## Usage
 
@@ -1168,7 +1168,7 @@ and common types, intended to be fed to an LLM ahead of the per-tool
 contracts returned by `list_tools()`.
 ```
 
-- [ ] **Step 3: Create `clients/python/g3client/__init__.py`** as a placeholder (populated in Task 6):
+- [ ] **Step 3: Create `sdk/python/g3client/__init__.py`** as a placeholder (populated in Task 6):
 
 ```python
 """g3client — Python wrapper for the managed g3api surface (golismero3)."""
@@ -1181,7 +1181,7 @@ Package can't be linted until it has at least one Python module — Task 7 runs 
 ### Task 2: `errors.py` — exception hierarchy
 
 **Files:**
-- Create: `clients/python/g3client/errors.py`
+- Create: `sdk/python/g3client/errors.py`
 
 - [ ] **Step 1: Create the file** with this content:
 
@@ -1218,7 +1218,7 @@ class G3TaskTimeout(G3ClientError):
 ### Task 3: `types.py` — typed responses + terminal-states constant
 
 **Files:**
-- Create: `clients/python/g3client/types.py`
+- Create: `sdk/python/g3client/types.py`
 
 - [ ] **Step 1: Create the file** with this content:
 
@@ -1285,7 +1285,7 @@ class TaskStatus:
 ### Task 4: `primer.py` — the `G3DATA_PRIMER` constant
 
 **Files:**
-- Create: `clients/python/g3client/primer.py`
+- Create: `sdk/python/g3client/primer.py`
 
 - [ ] **Step 1: Create the file** with this content:
 
@@ -1336,7 +1336,7 @@ Its `.produces` tells you what type the tool will write back.
 ### Task 5: `client.py` — the `G3Client` class
 
 **Files:**
-- Create: `clients/python/g3client/client.py`
+- Create: `sdk/python/g3client/client.py`
 
 - [ ] **Step 1: Create the file** with this content:
 
@@ -1711,10 +1711,10 @@ def _safe_extract_zip(zf: zipfile.ZipFile, dest: Path) -> None:
 
 - [ ] **Step 2: No verification yet** (tier-end).
 
-### Task 6: Populate `clients/python/g3client/__init__.py`
+### Task 6: Populate `sdk/python/g3client/__init__.py`
 
 **Files:**
-- Modify: `clients/python/g3client/__init__.py`
+- Modify: `sdk/python/g3client/__init__.py`
 
 - [ ] **Step 1: Replace the placeholder** with the full re-export surface:
 
@@ -1756,7 +1756,7 @@ __all__ = [
 
 - [ ] **Step 1: Lint the entire new package**
 
-Run: `cd /home/crapula/code/g3 && ruff check clients/python/`
+Run: `cd /home/crapula/code/g3 && ruff check sdk/python/`
 Expected: `All checks passed!` (or no output, exit 0).
 
 If `ruff` is not installed in the environment, install it first with the system package manager or `pip install --user ruff`. Do not run `pytest`, `python -m py_compile`, or `python -c`; verification stays strictly lint per project convention.
@@ -1765,7 +1765,7 @@ If `ruff` is not installed in the environment, install it first with the system 
 
 Tier 4 is code-complete. The user reviews and commits the tier in one batch, then exercises the library against a live g3api (the only meaningful runtime verification — and one we can't run, since agents don't hit live servers).
 
-This concludes the knife g3 tool integration. The user can `pip install ./clients/python` from the repo, hand `g3client.G3Client` plus `g3client.G3DATA_PRIMER` to the knife team, and they have everything needed to wire the @mcp.tool surface against a remote g3 deployment.
+This concludes the knife g3 tool integration. The user can `pip install ./sdk/python` from the repo, hand `g3client.G3Client` plus `g3client.G3DATA_PRIMER` to the knife team, and they have everything needed to wire the @mcp.tool surface against a remote g3 deployment.
 
 ---
 

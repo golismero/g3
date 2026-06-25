@@ -9,8 +9,8 @@
 
 Provide a clean, layered Python client library for `g3api`, solely concerned with
 Golismero (no LLM concerns). It replaces the abandoned reference client at
-`private/clients/python` (kept only for code/logic salvage) with a new production
-package at the repo-root `clients/python/`.
+`private/sdk/python` (kept only for code/logic salvage) with a new production
+package at the repo-root `sdk/python/`.
 
 The library is delivered in three tiers, each a strict layer over the one below:
 
@@ -58,7 +58,7 @@ future ports — notably a Go client for g3cli/g3tui — are cheap and consisten
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Location | New repo-root `clients/python/` (the path the REST-migration doc already names). Leave `private/clients/python` as untouched reference. | Promotes the client to a real production home; clean break from the failed version. |
+| Location | New repo-root `sdk/python/` (the path the REST-migration doc already names). Leave `private/sdk/python` as untouched reference. | Promotes the client to a real production home; clean break from the failed version. |
 | API shape | **Resource-grouped accessors** over a **Transport core**. | Mirrors the future nested REST resources; migration becomes a per-method transport swap; the same vocabulary seeds other languages. |
 | Concurrency | **Sync now, async-ready seam.** | Matches Knife's threaded blocking-poll model and the Go port; async adds contagious calling conventions and harder artifact/zip code for little gain here. |
 | Configuration | **Explicit args + env fallback.** `Client(base_url, token, ...)` falling back to `G3_API_BASEURL` / `G3_API_TOKEN` / `G3_ARTIFACTS_ROOT`. | Library-friendly, testable, embeddable; matches the knife doc's stateless `(base_url, token)`. |
@@ -66,7 +66,7 @@ future ports — notably a Go client for g3cli/g3tui — are cheap and consisten
 ## 4. Package layout
 
 ```
-clients/python/                      # promoted out of private/; new production home
+sdk/python/                      # promoted out of private/; new production home
 ├── pyproject.toml                   # name="g3client", deps: requests; py>=3.10; GPL-3.0-or-later
 ├── README.md
 └── g3client/
@@ -315,7 +315,7 @@ subset (`scans.create` + progress + report-task); Tier 3 touches only the manage
 This doc is explicitly the blueprint the eventual **Go client (for g3cli/g3tui)** and any
 other-language client build against.
 
-## 11. Salvage map (from `private/clients/python`)
+## 11. Salvage map (from `private/sdk/python`)
 
 Reuse (protocol correctness, LLM-free):
 - Envelope parsing (`client.py:196-223`).

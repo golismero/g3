@@ -305,7 +305,7 @@ the redundant `G3` prefix that v1 used (the namespace already encodes the
 project and the audience).
 
 ```
-clients/python/
+sdk/python/
 ├── pyproject.toml          # name = "g3client"
 └── g3client/
     ├── __init__.py         # package marker (intentionally empty)
@@ -703,7 +703,7 @@ client.run(hosts[0], "testssl")
 
 ## 11. Open questions
 
-- Final package name/layout under `clients/python/` — working name `g3client`.
+- Final package name/layout under `sdk/python/` — working name `g3client`.
 
 Resolved during the 2026-05-31 revision:
 - Plugin contract: opt-in via `llm:` block, no fallback. All three of

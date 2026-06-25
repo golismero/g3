@@ -26,7 +26,7 @@ These reflect durable project conventions and **replace** the writing-plans skil
 ## File Structure
 
 ```
-clients/python/
+sdk/python/
 ├── pyproject.toml                   # package metadata; dep: requests
 ├── README.md                        # usage overview
 └── g3client/
@@ -56,11 +56,11 @@ Responsibilities: `_transport.py` owns all networking; `api/*` owns endpoint map
 ## Task 0.1: Package scaffold
 
 **Files:**
-- Create: `clients/python/pyproject.toml`
-- Create: `clients/python/README.md`
-- Create: `clients/python/g3client/__init__.py`
+- Create: `sdk/python/pyproject.toml`
+- Create: `sdk/python/README.md`
+- Create: `sdk/python/g3client/__init__.py`
 
-- [ ] **Step 1: Create `clients/python/pyproject.toml`**
+- [ ] **Step 1: Create `sdk/python/pyproject.toml`**
 
 ```toml
 [build-system]
@@ -84,7 +84,7 @@ Homepage = "https://github.com/golismero"
 include = ["g3client", "g3client.*"]
 ```
 
-- [ ] **Step 2: Create `clients/python/README.md`**
+- [ ] **Step 2: Create `sdk/python/README.md`**
 
 ```markdown
 # g3client
@@ -111,7 +111,7 @@ api = ApiClient("https://g3.internal/api", "TOKEN")
 See `docs/design/g3client-architecture.md` for the language-agnostic design.
 ```
 
-- [ ] **Step 3: Create `clients/python/g3client/__init__.py`**
+- [ ] **Step 3: Create `sdk/python/g3client/__init__.py`**
 
 ```python
 """g3client — Python client library for g3api (Golismero3)."""
@@ -144,13 +144,13 @@ __all__ = [
 
 - [ ] **Step 4: Lint**
 
-Run: `ruff check clients/python/g3client/__init__.py`
+Run: `ruff check sdk/python/g3client/__init__.py`
 Expected: passes (errors module created in Task 0.2; if run before, expect an unresolved-import note — proceed, the tier smoke check covers it).
 
 ## Task 0.2: Error hierarchy
 
 **Files:**
-- Create: `clients/python/g3client/errors.py`
+- Create: `sdk/python/g3client/errors.py`
 
 - [ ] **Step 1: Create `errors.py`**
 
@@ -200,13 +200,13 @@ class TaskFailed(ClientError):
 
 - [ ] **Step 2: Lint**
 
-Run: `ruff check clients/python/g3client/errors.py`
+Run: `ruff check sdk/python/g3client/errors.py`
 Expected: PASS.
 
 ## Task 0.3: Value types
 
 **Files:**
-- Create: `clients/python/g3client/types.py`
+- Create: `sdk/python/g3client/types.py`
 
 - [ ] **Step 1: Create `types.py`**
 
@@ -337,13 +337,13 @@ class PluginContract:
 
 - [ ] **Step 2: Lint**
 
-Run: `ruff check clients/python/g3client/types.py`
+Run: `ruff check sdk/python/g3client/types.py`
 Expected: PASS.
 
 ## Task 0.4: Transport (the HTTP seam)
 
 **Files:**
-- Create: `clients/python/g3client/_transport.py`
+- Create: `sdk/python/g3client/_transport.py`
 
 - [ ] **Step 1: Create `_transport.py`**
 
@@ -497,13 +497,13 @@ def _safe_extract_zip(zf: zipfile.ZipFile, dest: Path) -> None:
 
 - [ ] **Step 2: Lint**
 
-Run: `ruff check clients/python/g3client/_transport.py`
+Run: `ruff check sdk/python/g3client/_transport.py`
 Expected: PASS.
 
 ## Task 0.5: Polling helper
 
 **Files:**
-- Create: `clients/python/g3client/_polling.py`
+- Create: `sdk/python/g3client/_polling.py`
 
 - [ ] **Step 1: Create `_polling.py`**
 
@@ -551,14 +551,14 @@ def poll_until(
 
 - [ ] **Step 2: Lint**
 
-Run: `ruff check clients/python/g3client/_polling.py`
+Run: `ruff check sdk/python/g3client/_polling.py`
 Expected: PASS.
 
 ## Tier 0 checkpoint
 
 - [ ] **Smoke check (no test files — just import):**
 
-Run: `cd clients/python && python -c "import g3client; from g3client._transport import Transport; from g3client._polling import poll_until; from g3client import types; print(g3client.__version__)"`
+Run: `cd sdk/python && python -c "import g3client; from g3client._transport import Transport; from g3client._polling import poll_until; from g3client import types; print(g3client.__version__)"`
 Expected: prints `0.1.0`, no traceback.
 
 - [ ] **Hand off to user to commit Tier 0** (git is user-owned). Suggested message: `feat(g3client): foundation — packaging, transport, polling, errors, types`.
@@ -572,7 +572,7 @@ Resource-grouped wrappers. **Method names track the future REST shape; bodies ta
 ## Task 1.1: Scans resource and nested sub-resources
 
 **Files:**
-- Create: `clients/python/g3client/api/scans.py`
+- Create: `sdk/python/g3client/api/scans.py`
 
 - [ ] **Step 1: Create `api/scans.py`**
 
@@ -767,15 +767,15 @@ class LogsResource:
 
 - [ ] **Step 2: Lint**
 
-Run: `ruff check clients/python/g3client/api/scans.py`
+Run: `ruff check sdk/python/g3client/api/scans.py`
 Expected: PASS.
 
 ## Task 1.2: Plugins, files, config resources
 
 **Files:**
-- Create: `clients/python/g3client/api/plugins.py`
-- Create: `clients/python/g3client/api/files.py`
-- Create: `clients/python/g3client/api/config.py`
+- Create: `sdk/python/g3client/api/plugins.py`
+- Create: `sdk/python/g3client/api/files.py`
+- Create: `sdk/python/g3client/api/config.py`
 
 - [ ] **Step 1: Create `api/plugins.py`**
 
@@ -847,14 +847,14 @@ class ConfigResource:
 
 - [ ] **Step 4: Lint**
 
-Run: `ruff check clients/python/g3client/api/plugins.py clients/python/g3client/api/files.py clients/python/g3client/api/config.py`
+Run: `ruff check sdk/python/g3client/api/plugins.py sdk/python/g3client/api/files.py sdk/python/g3client/api/config.py`
 Expected: PASS.
 
 ## Task 1.3: ApiClient composition root
 
 **Files:**
-- Create: `clients/python/g3client/api/__init__.py`
-- Modify: `clients/python/g3client/__init__.py` (add `ApiClient` re-export)
+- Create: `sdk/python/g3client/api/__init__.py`
+- Modify: `sdk/python/g3client/__init__.py` (add `ApiClient` re-export)
 
 - [ ] **Step 1: Create `api/__init__.py`**
 
@@ -938,7 +938,7 @@ __all__ = [
 
 - [ ] **Step 3: Lint**
 
-Run: `ruff check clients/python/g3client/api/__init__.py clients/python/g3client/__init__.py`
+Run: `ruff check sdk/python/g3client/api/__init__.py sdk/python/g3client/__init__.py`
 Expected: PASS.
 
 ## Tier 1 checkpoint
@@ -947,7 +947,7 @@ Expected: PASS.
 
 Run:
 ```bash
-cd clients/python && python -c "
+cd sdk/python && python -c "
 from g3client import ApiClient
 c = ApiClient('https://example.test/api', 'tok')
 assert hasattr(c.scans, 'create') and hasattr(c.scans.tasks, 'dispatch')
@@ -967,9 +967,9 @@ Expected: prints `api wiring OK`, no traceback. (No network call is made — con
 **Detail and approve with the user before starting.** Per the tiered-plan workflow.
 
 **Files:**
-- Create: `clients/python/g3client/scanner/__init__.py` (`Scanner`)
-- Modify: `clients/python/g3client/types.py` (add `ScanReport`)
-- Modify: `clients/python/g3client/__init__.py` (re-export `Scanner`)
+- Create: `sdk/python/g3client/scanner/__init__.py` (`Scanner`)
+- Modify: `sdk/python/g3client/types.py` (add `ScanReport`)
+- Modify: `sdk/python/g3client/__init__.py` (re-export `Scanner`)
 
 **Public surface:**
 ```python
@@ -1003,9 +1003,9 @@ class Scanner:
 **Detail and approve with the user before starting.**
 
 **Files:**
-- Create: `clients/python/g3client/manager/__init__.py` (`Manager`)
-- Modify: `clients/python/g3client/types.py` (add `RunOutcome`)
-- Modify: `clients/python/g3client/__init__.py` (re-export `Manager`)
+- Create: `sdk/python/g3client/manager/__init__.py` (`Manager`)
+- Modify: `sdk/python/g3client/types.py` (add `RunOutcome`)
+- Modify: `sdk/python/g3client/__init__.py` (re-export `Manager`)
 
 **Public surface (spec §8):**
 ```python

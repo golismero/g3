@@ -17,7 +17,7 @@ The parent watchlist decomposes into roughly four orthogonal pieces. Only **B** 
 | **A** | `g3log` → `log/slog` | **Deferred** — transversal to everything (709 call sites); own spec+plan later. |
 | **B** | **Vanity module paths → real GitHub paths + `go.work`** | **This spec.** |
 | **C** | huma code-first OpenAPI flag-day (routes + RFC 7807 envelope + generated Go/Python clients + g3cli/g3tui/python updates) | Deferred — own spec. |
-| **D** | PyPI publish + `clients/python` submodule fold-back + Knife migration | Deferred — own spec, after C. |
+| **D** | PyPI publish + `sdk/python` submodule fold-back + Knife migration | Deferred — own spec, after C. |
 
 B detailed below; A/C/D intentionally left as outlines (revisit each before starting, per the tiered-plan convention).
 
@@ -43,7 +43,7 @@ The parent doc floats retiring `replace ../` in favor of `go.work`. We **keep `r
 
 - **`go.work` and `replace` cover different commands.** `go.work` redirects modules locally for `go build` / `go test` / gopls. `go mod tidy` and `go get` **ignore `go.work`** and resolve each module's graph independently — for an *unpublished* intra-repo dependency (`github.com/golismero/g3/src/g3lib`), only `replace` makes that resolve from local disk. Drop `replace` and the dependency-maintenance flow breaks the moment local cross-module edits are uncommitted.
 - **`replace` is not a fetch hazard.** Go **ignores `replace` directives in dependency (non-main) modules**, so a downstream consumer is unaffected by them. What would block a fetch is the paired `require … v0.0.0-00010101000000-000000000000` **sentinel pseudo-version**, which only resolves because `replace` intercepts it locally. `replace` + sentinel are a matched pair that keeps these modules *honestly internal* until we choose to publish.
-- **Fully retiring `replace` belongs with publishing (tier C/D).** It requires real `src/<module>/vX.Y.Z` tags, sentinel→real `require` bumps in dependency order, and a commit-before-tidy discipline. That is the SDK-publishing work, not a mechanical precursor. The one artifact that *will* be published — the `clients/go` SDK — is deliberately designed to own its types and depend on none of these `replace`-laden modules, so it publishes cleanly regardless.
+- **Fully retiring `replace` belongs with publishing (tier C/D).** It requires real `src/<module>/vX.Y.Z` tags, sentinel→real `require` bumps in dependency order, and a commit-before-tidy discipline. That is the SDK-publishing work, not a mechanical precursor. The one artifact that *will* be published — the `sdk/go` SDK — is deliberately designed to own its types and depend on none of these `replace`-laden modules, so it publishes cleanly regardless.
 
 `go.work` is **committed** (this is an application monorepo; everyone should resolve locally) with a `go 1.26.2` directive matching all member modules. `go.work.sum` is committed if/when the toolchain generates it (none needed currently — all dependency checksums are already covered by per-module `go.sum`).
 
@@ -114,4 +114,4 @@ Done in this work (rename + Makefile + dep-collection prefix by the user; the it
 
 ## Forward link
 
-When tier C/D publishes the modules and adds `clients/go/`: delete the `replace` directives, swap each sentinel `require` for a real `src/<module>/vX.Y.Z` tag (dependency order), and `go.work`'s `use` keeps local dev resolving unchanged. This spec is the foundation that makes that a deletion rather than a new concept under pressure.
+When tier C/D publishes the modules and adds `sdk/go/`: delete the `replace` directives, swap each sentinel `require` for a real `src/<module>/vX.Y.Z` tag (dependency order), and `go.work`'s `use` keeps local dev resolving unchanged. This spec is the foundation that makes that a deletion rather than a new concept under pressure.
