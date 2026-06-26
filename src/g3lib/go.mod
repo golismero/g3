@@ -4,12 +4,15 @@ go 1.26.2
 
 replace github.com/golismero/g3/src/g3log => ../g3log
 
+replace github.com/golismero/g3/src/g3model => ../g3model
+
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/go-sql-driver/mysql v1.10.0
-	github.com/golismero/g3/src/g3log v0.0.0-20260624171601-ecc964cbb718
+	github.com/golismero/g3/src/g3log v0.0.0-00010101000000-000000000000
+	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1

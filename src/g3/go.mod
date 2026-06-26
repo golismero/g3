@@ -6,11 +6,13 @@ replace github.com/golismero/g3/src/g3lib => ../g3lib
 
 replace github.com/golismero/g3/src/g3log => ../g3log
 
+replace github.com/golismero/g3/src/g3model => ../g3model
+
 require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/go-playground/validator/v10 v10.30.3
-	github.com/golismero/g3/src/g3lib v0.0.0-20260624171601-ecc964cbb718
-	github.com/golismero/g3/src/g3log v0.0.0-20260624171601-ecc964cbb718
+	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
+	github.com/golismero/g3/src/g3log v0.0.0-00010101000000-000000000000
 	github.com/willabides/kongplete v0.4.0
 )
 
@@ -25,6 +27,7 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

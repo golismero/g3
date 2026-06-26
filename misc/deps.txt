@@ -28,7 +28,7 @@ github.com/clipperhouse/displaywidth@v0.11.0
 github.com/clipperhouse/uax29/v2@v2.7.0
 github.com/davecgh/go-spew@v1.1.1
 github.com/dlclark/regexp2/v2@v2.2.2
-github.com/docker/cli@v29.6.0+incompatible
+github.com/docker/cli@v29.6.1+incompatible
 github.com/docker/docker-credential-helpers@v0.9.8
 github.com/eclipse/paho.mqtt.golang@v1.5.1
 github.com/erikgeiser/coninput@v0.0.0-20211004153227-1c3628e74d0f

@@ -61,6 +61,7 @@ jobs:
       g3config: ${{ steps.filter.outputs.g3config }}
       g3lib: ${{ steps.filter.outputs.g3lib }}
       g3log: ${{ steps.filter.outputs.g3log }}
+      g3model: ${{ steps.filter.outputs.g3model }}
       g3scanner: ${{ steps.filter.outputs.g3scanner }}
       g3worker: ${{ steps.filter.outputs.g3worker }}
     steps:
@@ -73,33 +74,42 @@ jobs:
           filters: |
             g3log:
               - 'src/g3log/**'
+            g3model:
+              - 'src/g3model/**'
             g3lib:
               - 'src/g3lib/**'
               - 'src/g3log/**'
+              - 'src/g3model/**'
             g3:
               - 'src/g3/**'
               - 'src/g3lib/**'
               - 'src/g3log/**'
+              - 'src/g3model/**'
             g3api:
               - 'src/g3api/**'
               - 'src/g3lib/**'
               - 'src/g3log/**'
+              - 'src/g3model/**'
             g3cli:
               - 'src/g3cli/**'
               - 'src/g3lib/**'
               - 'src/g3log/**'
+              - 'src/g3model/**'
             g3config:
               - 'src/g3config/**'
               - 'src/g3lib/**'
               - 'src/g3log/**'
+              - 'src/g3model/**'
             g3scanner:
               - 'src/g3scanner/**'
               - 'src/g3lib/**'
               - 'src/g3log/**'
+              - 'src/g3model/**'
             g3worker:
               - 'src/g3worker/**'
               - 'src/g3lib/**'
               - 'src/g3log/**'
+              - 'src/g3model/**'
 
   golangci:
     name: golangci-lint (${{ matrix.module }})

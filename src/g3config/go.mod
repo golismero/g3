@@ -6,10 +6,12 @@ replace github.com/golismero/g3/src/g3lib => ../g3lib
 
 replace github.com/golismero/g3/src/g3log => ../g3log
 
+replace github.com/golismero/g3/src/g3model => ../g3model
+
 require (
 	github.com/go-playground/validator/v10 v10.30.3
-	github.com/golismero/g3/src/g3lib v0.0.0-20260624171601-ecc964cbb718
-	github.com/golismero/g3/src/g3log v0.0.0-20260624171601-ecc964cbb718
+	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
+	github.com/golismero/g3/src/g3log v0.0.0-00010101000000-000000000000
 	github.com/google/go-containerregistry v0.21.7
 	github.com/google/go-jsonnet v0.22.0
 	github.com/spf13/pflag v1.0.10
@@ -20,7 +22,7 @@ require (
 	github.com/apsdehal/go-logger v0.0.0-20190515212710-b0d6ccfee0e6 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/docker/cli v29.6.0+incompatible // indirect
+	github.com/docker/cli v29.6.1+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.8 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.5.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
@@ -28,6 +30,7 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
