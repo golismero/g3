@@ -15,6 +15,7 @@ import (
 	"github.com/kballard/go-shellquote"
 
 	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3model"
 )
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -53,34 +54,24 @@ type G3MergerCommand struct {
 }
 
 type G3ReporterCommand struct {
-	Name      string   `json:"name"               validate:"required"`         // Preset name; uniqueness validated in g3config.
-	Command   []string `json:"command,omitempty"`                              // (Optional) Command template, env-var expansion only.
-	DockerOpt []string `json:"dockeropt,omitempty"`                            // (Optional) Docker options, env-var expansion only.
+	Name        string              `json:"name"                validate:"required"`        // Preset name; uniqueness validated in g3config.
+	Command     []string            `json:"command,omitempty"`                              // (Optional) Command template, env-var expansion only.
+	DockerOpt   []string            `json:"dockeropt,omitempty"`                            // (Optional) Docker options, env-var expansion only.
 }
 
 type G3ReporterPhase struct {
-	Default  string              `json:"default,omitempty"`                            // (Optional) Name of the default preset; must reference an existing command.
-	Commands []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"` // (Optional) Named presets. Empty means "entrypoint runs with no args".
+	Default     string              `json:"default,omitempty"`                              // (Optional) Name of the default preset; must reference an existing command.
+	Commands    []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"`   // (Optional) Named presets. Empty means "entrypoint runs with no args".
 }
 
+type G3PluginDescription = g3model.G3PluginDescription
+
 type G3Plugin struct {
-	Name        string              `json:"name"`                                           // Tool name. Must be unique.
-	Category    string              `json:"category"`                                       // Defaults to parent directory name.
-	Description string              `json:"description"`                                    // Description for humans.
-	URL         string              `json:"url"                 validate:"url"`             // URL for humans.
-	Image       string              `json:"image"`                                          // Docker image.
+	G3PluginDescription
 	Commands    []G3ToolCommand     `json:"commands,omitempty"  validate:"omitempty,dive"`  // (Optional) Array of commands and conditions.
 	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty"`       // (Optional) Command for importing files.
 	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty"`       // (Optional) Command for merging issues.
 	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty"`       // (Optional) Phase for generating downloadable reports.
-}
-func (plugin G3Plugin) String() string {
-	output := ""
-	output = output + fmt.Sprintln("Name:        " + plugin.Name)
-	output = output + fmt.Sprintln("Category:    " + plugin.Category)
-	output = output + fmt.Sprintln("Homepage:    " + plugin.URL)
-	output = output + fmt.Sprintln("Description: " + plugin.Description)
-	return output
 }
 
 type G3PluginMetadata map[string]G3Plugin

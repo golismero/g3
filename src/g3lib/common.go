@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -36,10 +36,24 @@ const G3PLUGINS = "g3plugins.json"
 // silently no-ops. Stays "dev" for local builds.
 var Version = "dev"
 
-// Re-export G3Data from the shared model.
+// Re-export the g3model stuff.
 type G3Data = g3model.G3Data
+type StringSet = g3model.StringSet
+type SyncStringSet = g3model.SyncStringSet
 func IsValidData(data G3Data) (bool, error) {
 	return data.IsValidData()
+}
+func NewSyncStringSet() *SyncStringSet {
+	return g3model.NewSyncStringSet()
+}
+func BuildTargets(arguments []string) ([]G3Data, error) {
+	return g3model.BuildTargets(arguments)
+}
+func GetBuiltInPipelines(compact bool) map[string]string {
+	return g3model.GetBuiltInPipelines(compact)
+}
+func EmitShellCompletion(shell, cmdName string, w io.Writer) error {
+	return g3model.EmitShellCompletion(shell, cmdName, w)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -237,151 +251,6 @@ func SaveDataToFile(filepath string, outputArray []G3Data, beautify bool) error 
 		}
 	}
 	return nil
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// A string set type for Golang.
-
-type StringSetInterface interface {
-	Add(s string)
-	AddMulti(a []string)
-	Exists(s string) bool
-	AnyExist(a []string) bool
-	AllExist(a []string) bool
-	Delete(s string)
-	DeleteMulti(a []string)
-	Length() int
-	ToArray() []string
-}
-
-type void struct{}
-var member void
-
-// Non-concurrent version (faster).
-type StringSet map[string]void
-
-func (ss StringSet) Add(s string) {
-	ss[s] = member
-}
-func (ss StringSet) AddMulti(a []string) {
-	for i := 0; i < len(a); i++ {
-		ss[a[i]] = member
-	}
-}
-func (ss StringSet) Exists(s string) bool {
-	_, ok := ss[s]
-	return bool(ok)
-}
-func (ss StringSet) AnyExist(a []string) bool {
-	for i := 0; i < len(a); i++ {
-		if _, ok := ss[a[i]]; ok {
-			return true
-		}
-	}
-	return false
-}
-func (ss StringSet) AllExist(a []string) bool {
-	for i := 0; i < len(a); i++ {
-		if _, ok := ss[a[i]]; !ok {
-			return false
-		}
-	}
-	return true
-}
-func (ss StringSet) Delete(s string) {
-	delete(ss, s)
-}
-func (ss StringSet) DeleteMulti(a []string) {
-	for i := 0; i < len(a); i++ {
-		delete(ss, a[i])
-	}
-}
-func (ss StringSet) Length() int {
-	return len(ss)
-}
-func (ss StringSet) Clear() {
-	ss.DeleteMulti(ss.ToArray())
-}
-func (ss StringSet) ToArray() []string {
-	keys := make([]string, len(ss))
-	i := 0
-	for k := range ss {
-		keys[i] = k
-		i++
-	}
-	return keys
-}
-func (ss StringSet) String() string {
-	return fmt.Sprintf("%v", ss.ToArray())
-}
-
-// Concurrent version (safe for use in goroutines).
-type SyncStringSet struct {
-	sync.RWMutex
-	internal StringSet
-}
-func NewSyncStringSet() *SyncStringSet {
-	return &SyncStringSet{
-		internal: make(StringSet),
-	}
-}
-func (sss *SyncStringSet) Add(s string) {
-	sss.Lock()
-	sss.internal.Add(s)
-	sss.Unlock()
-}
-func (sss *SyncStringSet) AddMulti(a []string) {
-	sss.Lock()
-	sss.internal.AddMulti(a)
-	sss.Unlock()
-}
-func (sss *SyncStringSet) Exists(s string) bool {
-	sss.Lock()
-	value := sss.internal.Exists(s)
-	sss.Unlock()
-	return value
-}
-func (sss *SyncStringSet) AnyExist(a []string) bool {
-	sss.Lock()
-	value := sss.internal.AnyExist(a)
-	sss.Unlock()
-	return value
-}
-func (sss *SyncStringSet) AllExist(a []string) bool {
-	sss.Lock()
-	value := sss.internal.AllExist(a)
-	sss.Unlock()
-	return value
-}
-func (sss *SyncStringSet) Delete(s string) {
-	sss.Lock()
-	sss.internal.Delete(s)
-	sss.Unlock()
-}
-func (sss *SyncStringSet) DeleteMulti(a []string) {
-	sss.Lock()
-	sss.internal.DeleteMulti(a)
-	sss.Unlock()
-}
-func (sss *SyncStringSet) Length() int {
-	sss.Lock()
-	value := sss.internal.Length()
-	sss.Unlock()
-	return value
-}
-func (sss *SyncStringSet) Clear() {
-	sss.Lock()
-	sss.internal.Clear()
-	sss.Unlock()
-}
-func (sss *SyncStringSet) ToArray() []string {
-	sss.Lock()
-	value := sss.internal.ToArray()
-	sss.Unlock()
-	return value
-}
-func (sss *SyncStringSet) String() string {
-	return fmt.Sprintf("%v", sss.ToArray())
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

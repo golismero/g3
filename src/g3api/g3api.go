@@ -448,7 +448,7 @@ func Main() int {
 			}
 
 			// Validate the scan script.
-			parsed, err := g3lib.ParseScript(plugins, request.Script)
+			parsed, err := g3lib.ParseServerScript(plugins, request.Script)
 			if err == nil {
 				err = validator.New().Struct(parsed)
 			}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -123,6 +124,38 @@ type CmdContext struct {
 	Plugins   g3lib.G3PluginMetadata
 }
 
+// Load a list of targets from a file.
+func LoadTargetsFromFile(filepath string) ([]string, error) {
+	targets := []string{}
+	var fd *os.File
+	var err error
+	if filepath == "-" {
+		fd = os.Stdin
+	} else {
+		fd, err = os.Open(filepath)
+		if err != nil {
+			return targets, err
+		}
+		defer fd.Close()
+	}
+	scanner := bufio.NewScanner(fd)
+	for scanner.Scan() {
+		line := scanner.Text()
+		line = strings.Trim(line, " \t\r\n")
+		if len(line) > 1 && line[0:1] == "#" {		// only entire line comments are supported
+			continue
+		}
+		if len(line) >= 2 && line[0:1] == "\"" && line[len(line)-1:] == "\"" {	// remove ""
+			line = line[1:len(line)-1]
+		}
+		if len(line) == 0 {		// skip empty lines
+			continue
+		}
+		targets = append(targets, line)
+	}
+	return targets, scanner.Err()
+}
+
 func main() {
 	var err error
 
@@ -230,7 +263,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 	script := string(scriptBytes)
 
 	// Validate the scan script.
-	parsed, err := g3lib.ParseScript(plugins, script)
+	parsed, err := g3lib.ParseServerScript(plugins, script)
 	if err == nil {
 		err = validator.New().Struct(parsed)
 	}
@@ -501,7 +534,7 @@ func (cmd *TargetCmd) Run(ctx CmdContext) error {
 	// Targets can be specified both with -i or as positionals.
 	arguments := cmd.Targets
 	if cmd.Input != "" {
-		targets, err := g3lib.LoadTargetsFromFile(cmd.Input)
+		targets, err := LoadTargetsFromFile(cmd.Input)
 		if err != nil {
 			log.Critical(err)
 			return err
