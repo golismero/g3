@@ -150,7 +150,6 @@ The Tier 2/3 limits need a way to tell "regular" (interactive, e.g. g3tui / a fu
 - **Live-log feed mechanism** — how log rows reach g3api live for Tier 3 (tap the write path vs a dedicated feed), and how it relates to the SQL store the pull endpoint reads. (A NATS log stream is the natural answer if that substrate lands — see *Forward-looking*.)
 - **Slow-consumer policy specifics** — drop-with-gap-marker vs disconnect for `log.line`; buffer sizes; whether status coalescing is per-`scanid` or per-subscription.
 - **Subscription cap value** — the exact per-socket limit for regular scans (a small fixed number; pick at plan time against the real g3tui / web-GUI usage).
-- **Event rename vs legacy aliases** — whether to hard-rename (`scanprogress`→`scan.status`) in one flag-day or briefly emit both. Defaulting to hard-rename, since g3tui is the only consumer.
 
 ---
 

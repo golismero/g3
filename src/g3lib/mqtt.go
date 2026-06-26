@@ -733,6 +733,7 @@ func SubscribeToResponses(client mqtt.Client, scanid string, callback ResponseHa
 }
 
 // Subscribe to the scanner response topic to receive scan status updates.
+// TODO: we may need to also subscribe to additional topics on demand.
 func SubscribeAsAPI(client MessageQueueClient, callback ScanStatusHandler) string {
 	topic := G3SCANSTATUSTOPIC
 	log.Debug("Subscribing to: " + topic)

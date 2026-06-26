@@ -1,4 +1,4 @@
-// Package client wraps every g3api endpoint and the WS scanprogress
+// Package client wraps every g3api endpoint and the WS scan.status
 // subscription used by g3tui. All inputs/outputs are domain types from
 // g3lib; tea.Msg carriers below are just thin envelopes so the UI layer
 // can route updates without depending on the underlying transport.
@@ -14,7 +14,7 @@ type ScanListSnapshot struct {
 	Entries []g3lib.ScanStatusEntry
 }
 
-// Single scan-status update pushed via the WS scanprogress channel.
+// Single scan-status update pushed via the WS scan.status channel.
 // Progress is a pointer mirroring the wire shape: senders that don't
 // know the current progress (e.g. cancellation, failure) leave it nil,
 // and receivers must preserve any existing value rather than treating
@@ -84,7 +84,7 @@ type ScanDeleted struct {
 	ScanID string
 }
 
-// ScanRemoved is pushed via the WS "scanremoved" channel when any
+// ScanRemoved is pushed via the WS "scan.removed" channel when any
 // client successfully deletes a scan. Receivers should drop the entry
 // from their local list rather than wait for the next periodic
 // /scan/progress snapshot to reveal the absence. Carries only the scan

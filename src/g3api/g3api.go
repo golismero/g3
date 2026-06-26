@@ -279,8 +279,8 @@ func Main() int {
 	}
 
 	// Initialize the notification trackers. Each WS msgtype has its own
-	// tracker so a subscriber to "scanremoved" never receives a
-	// "scanprogress" payload (which would otherwise be wrapped with the
+	// tracker so a subscriber to "scan.removed" never receives a
+	// "scan.status" payload (which would otherwise be wrapped with the
 	// wrong msgtype on the wire by the per-subscription writer goroutine).
 	progressNotify := NewNotifyTracker()
 	removeNotify := NewNotifyTracker()
@@ -1517,7 +1517,7 @@ func Main() int {
 				switch request.MsgType {
 
 				// Subscribe to scan progress updates via websocket.
-				case "scanprogress":
+				case "scan.status":
 
 					// Create a channel and register it with the notification tracker.
 					log.Debug("Subscribed to progress updates.")
@@ -1541,7 +1541,7 @@ func Main() int {
 									return
 								}
 								log.Debug("Sending scan progress update to websocket client.")
-								err := conn.WriteData("scanprogress", msg)
+								err := conn.WriteData("scan.status", msg)
 								if err != nil {
 									log.Error(err.Error())
 								}
@@ -1550,9 +1550,9 @@ func Main() int {
 					}(channel)
 
 				// Subscribe to scan-removal events via websocket. Mirrors
-				// the scanprogress case in structure; payload is a tiny
+				// the scan.status case in structure; payload is a tiny
 				// G3ScanRemoved{ScanID} pushed when /scan/delete succeeds.
-				case "scanremoved":
+				case "scan.removed":
 
 					log.Debug("Subscribed to scan-removal events.")
 					channel := make(chan any)
@@ -1562,7 +1562,7 @@ func Main() int {
 					wg.Add(1)
 					go func(channel chan any) {
 						defer wg.Done()
-						log.Debug("Launched goroutine for scanremoved websocket.")
+						log.Debug("Launched goroutine for scan.removed websocket.")
 						for {
 							select {
 							case <-ctx.Done():
@@ -1570,11 +1570,11 @@ func Main() int {
 								return
 							case msg := <-channel:
 								if msg == nil {
-									log.Debug("Closing down scanremoved websocket goroutine.")
+									log.Debug("Closing down scan.removed websocket goroutine.")
 									return
 								}
 								log.Debug("Sending scan-removal event to websocket client.")
-								err := conn.WriteData("scanremoved", msg)
+								err := conn.WriteData("scan.removed", msg)
 								if err != nil {
 									log.Error(err.Error())
 								}

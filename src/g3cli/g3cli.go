@@ -410,7 +410,7 @@ func (cmd *ProgressCmd) Run(vars CmdContext) error {
 	defer c.WriteMessage(websocket.CloseMessage, []byte("")) //nolint:errcheck
 
 	// Send a request for scan progress updates.
-	msg := `{"msgtype":"scanprogress"}`
+	msg := `{"msgtype":"scan.status"}`
 	if doDebugAPI {
 		log.Debug("--> " + msg)
 	}
