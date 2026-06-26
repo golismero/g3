@@ -146,7 +146,7 @@ The Tier 2/3 limits need a way to tell "regular" (interactive, e.g. g3tui / a fu
 
 ## Open questions for when this is scheduled
 
-- **Task-event source** — close the managed-scan reply-consumer gap (consume `MSG_RESPONSE`, or add a task-status feed) before Tier 2. The shape of that source determines `task.status`'s payload and ordering guarantees. (NATS JetStream KV authoritative task state is one answer — see *Forward-looking*.)
+- **Task-event source** — close the managed-scan reply-consumer gap (consume `MSG_RESPONSE`, or add a task-status feed) before Tier 2. The shape of that source determines `task.status`'s payload and ordering guarantees. The underlying primitive is a persisted `{taskid → inputDataID, outputDataIDs[]}` record; the REST migration's proposed `GET …/tasks/{taskid}/output` is the **pull** view of that same record, and this Tier 2 feed is the **push** view — design the record once (see [`http-routing-and-rest-migration.md`](http-routing-and-rest-migration.md) → *Task input/output*). NATS JetStream KV authoritative task state is one home for it — see *Forward-looking*.
 - **Live-log feed mechanism** — how log rows reach g3api live for Tier 3 (tap the write path vs a dedicated feed), and how it relates to the SQL store the pull endpoint reads. (A NATS log stream is the natural answer if that substrate lands — see *Forward-looking*.)
 - **Slow-consumer policy specifics** — drop-with-gap-marker vs disconnect for `log.line`; buffer sizes; whether status coalescing is per-`scanid` or per-subscription.
 - **Subscription cap value** — the exact per-socket limit for regular scans (a small fixed number; pick at plan time against the real g3tui / web-GUI usage).

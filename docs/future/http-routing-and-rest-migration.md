@@ -167,7 +167,9 @@ After a systematic symmetry check (every collection answers list-with-data / lis
 | `GET` | `/scans/{scanid}/tasks/list` | `POST /scan/tasks` | IDs only. |
 | `GET` | `/scans/{scanid}/tasks/{taskid}` | *(new)* | Single task status. |
 | `POST` | `/scans/{scanid}/tasks/{taskid}/stop` | `POST /scan/task/cancel` | State transition (was `DELETE` in earlier draft — corrected for verb symmetry). |
-| `GET` | `/scans/{scanid}/tasks/{taskid}/artifacts` | `POST /scan/task/artifacts` | Tar.gz / zip download. |
+| `GET` | `/scans/{scanid}/tasks/{taskid}/artifacts` | `POST /scan/task/artifacts` | Artifacts zip download. |
+| `GET` | `/scans/{scanid}/tasks/{taskid}/input` | **New endpoint** | Input data sent to this task when it was started. |
+| `GET` | `/scans/{scanid}/tasks/{taskid}/output` | **New endpoint** | Output data returned from this task when it finished. Error if task is running. |
 
 ### Imports / files
 
@@ -198,7 +200,9 @@ After a systematic symmetry check (every collection answers list-with-data / lis
 |---|---|---|---|
 | `GET` | `/ws` | `GET /ws` | HTTP/1.1 Upgrade — already GET, nothing changes. |
 
-**Net: 26 endpoints, two new (`GET /scans/{scanid}/tasks/{taskid}`, `GET /scans/{scanid}/data/{dataid}`), one verb change (`POST .../tasks/{id}/stop` instead of `DELETE`), and `POST /plugin/describe` removed (2026-06-24, see Direction).**
+**Net: 28 endpoints, four new (`GET /scans/{scanid}/tasks/{taskid}`, `GET /scans/{scanid}/data/{dataid}`, and the task `…/input` + `…/output` pair), one verb change (`POST .../tasks/{id}/stop` instead of `DELETE`), and `POST /plugin/describe` removed (2026-06-24, see Direction).**
+
+The `…/input` and `…/output` pair is *not* a routing rename like the rest of the table — it exposes data that is currently transient and requires new persistence. See *Task input/output: a persisted task↔data model* below.
 
 ---
 
@@ -241,6 +245,26 @@ These look like gaps but are deliberate. Comment near the route table to keep th
 - **No `/files` list, no `GET /files/{id}`.** Files are write-only by design: upload → immediately import → gone. (See deferred item: orphan-file cleanup.)
 - **`POST /scans/{scanid}/data/filter` is the *only* POST-as-search endpoint.** Justified by the Mongo-ID bulk problem. Keep this comment in the handler to prevent the pattern spreading.
 - **No PUT/PATCH anywhere.** g3api has nothing that's updated-in-place.
+
+### Task input/output: a persisted task↔data model (new functionality, not a rename)
+
+`GET /scans/{scanid}/tasks/{taskid}/input` and `…/output` are the two table rows that add capability rather than re-route an existing handler. They expose, per task, **which data the task consumed and which data it produced** — and that mapping does not survive anywhere today.
+
+Verified against the data model:
+
+- **Output is genuinely transient.** A worker's result is `G3Response.Response []string` (`src/g3lib/mqtt.go`) — the mongodb ids of the `G3Data` it produced. The `G3Data` objects themselves are persisted in Mongo and are already queryable scan-wide (`GET /scans/{scanid}/data`), but the **task→produced-ids association lives only in the reply message** and is discarded once handled. For *managed* scans there is no consumer for `G3Response` in g3api at all — this is the **managed-scan reply-consumer gap**.
+- **Input is recoverable but unstored.** A task's input is `G3Dispatch.DataID` (a single id, `src/g3lib/mqtt.go`), known to the dispatcher at dispatch time but not written against the task record.
+- **`TaskStatusEntry` (`src/g3lib/mysql.go`) carries no data ids** — only state, worker, timestamps, and log stats. So neither endpoint can be served from what exists.
+
+The missing primitive is small and singular: a persisted **`{taskid → inputDataID, outputDataIDs[]}`** record, written when a task is dispatched and when its `G3Response` arrives. `…/output` returns the produced-id list (or the resolved `G3Data`); per the table it **errors while the task is still running** (no terminal result yet). `…/input` returns the consumed data.
+
+**This primitive is a convergence point — design it once, not per-consumer:**
+
+- It is the *same* "persisted task-result model" the WebSocket sequel needs as its **Tier 2 task-event source** ([`websocket-event-protocol.md`](websocket-event-protocol.md)). REST `…/output` is the *pull* view; the WS `task.status` feed is the *push* view of the same record.
+- It **closes the managed-scan reply-consumer gap** by giving managed-scan replies a durable home instead of being reconstructed lossily from logs.
+- It maps directly onto **NATS JetStream KV authoritative task state** ([`nats-jetstream-consolidation.md`](nats-jetstream-consolidation.md)) — a KV key per task holding input/output ids + terminal state is precisely that doc's Tier 2.
+
+Because the primitive is shared, these two endpoints are best treated as a thin REST surface over that model — gated on building it — not as standalone migration work. If the model lands via the NATS direction, the endpoints become a near-free read over KV.
 
 ### Response status-code contract (client-side)
 
