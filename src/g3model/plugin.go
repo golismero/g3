@@ -2,7 +2,7 @@ package g3model
 
 import "fmt"
 
-type G3PluginDescription struct {
+type PluginDescription struct {
 	Name        string `json:"name"`                        // Tool name. Must be unique.
 	Category    string `json:"category"`                    // Defaults to parent directory name.
 	Description string `json:"description"`                 // Description for humans.
@@ -10,7 +10,7 @@ type G3PluginDescription struct {
 	Image       string `json:"image"`                       // Docker image.
 }
 
-func (plugin G3PluginDescription) String() string {
+func (plugin PluginDescription) String() string {
 	output := ""
 	output = output + fmt.Sprintln("Name:        " + plugin.Name)
 	output = output + fmt.Sprintln("Category:    " + plugin.Category)

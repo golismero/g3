@@ -41,7 +41,8 @@ type G3Data = g3model.G3Data
 type StringSet = g3model.StringSet
 type SyncStringSet = g3model.SyncStringSet
 func IsValidData(data G3Data) (bool, error) {
-	return data.IsValidData()
+	err := data.Validate()
+	return err == nil, err
 }
 func NewSyncStringSet() *SyncStringSet {
 	return g3model.NewSyncStringSet()

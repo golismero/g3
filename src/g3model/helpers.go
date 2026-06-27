@@ -1,12 +1,36 @@
 package g3model
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/go-playground/validator/v10"
 )
+
+// Global validator cache.
+var Validate *validator.Validate = validator.New(validator.WithRequiredStructEnabled())
+
+// Validate struct and marshal to JSON.
+func EncodeJSON(pointer any) ([]byte, error) {
+	err := Validate.Struct(pointer)
+	if err != nil {
+		return []byte{}, err
+	}
+	return json.Marshal(pointer)
+}
+
+// Unmarshal from JSON and validate struct.
+func DecodeJSON(data []byte, pointer any) error {
+	err := json.Unmarshal(data, pointer)
+	if err != nil {
+		return err
+	}
+	return Validate.Struct(pointer)
+}
 
 // shellCompletionSnippets are the registration lines a user adds to their
 // shell rc (or that the Makefile drops into a system completion directory)

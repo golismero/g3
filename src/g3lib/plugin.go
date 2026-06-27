@@ -64,7 +64,7 @@ type G3ReporterPhase struct {
 	Commands    []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"`   // (Optional) Named presets. Empty means "entrypoint runs with no args".
 }
 
-type G3PluginDescription = g3model.G3PluginDescription
+type G3PluginDescription = g3model.PluginDescription
 
 type G3Plugin struct {
 	G3PluginDescription

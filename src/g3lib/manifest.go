@@ -15,9 +15,9 @@ import (
 
 // Re-export g3model stuff.
 const ManifestFilename = g3model.ManifestFilename
-type G3ManifestFile = g3model.G3ManifestFile
-type G3ManifestWork = g3model.G3ManifestWork
-type G3Manifest = g3model.G3Manifest
+type G3ManifestFile = g3model.ManifestFile
+type G3ManifestWork = g3model.ManifestWork
+type G3Manifest = g3model.Manifest
 
 // ManifestTool derives the canonical tool name for the manifest's root `tool`
 // field. It prefers the _tool the plugin stamped onto its first emitted G3Data

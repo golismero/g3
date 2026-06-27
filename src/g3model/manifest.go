@@ -5,22 +5,22 @@ package g3model
 const ManifestFilename = "manifest.json"
 
 // G3ManifestFile describes one file in the task's artifact slot.
-type G3ManifestFile struct {
-	Name     string `json:"name"`
-	Size     int64  `json:"size"`
-	Modified int64  `json:"modified"`
+type ManifestFile struct {
+	Name     string `json:"name"     validate="required"`
+	Size     int64  `json:"size"     validate="ge=0"`
+	Modified int64  `json:"modified" validate="gt=0"`
 }
 
 // G3ManifestWork describes one sub-command run within the task: a command line
 // (the plugin entrypoint may run multiple sub-commands internally and the
 // filenames the plugin claimed for that command via _artifacts. The filenames
 // reference entries in G3Manifest.Files.
-type G3ManifestWork struct {
-	Cmd       string   `json:"cmd"`
-	Artifacts []string `json:"artifacts"`
+type ManifestWork struct {
+	Cmd       string   `json:"cmd"       validate="required"`
+	Artifacts []string `json:"artifacts" validate="omitempty"`
 }
 
-// G3Manifest is the per-task record written into
+// Manifest is the per-task record written into
 // <artifacts-root>/<scanid>/<taskid>/manifest.json. It is the integration
 // contract downstream consumers (e.g. magenta) read to map artifact files back
 // to the tool that produced them.
@@ -30,14 +30,14 @@ type G3ManifestWork struct {
 // union of _artifacts claims as that entry's Artifacts. Files present in Files
 // but absent from every Work.Artifacts are intentional orphans (debug, forensic
 // retention).
-type G3Manifest struct {
-	ScanID     string           `json:"scan_id"`
-	TaskID     string           `json:"task_id"`
-	Plugin     string           `json:"plugin"`
-	Tool       string           `json:"tool"`
-	ExitStatus string           `json:"exit_status"`
-	StartedAt  int64            `json:"started_at"`
-	EndedAt    int64            `json:"ended_at"`
-	Files      []G3ManifestFile `json:"files"`
-	Work       []G3ManifestWork `json:"work"`
+type Manifest struct {
+	ScanID     string         `json:"scan_id"     validate="required,uuid,ne=ne=00000000-0000-0000-0000-000000000000"`
+	TaskID     string         `json:"task_id"     validate="required,uuid,ne=ne=00000000-0000-0000-0000-000000000000"`
+	Plugin     string         `json:"plugin"      validate="required"`
+	Tool       string         `json:"tool"        validate="required"`
+	ExitStatus string         `json:"exit_status" validate="required"`
+	StartedAt  int64          `json:"started_at"  validate="gt=0"`
+	EndedAt    int64          `json:"ended_at"    validate="gt=0"`
+	Files      []ManifestFile `json:"files"       validate="dive"`
+	Work       []ManifestWork `json:"work"        validate="dive"`
 }

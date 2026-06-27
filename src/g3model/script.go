@@ -516,13 +516,8 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 		data["_fp"] = fpiarr
 
 		// Sanity check.
-		if ok, err := data.IsValidData(); !ok {
-			if err != nil {
-				return []G3Data{}, err
-			} else {
-				err = errors.New("internal error")
-				return []G3Data{}, err
-			}
+		if err = data.Validate(); err != nil {
+			return []G3Data{}, err
 		}
 
 		// Add the parsed object into the output array.

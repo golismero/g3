@@ -41,7 +41,7 @@ func (data G3Data) String() string {
 }
 
 // Very rudimentary data integrity check.
-func (data G3Data) IsValidData() (bool, error) {
+func (data G3Data) Validate() error {
 
 	// This ensures if a panic happens here we can recover and return false.
 	defer func() { recover() }() //nolint:errcheck
@@ -54,7 +54,7 @@ func (data G3Data) IsValidData() (bool, error) {
 	}
 	for _, field := range mandatory {
 		if value, ok := data[field]; !ok || value == nil {
-			return false, errors.New("Missing mandatory field: " + field)
+			return errors.New("Missing mandatory field: " + field)
 		}
 	}
 
@@ -66,7 +66,6 @@ func (data G3Data) IsValidData() (bool, error) {
 			case "_type":
 			case "_tool":
 			case "_fp":
-
 			case "_id":
 			case "_taskid":
 			case "_scanid":
@@ -76,7 +75,7 @@ func (data G3Data) IsValidData() (bool, error) {
 			case "_artifacts":
 
 			default:
-				return false, errors.New("Unknown underscore field: " + field)
+				return errors.New("Unknown underscore field: " + field)
 			}
 		}
 	}
@@ -85,7 +84,7 @@ func (data G3Data) IsValidData() (bool, error) {
 	// (We have no way of checking, since there is no comprehensive list of data types).
 	re_type := regexp.MustCompile(`^[a-z]+$`)
 	if val := data["_type"].(string); len(val) == 0 || !re_type.Match([]byte(val)) {
-		return false, errors.New("Invalid _type field: " + val)
+		return errors.New("Invalid _type field: " + val)
 	}
 
 	// Validate the tool name at least looks correct.
@@ -93,7 +92,7 @@ func (data G3Data) IsValidData() (bool, error) {
 	// also we shouldn't assume we always have the full list of plugins).
 	re_tool := regexp.MustCompile(`^[a-zA-Z0-9_\\-]+$`)
 	if val := data["_tool"].(string); len(val) == 0 || !re_tool.Match([]byte(val)) {
-		return false, errors.New("Invalid _tool field: " + val)
+		return errors.New("Invalid _tool field: " + val)
 	}
 
 	// Validate the fingerprint at least looks correct.
@@ -102,10 +101,10 @@ func (data G3Data) IsValidData() (bool, error) {
 	for i := 0; i < len(fp); i++ {
 		token := fp[i].(string)
 		if token == "" || !strings.Contains(token, " ") || !re_tool.Match([]byte(strings.Split(token, " ")[0])) {
-			return false, errors.New("Invalid _fp field: " + token)
+			return errors.New("Invalid _fp field: " + token)
 		}
 	}
 
 	// Everything is ok!
-	return true, nil
+	return nil
 }

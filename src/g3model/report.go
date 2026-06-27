@@ -1,9 +1,9 @@
 package g3model
 
 type G3ScanMetadata struct {
-	ScanID string          `json:"scanid"           validate:"required,uuid"`  // ID for the Golismero scan.
-	Issues []string        `json:"issues"           validate:"dive,mongodb"`   // Issues reported by Golismero plugins.
-	Config *G3ReportConfig `json:"config,omitempty" validate:"omitempty"`      // Report rendering configuration (mirrors Magenta's metadata schema).
+	ScanID string          `json:"scanid"           validate:"required,uuid"`
+	Issues []string        `json:"issues"           validate:"dive,mongodb"`
+	Config *G3ReportConfig `json:"config,omitempty" validate:"omitempty"`
 }
 
 // G3ReportConfig mirrors Magenta's SCHEMA_METADATA exactly: it carries the
