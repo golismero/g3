@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -217,6 +218,90 @@ func sweepOrphanUploads(uploadsDir string, ttl time.Duration) {
 		}
 	}
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// This structure wraps a websocket connection to ensure concurrency.
+
+type WSRequest struct {
+	MsgType string              `json:"msgtype"             validate:"required"`
+	ScanID string               `json:"scanid,omitempty"    validate:"omitempty,uuid"`
+}
+
+type WSResponse struct {
+	MsgType string              `json:"msgtype"             validate:"required"`
+	Data any                    `json:"data,omitempty"`
+}
+
+type SyncWebSocket struct {
+	mread sync.Mutex
+	mwrite sync.Mutex
+	conn *websocket.Conn
+}
+
+func WrapWebSocket(conn *websocket.Conn) *SyncWebSocket {
+	sws := SyncWebSocket{}
+	sws.conn = conn
+	return &sws
+}
+
+func (sws *SyncWebSocket) ReadRequest() (*WSRequest, error) {
+	for {
+		sws.mread.Lock()
+		messageType, data, err := sws.conn.ReadMessage()
+		sws.mread.Unlock()
+		if err != nil {
+			return nil, err
+		}
+		if messageType == websocket.PingMessage {
+			sws.mwrite.Lock()
+			sws.conn.WriteMessage(websocket.PongMessage, data) //nolint:errcheck
+			sws.mwrite.Unlock()
+			continue
+		}
+		if messageType == websocket.CloseMessage {
+			return nil, nil
+		}
+		if messageType != websocket.TextMessage {
+			err = errors.New("invalid message type")
+			return nil, err
+		}
+		var request WSRequest
+		err = json.Unmarshal(data, &request)
+		return &request, err
+	}
+}
+
+func (sws *SyncWebSocket) WriteResponse(response WSResponse) error {
+	data, err := json.Marshal(response)
+	if err == nil {
+		sws.mwrite.Lock()
+		err = sws.conn.WriteMessage(websocket.TextMessage, data)
+		sws.mwrite.Unlock()
+	}
+	return err
+}
+
+func (sws *SyncWebSocket) WriteData(msgtype string, data any) error {
+	response := WSResponse{}
+	response.MsgType = msgtype
+	response.Data = data
+	return sws.WriteResponse(response)
+}
+
+func (sws *SyncWebSocket) WriteSuccess() error {
+	response := WSResponse{}
+	response.MsgType = "success"
+	return sws.WriteResponse(response)
+}
+
+func (sws *SyncWebSocket) WriteError(text string) error {
+	response := WSResponse{}
+	response.MsgType = "error"
+	response.Data = text
+	return sws.WriteResponse(response)
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 func Main() int {
 	var wg sync.WaitGroup
@@ -1500,7 +1585,7 @@ func Main() int {
 				return
 			}
 			defer ws.Close()
-			conn := g3lib.WrapWebSocket(ws)
+			conn := WrapWebSocket(ws)
 			log.Debug("Accepted websocket connection.")
 
 			// Listen for incoming requests, until the websocket is closed or an error occurs.

@@ -12,7 +12,6 @@ require (
 	github.com/golismero/g3/src/g3log v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/redis/go-redis/v9 v9.21.0
@@ -30,6 +29,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/montanaflynn/stats v0.9.0 // indirect

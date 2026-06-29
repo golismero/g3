@@ -8,19 +8,30 @@ import (
 const NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
 type LogLine struct {
-	Timestamp int64      `json:"ts"                validate:"gte=0"`
+	Timestamp int64      `json:"ts"                  validate:"gte=0"`
 	Text      string     `json:"text"`
 }
 
+type StatusUpdate struct {
+	Seq int              `json:"seq"                 validate:"gt=0"`
+	Status string        `json:"status"              validate:"required,oneof=waiting dispatched running canceled warning error done managed"`
+}
+
+type ProgressUpdate struct {
+	StatusUpdate
+	Progress int         `json:"progress,omitempty"  validate:"omitempty,gte=0,lte=100"`
+	Message string       `json:"msg,omitempty"`
+}
+
 type SubscriptionKey struct {
-	Channel string       `json:"channel"           validate:"required,oneof=all created deleted status logs input output"`
-	ScanID string        `json:"scanid,omitempty"  validate:"omitempty,uuid,ne=00000000-0000-0000-0000-000000000000"`
-	TaskID string        `json:"taskid,omitempty"  validate:"omitempty,uuid,ne=00000000-0000-0000-0000-000000000000"`
+	Channel string       `json:"channel"             validate:"required,oneof=* created deleted status progress logs input output"`
+	ScanID string        `json:"scanid,omitempty"    validate:"omitempty,uuid|eq=*"`
+	TaskID string        `json:"taskid,omitempty"    validate:"omitempty,uuid|eq=*"`
 }
 
 type SubscriptionRequest struct {
 	SubscriptionKey
-	Action string        `json:"action"            validate:"required,oneof=subscribe unsubscribe"`
+	Action string        `json:"action"              validate:"required,oneof=subscribe unsubscribe"`
 }
 
 type SubscriptionData struct {
@@ -29,16 +40,38 @@ type SubscriptionData struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-func (self SubscriptionData) Status() (string, error) {
-	var status string = "error"
+func (self SubscriptionData) Status() (StatusUpdate, error) {
+	var update = StatusUpdate{
+		Seq: 0,
+		Status: "error",
+	}
 	if self.Channel != "status" {
-		return status, errors.New("Not a status change event")
+		return update, errors.New("Not a status update event")
 	}
-	err := json.Unmarshal(self.Data, &status)
+	err := json.Unmarshal(self.Data, &update)
 	if err == nil {
-		err = Validate.Var(status, "required,oneof=error warning waiting dispatched running canceled done managed")
+		err = Validate.Struct(&update)
 	}
-	return status, err
+	return update, err
+}
+
+func (self SubscriptionData) Progress() (ProgressUpdate, error) {
+	var update = ProgressUpdate{
+		StatusUpdate: StatusUpdate{
+			Seq: 0,
+			Status: "error",
+		},
+		Progress: 100,
+		Message: "",
+	}
+	if self.Channel != "progress" {
+		return update, errors.New("Not a progress update event")
+	}
+	err := json.Unmarshal(self.Data, &update)
+	if err == nil {
+		err = Validate.Struct(&update)
+	}
+	return update, err
 }
 
 func (self SubscriptionData) Logs() ([]LogLine, error) {
