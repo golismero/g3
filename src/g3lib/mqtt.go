@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3model"
 )
 
 const MQTT_URL = "MQTT_URL"
@@ -366,7 +367,7 @@ func SendScanCompleted(client MessageQueueClient, scanid string) error {
 
 // SendTask publishes a tool task to a worker via the tool/<name> topic.
 // The caller is responsible for generating taskid (e.g. via uuid.NewString())
-// and supplying dataid (the MongoDB id of the G3Data the worker will operate on).
+// and supplying dataid (the MongoDB id of the Data the worker will operate on).
 // Generating the task ID outside this function lets out-of-band state (Redis,
 // SQL logs) be set up before the message is published — otherwise a worker
 // might pick up the task and race ahead of the scanner's own bookkeeping.
@@ -465,7 +466,7 @@ func SendEmptyResponse(client MessageQueueClient, scanid string, taskid string) 
 }
 
 // Send a task response to the MQTT broker.
-func SendResponse(client MessageQueueClient, task G3Task, outputArray []G3Data) (string, error) {
+func SendResponse(client MessageQueueClient, task G3Task, outputArray []g3model.Data) (string, error) {
 	var err error
 	msg := G3Response{}
 	msg.MessageType = MSG_RESPONSE

@@ -17,12 +17,6 @@ const REDIS_HOST = "REDIS_HOST"
 const REDIS_PORT = "REDIS_PORT"
 const REDIS_PASSWORD = "REDIS_PASSWORD"
 
-// Re-export g3model stuff.
-type G3ScanMetadata = g3model.G3ScanMetadata
-type G3ReportConfig = g3model.G3ReportConfig
-type G3ReportSeverityColors = g3model.G3ReportSeverityColors
-type G3ReportProjectInfo = g3model.G3ReportProjectInfo
-
 type RedisConnection struct {
 	c *redis.Client
 }
@@ -78,8 +72,8 @@ func (rdb RedisConnection) TaskKey(scanid string, taskid string, key string) str
 }
 
 // Load the scan metadata object from Redis.
-func LoadScanMetadata(rdb RedisConnection, scanid string) (G3ScanMetadata, error) {
-	var report G3ScanMetadata
+func LoadScanMetadata(rdb RedisConnection, scanid string) (g3model.ScanMetadata, error) {
+	var report g3model.ScanMetadata
 	jsonStr, err := rdb.c.Get(context.Background(), rdb.ScanKey(scanid, "metadata")).Result()
 	if err != nil {
 		return report, err
@@ -90,7 +84,7 @@ func LoadScanMetadata(rdb RedisConnection, scanid string) (G3ScanMetadata, error
 }
 
 // Save the scan metadata object into Redis.
-func SaveScanMetadata(rdb RedisConnection, info G3ScanMetadata) error {
+func SaveScanMetadata(rdb RedisConnection, info g3model.ScanMetadata) error {
 	jsonBytes, err := json.Marshal(info)
 	if err != nil {
 		return err

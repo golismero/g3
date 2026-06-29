@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -35,27 +34,6 @@ const G3PLUGINS = "g3plugins.json"
 // be the full module import path, not the short "g3lib" — the short form
 // silently no-ops. Stays "dev" for local builds.
 var Version = "dev"
-
-// Re-export the g3model stuff.
-type G3Data = g3model.G3Data
-type StringSet = g3model.StringSet
-type SyncStringSet = g3model.SyncStringSet
-func IsValidData(data G3Data) (bool, error) {
-	err := data.Validate()
-	return err == nil, err
-}
-func NewSyncStringSet() *SyncStringSet {
-	return g3model.NewSyncStringSet()
-}
-func BuildTargets(arguments []string) ([]G3Data, error) {
-	return g3model.BuildTargets(arguments)
-}
-func GetBuiltInPipelines(compact bool) map[string]string {
-	return g3model.GetBuiltInPipelines(compact)
-}
-func EmitShellCompletion(shell, cmdName string, w io.Writer) error {
-	return g3model.EmitShellCompletion(shell, cmdName, w)
-}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -187,9 +165,9 @@ func ResolveInstanceID(envKey string) (string, error) {
 	return prefix + hostname, nil
 }
 
-// Read an array of G3Data objects from a file.
-func LoadDataFromFile(filepath string) ([]G3Data, error) {
-	var inputJson []G3Data
+// Read an array of Data objects from a file.
+func LoadDataFromFile(filepath string) ([]g3model.Data, error) {
+	var inputJson []g3model.Data
 	var err error
 
 	// Open the file.
@@ -212,11 +190,8 @@ func LoadDataFromFile(filepath string) ([]G3Data, error) {
 
 	// Do some minimal validation.
 	for index, data := range inputJson {
-		if ok, err := IsValidData(data); !ok {
-			if err != nil {
-				return inputJson, fmt.Errorf("malformed data received, file: %s, index %d: %s", filepath, index, err.Error())
-			}
-			return inputJson, fmt.Errorf("malformed data received, file: %s, index %d", filepath, index)
+		if err := data.Validate(); err != nil {
+			return inputJson, fmt.Errorf("Malformed data received, file: %s, index %d: %s", filepath, index, err.Error())
 		}
 	}
 
@@ -224,8 +199,8 @@ func LoadDataFromFile(filepath string) ([]G3Data, error) {
 	return inputJson, nil
 }
 
-// Write an array of G3Data objects into a file.
-func SaveDataToFile(filepath string, outputArray []G3Data, beautify bool) error {
+// Write an array of Data objects into a file.
+func SaveDataToFile(filepath string, outputArray []g3model.Data, beautify bool) error {
 
 	// Save the combined output in JSON format.
 	var jsonOutput []byte

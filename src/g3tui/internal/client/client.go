@@ -202,9 +202,9 @@ func (c *Client) ListPlugins(ctx context.Context) ([]PluginListEntry, error) {
 			Name:        m.Name,
 			URL:         m.URL,
 			Description: m.Description,
-			Importer:    m.Importer,
-			Reporter:    m.Reporter,
-			Runnable:    m.Runnable,
+			Importer:    m.IsImporter,
+			Reporter:    m.IsReporter,
+			Runnable:    m.IsRunnable,
 		})
 	}
 	return out, nil

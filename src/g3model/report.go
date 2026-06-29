@@ -1,35 +1,35 @@
 package g3model
 
-type G3ScanMetadata struct {
+type ScanMetadata struct {
 	ScanID string          `json:"scanid"           validate:"required,uuid"`
 	Issues []string        `json:"issues"           validate:"dive,mongodb"`
-	Config *G3ReportConfig `json:"config,omitempty" validate:"omitempty"`
+	Config *ReportConfig `json:"config,omitempty" validate:"omitempty"`
 }
 
-// G3ReportConfig mirrors Magenta's SCHEMA_METADATA exactly: it carries the
+// ReportConfig mirrors Magenta's SCHEMA_METADATA exactly: it carries the
 // report-rendering options the Magenta reporter understands. Every field is
 // optional; absent fields fall back to Magenta's DEFAULT_METADATA at render
 // time, so we keep omitempty throughout to preserve the absent-vs-set
 // distinction rather than forcing zero values onto the wire.
-type G3ReportConfig struct {
+type ReportConfig struct {
 	Title             string                 `json:"title,omitempty"                 validate:"omitempty"`
 	Language          string                 `json:"language,omitempty"              validate:"omitempty"`
 	MinSeverity       string                 `json:"min_severity,omitempty"          validate:"omitempty,oneof=none low medium high critical"`
 	ChartType         string                 `json:"chart_type,omitempty"            validate:"omitempty,oneof=none pie bars"`
 	ShowEmptySummary  bool                   `json:"show_empty_summary,omitempty"    validate:"omitempty"`
 	ShowEmptyChart    bool                   `json:"show_empty_chart,omitempty"      validate:"omitempty"`
-	SeverityColors    *G3ReportSeverityColors `json:"severity_colors,omitempty"      validate:"omitempty"`
+	SeverityColors    *ReportSeverityColors `json:"severity_colors,omitempty"      validate:"omitempty"`
 	ReportSectionsOrder   []string `json:"report_sections_order,omitempty"   validate:"omitempty,dive,oneof=header summary tools issues notes"`
 	IssueSubsectionsOrder []string `json:"issue_subsections_order,omitempty" validate:"omitempty,dive,oneof=severity affects taxonomy description details recommendations tools references"`
-	ProjectInfo *G3ReportProjectInfo `json:"project_info,omitempty" validate:"omitempty"`
+	ProjectInfo *ReportProjectInfo `json:"project_info,omitempty" validate:"omitempty"`
 }
 
-// G3ReportSeverityColors mirrors the fixed-key severity_colors object from
+// ReportSeverityColors mirrors the fixed-key severity_colors object from
 // Magenta's schema. Keys are the closed SEVERITY_KEYS set, so they're modeled
 // as struct fields rather than a map. Magenta's pattern requires exactly six
 // hex digits (^#[0-9A-Fa-f]{6}$); validator's built-in hexcolor is the closest
 // match but also accepts 3/4/8-digit forms (it has no inline-regex option).
-type G3ReportSeverityColors struct {
+type ReportSeverityColors struct {
 	None     string `json:"none,omitempty"     validate:"omitempty,hexcolor"`
 	Low      string `json:"low,omitempty"      validate:"omitempty,hexcolor"`
 	Medium   string `json:"medium,omitempty"   validate:"omitempty,hexcolor"`
@@ -37,10 +37,10 @@ type G3ReportSeverityColors struct {
 	Critical string `json:"critical,omitempty" validate:"omitempty,hexcolor"`
 }
 
-// G3ReportProjectInfo mirrors Magenta's project_info object. In the schema all
+// ReportProjectInfo mirrors Magenta's project_info object. In the schema all
 // eight fields are required *when project_info is present*, so each carries a
 // required tag; validator only descends here when the parent pointer is non-nil.
-type G3ReportProjectInfo struct {
+type ReportProjectInfo struct {
 	ReportTeam   string `json:"report_team"   validate:"required"` // Your company or team.
 	ReportAuthor string `json:"report_author" validate:"required"` // Your name.
 	ClientName   string `json:"client_name"   validate:"required"` // The client company.

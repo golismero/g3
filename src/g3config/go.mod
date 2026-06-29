@@ -9,9 +9,9 @@ replace github.com/golismero/g3/src/g3log => ../g3log
 replace github.com/golismero/g3/src/g3model => ../g3model
 
 require (
-	github.com/go-playground/validator/v10 v10.30.3
 	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3log v0.0.0-00010101000000-000000000000
+	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000
 	github.com/google/go-containerregistry v0.21.7
 	github.com/google/go-jsonnet v0.22.0
 	github.com/spf13/pflag v1.0.10
@@ -28,9 +28,9 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
-	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect

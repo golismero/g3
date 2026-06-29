@@ -14,6 +14,7 @@ import (
 
 	"github.com/golismero/g3/src/g3lib"
 	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3model"
 )
 
 type Source string
@@ -35,7 +36,7 @@ type Pipeline struct {
 func Load(userDir string) ([]Pipeline, error) {
 	merged := map[string]Pipeline{}
 
-	for name, content := range g3lib.GetBuiltInPipelines(true) {
+	for name, content := range g3model.GetBuiltInPipelines(true) {
 		merged[name] = Pipeline{Name: name, Source: SourceEmbedded, Content: content}
 	}
 

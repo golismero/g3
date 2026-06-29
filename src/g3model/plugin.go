@@ -3,18 +3,32 @@ package g3model
 import "fmt"
 
 type PluginDescription struct {
-	Name        string `json:"name"`                        // Tool name. Must be unique.
-	Category    string `json:"category"`                    // Defaults to parent directory name.
-	Description string `json:"description"`                 // Description for humans.
-	URL         string `json:"url"          validate:"url"` // URL for humans.
-	Image       string `json:"image"`                       // Docker image.
+	Name        string `json:"name"         validate:"g3name"`      // Tool name. Must be unique.
+	Category    string `json:"category"     validate:"g3name`       // Defaults to parent directory name.
+	Description string `json:"description"  validate:"paragraph"`   // Description for humans.
+	URL         string `json:"url"          validate:"url"`         // URL for humans.
+}
+
+type PluginListItem struct {
+	PluginDescription
+	IsImporter  bool   `json:"importer,omitempty"`
+	IsReporter  bool   `json:"reporter,omitempty"`
+	IsRunnable  bool   `json:"runnable,omitempty"`
 }
 
 func (plugin PluginDescription) String() string {
 	output := ""
-	output = output + fmt.Sprintln("Name:        " + plugin.Name)
-	output = output + fmt.Sprintln("Category:    " + plugin.Category)
-	output = output + fmt.Sprintln("Homepage:    " + plugin.URL)
-	output = output + fmt.Sprintln("Description: " + plugin.Description)
+	output += fmt.Sprintln("Name:        " + plugin.Name)
+	output += fmt.Sprintln("Category:    " + plugin.Category)
+	output += fmt.Sprintln("Homepage:    " + plugin.URL)
+	output += fmt.Sprintln("Description: " + plugin.Description)
+	return output
+}
+
+func (plugin PluginListItem) String() string {
+	output := plugin.PluginDescription.String()
+	output += fmt.Sprintf("Is Importer? %t\n", plugin.IsImporter)
+	output += fmt.Sprintf("Is Reporter? %t\n", plugin.IsReporter)
+	output += fmt.Sprintf("Is Runnable? %t\n", plugin.IsRunnable)
 	return output
 }

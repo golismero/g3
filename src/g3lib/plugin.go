@@ -34,44 +34,45 @@ const G3_ARTIFACTS_HOST_ROOT = "G3_ARTIFACTS_HOST_ROOT"
 const G3_ARTIFACTS_ROOT_DEFAULT = "/app/artifacts"
 
 type G3ToolCommand struct {
-	Condition   string              `json:"condition"           validate:"required"`        // Execution condition for a tool.
-	Fingerprint []string            `json:"fingerprint"         validate:"required"`        // Fingerprint for the command.
-	Command     []string            `json:"command,omitempty"`                              // (Optional) Command template for a tool.
-	DockerOpt   []string            `json:"dockeropt,omitempty"`                            // (Optional) Docker options for the tool.
-	Returns     string              `json:"returns,omitempty"`                              // (Optional) Data type returned by the tool.
+	Condition   string              `json:"condition"           validate:"required"`          // Execution condition for a tool.
+	Fingerprint []string            `json:"fingerprint"         validate:"required"`          // Fingerprint for the command.
+	Command     []string            `json:"command,omitempty"`                                // (Optional) Command template for a tool.
+	DockerOpt   []string            `json:"dockeropt,omitempty"`                              // (Optional) Docker options for the tool.
+	Returns     string              `json:"returns,omitempty"   validate:"omitempty,g3type"`  // (Optional) Data type returned by the tool.
 }
 
 type G3ImporterCommand struct {
-	Command     []string            `json:"command,omitempty"`                              // (Optional) Command to execute when importing. Not a template.
-	DockerOpt   []string            `json:"dockeropt,omitempty"`                            // (Optional) Docker options for the importer.
-	Fingerprint []string            `json:"fingerprint,omitempty"`                          // (Optional) Fingerprint for the command.
-	Returns     string              `json:"returns,omitempty"`                              // (Optional) Data type returned by the importer.
+	Command     []string            `json:"command,omitempty"`                                // (Optional) Command to execute when importing. Not a template.
+	DockerOpt   []string            `json:"dockeropt,omitempty"`                              // (Optional) Docker options for the importer.
+	Fingerprint []string            `json:"fingerprint,omitempty"`                            // (Optional) Fingerprint for the command.
+	Returns     string              `json:"returns,omitempty"   validate:"omitempty,g3type"`  // (Optional) Data type returned by the importer.
 }
 
 type G3MergerCommand struct {
-	Command     []string            `json:"command,omitempty"`                              // (Optional) Command template for a tool.
-	DockerOpt   []string            `json:"dockeropt,omitempty"`                            // (Optional) Docker options for the tool.
+	Command     []string            `json:"command,omitempty"`                                // (Optional) Command template for a tool.
+	DockerOpt   []string            `json:"dockeropt,omitempty"`                              // (Optional) Docker options for the tool.
 }
 
 type G3ReporterCommand struct {
-	Name        string              `json:"name"                validate:"required"`        // Preset name; uniqueness validated in g3config.
-	Command     []string            `json:"command,omitempty"`                              // (Optional) Command template, env-var expansion only.
-	DockerOpt   []string            `json:"dockeropt,omitempty"`                            // (Optional) Docker options, env-var expansion only.
+	Name        string              `json:"name"                validate:"required,g3name"`   // Preset name; uniqueness validated in g3config.
+	Command     []string            `json:"command,omitempty"`                                // (Optional) Command template, env-var expansion only.
+	DockerOpt   []string            `json:"dockeropt,omitempty"`                              // (Optional) Docker options, env-var expansion only.
 }
 
 type G3ReporterPhase struct {
-	Default     string              `json:"default,omitempty"`                              // (Optional) Name of the default preset; must reference an existing command.
-	Commands    []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"`   // (Optional) Named presets. Empty means "entrypoint runs with no args".
+	Default     string              `json:"default,omitempty"  validate:"omitempty,g3name"`   // (Optional) Name of the default preset; must reference an existing command.
+	Commands    []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"`     // (Optional) Named presets. Empty means "entrypoint runs with no args".
 }
 
 type G3PluginDescription = g3model.PluginDescription
 
 type G3Plugin struct {
 	G3PluginDescription
-	Commands    []G3ToolCommand     `json:"commands,omitempty"  validate:"omitempty,dive"`  // (Optional) Array of commands and conditions.
-	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty"`       // (Optional) Command for importing files.
-	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty"`       // (Optional) Command for merging issues.
-	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty"`       // (Optional) Phase for generating downloadable reports.
+	Image       string              `json:"image"`                                            // Docker image. Derived from name if missing.
+	Commands    []G3ToolCommand     `json:"commands,omitempty"  validate:"omitempty,dive"`    // (Optional) Array of commands and conditions.
+	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty,dive"`    // (Optional) Command for importing files.
+	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty,dive"`    // (Optional) Command for merging issues.
+	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty,dive"`    // (Optional) Phase for generating downloadable reports.
 }
 
 type G3PluginMetadata map[string]G3Plugin
@@ -120,7 +121,7 @@ func LoadPlugins() G3PluginMetadata {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Evaluate a logical condition.
-func EvalCondition(condition string, data G3Data) (bool, error) {
+func EvalCondition(condition string, data g3model.Data) (bool, error) {
 
 	// Evaluate the template. We expect it to generate a text with the
 	// string "true" or "false", anything else we treat as an error.
@@ -142,7 +143,7 @@ func EvalCondition(condition string, data G3Data) (bool, error) {
 }
 
 // Evaluate the condition for the tool to run or not.
-func EvalToolCondition(plugin G3Plugin, index int, data G3Data) (bool, error) {
+func EvalToolCondition(plugin G3Plugin, index int, data g3model.Data) (bool, error) {
 
 	// Do not send data back to the plugin that created it.
 	if plugin.Name == data["_tool"] {
@@ -154,7 +155,7 @@ func EvalToolCondition(plugin G3Plugin, index int, data G3Data) (bool, error) {
 }
 
 // Build the command line for the plugin to execute inside the container, and its matching Docker options.
-func BuildToolCommand(plugin G3Plugin, index int, data G3Data) (ParsedPluginCommand, []error) {
+func BuildToolCommand(plugin G3Plugin, index int, data g3model.Data) (ParsedPluginCommand, []error) {
 	var errorArray []error
 	var command []string
 	var tmpErrA []error
@@ -301,7 +302,7 @@ func BuildReporterCommand(plugin G3Plugin, presetName string) (ParsedPluginComma
 	}
 
 	// Build command and dockeropt arrays. Templates are expanded against the
-	// environment only — reporters never see G3Data templates.
+	// environment only — reporters never see Data templates.
 	environment := GetEnvironmentMap()
 	command := []string{}
 	dockerOpt := []string{"-i", "--rm", "--entrypoint", "/usr/bin/g3r"}
@@ -323,7 +324,7 @@ func BuildReporterCommand(plugin G3Plugin, presetName string) (ParsedPluginComma
 }
 
 // Build the plugin fingerprint.
-func BuildPluginFingerprint(fingerprintTemplate []string, data G3Data) ([]string, []error) {
+func BuildPluginFingerprint(fingerprintTemplate []string, data g3model.Data) ([]string, []error) {
 	var errorArray []error
 	var fingerprint []string
 	for _, token := range fingerprintTemplate {
@@ -348,12 +349,12 @@ func BuildPluginFingerprint(fingerprintTemplate []string, data G3Data) ([]string
 // Run the command on the plugin's container. artifactsHostDir, if non-empty,
 // is bind-mounted into the plugin container as /artifacts:rw — the per-task
 // slot the plugin may write into. Pass "" if no artifact slot is wanted.
-func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, data G3Data, artifactsHostDir string, stderr io.Writer) ([]G3Data, error) {
+func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, data g3model.Data, artifactsHostDir string, stderr io.Writer) ([]g3model.Data, error) {
 
 	// Convert the input data to JSON format.
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return []G3Data{}, err
+		return []g3model.Data{}, err
 	}
 
 	// Write the input JSON into stdin for the plugin.
@@ -366,18 +367,18 @@ func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginC
 
 // Run an importer, passing the input file as a reader. Importers do not write
 // artifact files; the /artifacts mount is intentionally not provided.
-func RunPluginImporter(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, stderr io.Writer) ([]G3Data, error) {
+func RunPluginImporter(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, stderr io.Writer) ([]g3model.Data, error) {
 	return runPluginInternal(ctx, plugin, parsed, stdin, "", stderr)
 }
 
 // Run a merger, passing a list of issues as input. Mergers do not write
 // artifact files; the /artifacts mount is intentionally not provided.
-func RunPluginMerger(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, issues []G3Data, stderr io.Writer) ([]G3Data, error) {
+func RunPluginMerger(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, issues []g3model.Data, stderr io.Writer) ([]g3model.Data, error) {
 
 	// Convert the input data to JSON format.
 	jsonData, err := json.Marshal(issues)
 	if err != nil {
-		return []G3Data{}, err
+		return []g3model.Data{}, err
 	}
 
 	// Write the input JSON into stdin for the plugin.
@@ -432,7 +433,7 @@ func DisableContainerIPv6Args() []string {
 //     instead of a single /artifacts mount;
 //   - pipes the caller-supplied stdin reader straight to the container (the
 //     caller is responsible for closing the reader; see ReporterStdinStream);
-//   - does NOT parse stdout as G3Data — reporters write files to /output, so
+//   - does NOT parse stdout as Data — reporters write files to /output, so
 //     stdout/stderr are both routed to the task log writer.
 //
 // Returns nil on container exit 0, ctx.Err() on cancellation, or the underlying
@@ -502,8 +503,8 @@ func RunPluginReporter(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 }
 
 // Run a plugin but take the input from a reader.
-func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, artifactsHostDir string, stderr io.Writer) ([]G3Data, error) {
-	var outputArray []G3Data
+func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, artifactsHostDir string, stderr io.Writer) ([]g3model.Data, error) {
+	var outputArray []g3model.Data
 	var stdout bytes.Buffer
 
 	// Get the network name for Golismero.
@@ -601,7 +602,7 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 	// Inject a nil placeholder for any empty result (success OR error) so the
 	// worker can seed the negative-result cache. Cancellation already returned.
 	if len(outputArray) == 0 {
-		dummy := G3Data{}
+		dummy := g3model.Data{}
 		dummy["_type"] = "nil"
 		outputArray = append(outputArray, dummy)
 	}

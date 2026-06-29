@@ -14,6 +14,7 @@ import (
 
 	"github.com/golismero/g3/src/g3lib"
 	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3model"
 )
 
 // Environment variables with the scanner configuration.
@@ -23,26 +24,26 @@ const G3_SCANNER_MAX_DEPTH = "G3_SCANNER_MAX_DEPTH"         // Defaults to 0 for
 
 // This structure preserves the state of a single pipeline. Stored in an array.
 type PipelineState struct {
-	StepIndex    int             // Current step in the pipeline.
-	CommandIndex int             // Current subcommand in the plugin.
-	PendingTasks g3lib.StringSet // Task IDs we are waiting for in this step. Could be from another pipeline.
-	CurrentData  g3lib.StringSet // Currently held data in the pipeline that's been saved to the database.
-	NewData      g3lib.StringSet // Data being collected in this step that's been saved to the database.
+	StepIndex    int               // Current step in the pipeline.
+	CommandIndex int               // Current subcommand in the plugin.
+	PendingTasks g3model.StringSet // Task IDs we are waiting for in this step. Could be from another pipeline.
+	CurrentData  g3model.StringSet // Currently held data in the pipeline that's been saved to the database.
+	NewData      g3model.StringSet // Data being collected in this step that's been saved to the database.
 }
 
 // This structure correlates the pending task IDs and the fingerprints for the data we are waiting for.
-type FPToPendingTasks map[string]g3lib.StringSet
+type FPToPendingTasks map[string]g3model.StringSet
 
 func (pending FPToPendingTasks) Add(taskid string, fingerprint []string) {
 	for _, fp := range fingerprint {
 		if _, ok := pending[fp]; !ok {
-			pending[fp] = make(g3lib.StringSet)
+			pending[fp] = make(g3model.StringSet)
 		}
 		pending[fp].Add(taskid)
 	}
 }
 func (pending FPToPendingTasks) Find(fingerprint []string) []string {
-	found := make(g3lib.StringSet)
+	found := make(g3model.StringSet)
 	for _, fp := range fingerprint {
 		if pending, ok := pending[fp]; ok && len(pending) > 0 {
 			found.AddMulti(pending.ToArray())
@@ -60,12 +61,12 @@ func (pending FPToPendingTasks) Remove(taskid string) {
 
 // Global variables for the current scan information.
 var currentScanID = ""
-var runningTasks *g3lib.SyncStringSet
+var runningTasks *g3model.SyncStringSet
 
 func main() {
 	var wg sync.WaitGroup
 
-	runningTasks = g3lib.NewSyncStringSet()
+	runningTasks = g3model.NewSyncStringSet()
 
 	// Load the environment variables.
 	g3lib.LoadDotEnvFile()
@@ -469,9 +470,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 			pipelineState := make([]PipelineState, len(msg.Pipelines))
 			fpToTasks := make(FPToPendingTasks)
 			for pipeidx := 0; pipeidx < len(pipelineState); pipeidx++ {
-				pipelineState[pipeidx].PendingTasks = g3lib.StringSet{}
-				pipelineState[pipeidx].CurrentData = g3lib.StringSet{}
-				pipelineState[pipeidx].NewData = g3lib.StringSet{}
+				pipelineState[pipeidx].PendingTasks = g3model.StringSet{}
+				pipelineState[pipeidx].CurrentData = g3model.StringSet{}
+				pipelineState[pipeidx].NewData = g3model.StringSet{}
 				pipelineState[pipeidx].CurrentData.AddMulti(startData)
 			}
 
@@ -649,8 +650,8 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							// state before the scanner's DISPATCHED write lands, and the
 							// scanner's write then stomps RUNNING back to DISPATCHED.
 							taskid := uuid.NewString()
-							// Extract the MongoDB id of the input G3Data. SendTask (via dispatchTask)
-							// now takes dataid as a string rather than the full G3Data — the caller
+							// Extract the MongoDB id of the input Data. SendTask (via dispatchTask)
+							// now takes dataid as a string rather than the full Data — the caller
 							// owns the extraction, which makes the worker-bound message shape
 							// uniform between script-driven and API-driven dispatch.
 							dataid, ok := data["_id"].(string)
@@ -691,7 +692,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 						continue
 					}
 					state.CurrentData = state.NewData
-					state.NewData = g3lib.StringSet{}
+					state.NewData = g3model.StringSet{}
 					state.StepIndex++
 					needRedo = true
 					log.Debugf("No pending tasks on pipeline %d, moving on to next step %d", pipeidx, state.StepIndex)
@@ -800,7 +801,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							state.NewData.AddMulti(response.Response)
 							if len(state.PendingTasks) == 0 { // last subcommand has ended
 								state.CurrentData = state.NewData
-								state.NewData = g3lib.StringSet{}
+								state.NewData = g3model.StringSet{}
 								state.StepIndex++
 								log.Debugf("No pending tasks on pipeline %d, moving on to next step %d", pipeidx, state.StepIndex)
 							}
@@ -1047,7 +1048,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 	// Scanning is over, but we need to merge duplicated issues.
 	// TODO maybe make this a separate operation?
-	reportIssues := g3lib.StringSet{}
+	reportIssues := g3model.StringSet{}
 
 	// Go through every plugin that has implemented a merger.
 	for tool, plugin := range plugins {
@@ -1117,14 +1118,10 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		}
 
 		// Validate the plugin output. Drop any objects that don't pass the test.
-		sanitizedOutput := []g3lib.G3Data{}
+		sanitizedOutput := []g3model.Data{}
 		for _, data := range outputArray {
-			if ok, err := g3lib.IsValidData(data); !ok {
-				if err != nil {
-					log.Error("Malformed output data: " + err.Error() + "\n" + data.String())
-				} else {
-					log.Error("Malformed output data:\n" + data.String())
-				}
+			if err := data.Validate(); err != nil {
+				log.Error("Malformed output data: " + err.Error() + "\n" + data.String())
 			} else {
 				sanitizedOutput = append(sanitizedOutput, data)
 			}
@@ -1133,7 +1130,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		// Save the G3 objects into the database.
 		// Keep the IDs of the data objects until the end, where we generate the report.
 		oldids := []string{}
-		newobjs := []g3lib.G3Data{}
+		newobjs := []g3model.Data{}
 		for _, data := range sanitizedOutput {
 			if id, ok := data["_id"]; ok {
 				oldids = append(oldids, id.(string))
@@ -1158,7 +1155,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 
 	// Save the report in the database.
-	var info g3lib.G3ScanMetadata
+	var info g3model.ScanMetadata
 	info.ScanID = msg.ScanID
 	info.Issues = reportIssues.ToArray()
 	sort.Strings(info.Issues)

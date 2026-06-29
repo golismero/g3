@@ -4,17 +4,17 @@ package g3model
 // each task's artifact slot directory.
 const ManifestFilename = "manifest.json"
 
-// G3ManifestFile describes one file in the task's artifact slot.
+// ManifestFile describes one file in the task's artifact slot.
 type ManifestFile struct {
 	Name     string `json:"name"     validate="required"`
 	Size     int64  `json:"size"     validate="ge=0"`
 	Modified int64  `json:"modified" validate="gt=0"`
 }
 
-// G3ManifestWork describes one sub-command run within the task: a command line
+// ManifestWork describes one sub-command run within the task: a command line
 // (the plugin entrypoint may run multiple sub-commands internally and the
 // filenames the plugin claimed for that command via _artifacts. The filenames
-// reference entries in G3Manifest.Files.
+// reference entries in Manifest.Files.
 type ManifestWork struct {
 	Cmd       string   `json:"cmd"       validate="required"`
 	Artifacts []string `json:"artifacts" validate="omitempty"`

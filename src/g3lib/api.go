@@ -15,6 +15,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/websocket"
 
+	"github.com/golismero/g3/src/g3model"
 	log "github.com/golismero/g3/src/g3log"
 )
 
@@ -353,7 +354,7 @@ func (req *ReqAddTargets) Decode(r *http.Request) error {
 
 type ReqInsertData struct {
 	ScanID string   `json:"scanid"              validate:"uuid"`
-	Data   []G3Data `json:"data"                validate:"required,min=1"`
+	Data   []g3model.Data `json:"data"                validate:"required,min=1"`
 }
 func (req *ReqInsertData) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
@@ -451,7 +452,7 @@ type ReqTaskDispatch struct {
 	Kind   string `json:"kind"   validate:"required,oneof=tool report"`
 	Tool   string `json:"tool"   validate:"required"`
 	// kind=tool fields: server auto-evaluates plugin.Commands[i].Condition
-	// against the dataid's G3Data and dispatches every matching command.
+	// against the dataid's Data and dispatches every matching command.
 	DataID string `json:"dataid,omitempty" validate:"omitempty,mongodb"`
 	// kind=report fields:
 	Preset string `json:"preset,omitempty"`
@@ -515,15 +516,7 @@ func (req *ReqGetEnv) Decode(r *http.Request) error {
 //   Importer — accepts a file to import      (plugin.Importer != nil)
 //   Reporter — generates downloadable reports (plugin.Reporter != nil)
 //   Runnable — has at least one tool command  (len(plugin.Commands) > 0)
-type PluginListItem struct {
-	Name        string `json:"name"`
-	Category    string `json:"category"`
-	URL         string `json:"url"`
-	Description string `json:"description"`
-	Importer    bool   `json:"importer"`
-	Reporter    bool   `json:"reporter"`
-	Runnable    bool   `json:"runnable"`
-}
+type PluginListItem g3model.PluginListItem
 
 type ReqCheckScriptSyntax struct {
 	Script string               `json:"script"              validate:"required"`

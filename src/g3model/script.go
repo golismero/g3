@@ -353,13 +353,13 @@ func ParseScript(script string) (ParsedScript, error) {
 }
 
 // Parse each target string and generate a corresponding JSON array.
-func BuildTargets(arguments []string) ([]G3Data, error) {
+func BuildTargets(arguments []string) ([]Data, error) {
 	var err error
-	jsonArray := []G3Data{}
+	jsonArray := []Data{}
 	timestamp := time.Now().Unix()
 	knownFingerprints := StringSet{}
 	for _, target := range arguments {
-		data := G3Data{}
+		data := Data{}
 		data["_tool"] = "g3"
 		data["_start"] = timestamp
 		data["_end"] = timestamp
@@ -372,11 +372,11 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			ip, err := netip.ParseAddr(target)
 			if err != nil {
 				err = errors.New("bad IPv6 address: " + target)
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 			if ip.IsLoopback() {
 				err = errors.New("loopback IPv6 address not allowed: " + target)
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 			target = ip.String()
 			data["_type"] = "host"
@@ -385,11 +385,11 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			ip := net.ParseIP(target)
 			if ip == nil {
 				err = errors.New("bad IPv4 address: " + target)
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 			if ip.IsLoopback() {
 				err = errors.New("loopback IPv4 address not allowed: " + target)
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 			target = ip.String()
 			data["_type"] = "host"
@@ -403,11 +403,11 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 			ip := net.ParseIP(ipstr)
 			if ip == nil {
 				err = errors.New("bad IP address range: " + target)
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 			if ip.IsLoopback() {
 				err = errors.New("loopback IP address range not allowed: " + target)
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 			data["_type"] = "cidr"
 			if govalidator.IsIPv6(ipstr) {
@@ -416,18 +416,18 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 				data["ipv4"] = target
 			} else {
 				err = errors.New("internal error")
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 
 		// URLs get turned into "url". The resulting URL must be canonicalized.
 		} else if url, err := url.Parse(target); err == nil && url.Host != "" && url.Scheme != "file" && url.Path != "*" {
 			if url.Hostname() == "localhost" {
 				err = errors.New("localhost domain not allowed: " + target)
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 			if ip := net.ParseIP(url.Hostname()); ip != nil && ip.IsLoopback() {
 				err = errors.New("loopback IP address range not allowed: " + target)
-				return []G3Data{}, err
+				return []Data{}, err
 			}
 			if url.Scheme == "" {
 				url.Scheme = "https"
@@ -488,7 +488,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 		// We're intentionally not allowing local hostnames (without a dot).
 		} else if target == "localhost" {
 			err = errors.New("localhost domain not allowed: " + target)
-			return []G3Data{}, err
+			return []Data{}, err
 		} else if govalidator.IsDNSName(target) && strings.Contains(target, ".") {
 			data["_type"] = "domain"
 			data["domain"] = target
@@ -496,7 +496,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 		// If we got here, we could not figure out what it was. :(
 		} else {
 			err = errors.New("unknown target type: " + target)
-			return []G3Data{}, err
+			return []Data{}, err
 		}
 
 		// Generate the fingerprint and check for duplicates.
@@ -517,7 +517,7 @@ func BuildTargets(arguments []string) ([]G3Data, error) {
 
 		// Sanity check.
 		if err = data.Validate(); err != nil {
-			return []G3Data{}, err
+			return []Data{}, err
 		}
 
 		// Add the parsed object into the output array.

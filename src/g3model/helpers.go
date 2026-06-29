@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"sync"
 
 	"github.com/go-playground/validator/v10"
@@ -14,9 +16,45 @@ import (
 // Global validator cache.
 var Validate *validator.Validate = validator.New(validator.WithRequiredStructEnabled())
 
+// Custom validators for Golismero stuff.
+func init() {
+	Validate.RegisterAlias("g3type", "alpha,lowercase,min=3")
+	re_g3name := regexp.MustCompile(`^[a-z][a-z0-9_\\-]+$`)
+	Validate.RegisterValidation("g3name", func(fl validator.FieldLevel) bool {
+			return re_g3name.Match([]byte(fl.Field().String()))
+		})
+	re_is_paragraph := regexp.MustCompile(`^[^\r\n]+$`)
+	Validate.RegisterValidation("is_paragraph", func(fl validator.FieldLevel) bool {
+			return re_is_paragraph.Match([]byte(fl.Field().String()))
+		})
+}
+
+// Validates pointer whether it points to a struct or to a slice/array.
+// Collections are validated element-by-element via "dive".
+func ValidateValue(pointer any) error {
+	val := reflect.ValueOf(pointer)
+
+	// Follow pointer(s) down to the underlying value.
+	for val.Kind() == reflect.Pointer {
+		if val.IsNil() {
+			return fmt.Errorf("validate: nil pointer")
+		}
+		val = val.Elem()
+	}
+
+	switch val.Kind() {
+	case reflect.Slice, reflect.Array:
+		// Pass the dereferenced collection (not the pointer) so dive works.
+		return Validate.Var(val.Interface(), "dive")
+	default:
+		// Struct — and anything else — goes through Struct.
+		return Validate.Struct(pointer)
+	}
+}
+
 // Validate struct and marshal to JSON.
 func EncodeJSON(pointer any) ([]byte, error) {
-	err := Validate.Struct(pointer)
+	err := ValidateValue(pointer)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -29,7 +67,7 @@ func DecodeJSON(data []byte, pointer any) error {
 	if err != nil {
 		return err
 	}
-	return Validate.Struct(pointer)
+	return ValidateValue(pointer)
 }
 
 // shellCompletionSnippets are the registration lines a user adds to their

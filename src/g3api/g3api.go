@@ -24,6 +24,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/golismero/g3/src/g3lib"
+	"github.com/golismero/g3/src/g3model"
 	log "github.com/golismero/g3/src/g3log"
 )
 
@@ -484,13 +485,13 @@ func Main() int {
 
 			// Add the targets to the database.
 			if len(parsed.Targets) > 0 {
-				targetData, err := g3lib.BuildTargets(parsed.Targets)
+				targetData, err := g3model.BuildTargets(parsed.Targets)
 				if err != nil {
 					log.Error(err)
 					g3lib.SendApiError(w, http.StatusBadRequest, "Runtime error in script: "+err.Error())
 					return
 				}
-				_, err = g3lib.SaveData(mdb_client, scanID, g3lib.NIL_TASKID, targetData)
+				_, err = g3lib.SaveData(mdb_client, scanID, "", targetData)
 				if err != nil {
 					log.Error(err)
 					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
@@ -604,7 +605,7 @@ func Main() int {
 				return
 			}
 
-			targetData, err := g3lib.BuildTargets(request.Targets)
+			targetData, err := g3model.BuildTargets(request.Targets)
 			if err != nil {
 				log.Error(err)
 				g3lib.SendApiError(w, http.StatusBadRequest, "Invalid target: "+err.Error())
@@ -622,9 +623,9 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Insert raw G3Data objects into a managed scan. Each object is validated
-		// server-side via IsValidData; malformed objects are rejected with 400
-		// before any write occurs. Returns the inserted Mongo IDs.
+		// Insert raw Data objects into a managed scan. Each object is validated
+		// server-side; malformed objects are rejected with 400 before any write occurs.
+		// Returns the inserted Mongo IDs.
 		http.HandleFunc(apiPath+"/scan/data/insert", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/data/insert")
 			var request g3lib.ReqInsertData
@@ -639,7 +640,7 @@ func Main() int {
 			}
 
 			for i, obj := range request.Data {
-				if _, err := g3lib.IsValidData(obj); err != nil {
+				if err := obj.Validate(); err != nil {
 					log.Error(err)
 					g3lib.SendApiError(w, http.StatusBadRequest, fmt.Sprintf("Invalid data at index %d: %s", i, err.Error()))
 					return
@@ -1326,7 +1327,7 @@ func Main() int {
 			// Get the requested data objects. When taskid is set, the call is
 			// "fetch the output of one specific task"; otherwise it's by ID
 			// list (or all data when the list is empty).
-			var data []g3lib.G3Data
+			var data []g3model.Data
 			if request.TaskID != "" {
 				data, err = g3lib.LoadDataByTask(mdb_client, request.ScanID, request.TaskID)
 			} else {
@@ -1366,17 +1367,19 @@ func Main() int {
 			// capability flags (importer/reporter/runnable). A plugin may
 			// expose any combination, so consumers filter on the booleans
 			// rather than inferring capability from the name or category.
-			var pluginList []g3lib.PluginListItem
+			var pluginList []g3model.PluginListItem
 			for _, name := range pluginNames {
 				plugin := plugins[name]
-				pluginList = append(pluginList, g3lib.PluginListItem{
-					Name:        plugin.Name,
-					Category:    plugin.Category,
-					URL:         plugin.URL,
-					Description: plugin.Description,
-					Importer:    plugin.Importer != nil,
-					Reporter:    plugin.Reporter != nil,
-					Runnable:    len(plugin.Commands) > 0,
+				pluginList = append(pluginList, g3model.PluginListItem{
+					PluginDescription: g3model.PluginDescription{
+						Name:        plugin.Name,
+						Category:    plugin.Category,
+						URL:         plugin.URL,
+						Description: plugin.Description,
+					},
+					IsImporter:  plugin.Importer != nil,
+					IsReporter:  plugin.Reporter != nil,
+					IsRunnable:  len(plugin.Commands) > 0,
 				})
 			}
 

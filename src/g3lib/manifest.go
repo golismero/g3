@@ -13,18 +13,12 @@ import (
 	"github.com/golismero/g3/src/g3model"
 )
 
-// Re-export g3model stuff.
-const ManifestFilename = g3model.ManifestFilename
-type G3ManifestFile = g3model.ManifestFile
-type G3ManifestWork = g3model.ManifestWork
-type G3Manifest = g3model.Manifest
-
 // ManifestTool derives the canonical tool name for the manifest's root `tool`
-// field. It prefers the _tool the plugin stamped onto its first emitted G3Data
+// field. It prefers the _tool the plugin stamped onto its first emitted Data
 // (g3lib's runPluginInternal injects this for every object, including the dummy
 // object it appends when the plugin emitted nothing) and falls back to the g3
 // plugin name when the output array is unexpectedly empty.
-func ManifestTool(outputArray []G3Data, plugin G3Plugin) string {
+func ManifestTool(outputArray []g3model.Data, plugin G3Plugin) string {
 	if len(outputArray) > 0 {
 		if t, ok := outputArray[0]["_tool"].(string); ok && t != "" {
 			return t
@@ -33,14 +27,14 @@ func ManifestTool(outputArray []G3Data, plugin G3Plugin) string {
 	return plugin.Name
 }
 
-// EnumerateSlot lists every regular file in slotDir, returning a G3ManifestFile
+// EnumerateSlot lists every regular file in slotDir, returning a ManifestFile
 // per entry. Subdirectories and the manifest file itself are excluded.
-func EnumerateSlot(slotDir string) ([]G3ManifestFile, error) {
+func EnumerateSlot(slotDir string) ([]g3model.ManifestFile, error) {
 	entries, err := os.ReadDir(slotDir)
 	if err != nil {
 		return nil, err
 	}
-	files := []G3ManifestFile{}
+	files := []g3model.ManifestFile{}
 	for _, entry := range entries {
 		// Skip subdirectories (no recursion — see TODO), the manifest itself,
 		// and any non-regular entries. Filtering to regular files defends
@@ -49,14 +43,14 @@ func EnumerateSlot(slotDir string) ([]G3ManifestFile, error) {
 		// TODO: subdirectories a plugin creates are not recursed into; only
 		// top-level files in the slot are listed. Revisit if a plugin ever
 		// needs a nested artifact layout.
-		if !entry.Type().IsRegular() || entry.Name() == ManifestFilename {
+		if !entry.Type().IsRegular() || entry.Name() == g3model.ManifestFilename {
 			continue
 		}
 		info, err := entry.Info()
 		if err != nil {
 			return nil, err
 		}
-		files = append(files, G3ManifestFile{
+		files = append(files, g3model.ManifestFile{
 			Name:     entry.Name(),
 			Size:     info.Size(),
 			Modified: info.ModTime().Unix(),
@@ -72,7 +66,7 @@ func EnumerateSlot(slotDir string) ([]G3ManifestFile, error) {
 // manifest's exit_status field otherwise. The first failure short-circuits the
 // scan — once a plugin has emitted one bad claim, the diagnostic value of
 // piling on more is limited.
-func ValidateArtifactClaims(outputArray []G3Data, files []G3ManifestFile) error {
+func ValidateArtifactClaims(outputArray []g3model.Data, files []g3model.ManifestFile) error {
 	present := make(map[string]struct{}, len(files))
 	for _, f := range files {
 		present[f.Name] = struct{}{}
@@ -101,20 +95,20 @@ func ValidateArtifactClaims(outputArray []G3Data, files []G3ManifestFile) error 
 }
 
 // BuildManifestWork groups outputArray by _cmd and unions per-group _artifacts
-// into a single G3ManifestWork entry per unique command. Output order follows
+// into a single ManifestWork entry per unique command. Output order follows
 // first-occurrence of each unique _cmd in outputArray. Callers are expected to
 // have already run ValidateArtifactClaims (or otherwise accepted that malformed
 // _artifacts shapes will be silently ignored here — ValidateArtifactClaims is
 // the loud guard).
-func BuildManifestWork(outputArray []G3Data) []G3ManifestWork {
-	work := []G3ManifestWork{}
+func BuildManifestWork(outputArray []g3model.Data) []g3model.ManifestWork {
+	work := []g3model.ManifestWork{}
 	indexByCmd := map[string]int{}
 	for _, data := range outputArray {
 		cmd, _ := data["_cmd"].(string)
 		idx, exists := indexByCmd[cmd]
 		if !exists {
 			idx = len(work)
-			work = append(work, G3ManifestWork{Cmd: cmd, Artifacts: []string{}})
+			work = append(work, g3model.ManifestWork{Cmd: cmd, Artifacts: []string{}})
 			indexByCmd[cmd] = idx
 		}
 		raw, hasArtifacts := data["_artifacts"]
@@ -141,12 +135,12 @@ func BuildManifestWork(outputArray []G3Data) []G3ManifestWork {
 // WriteManifest marshals m as indented JSON and writes it to slotDir/manifest.json.
 // The caller is responsible for populating every field (including Files and
 // Work). This function does no enumeration or validation.
-func WriteManifest(slotDir string, m G3Manifest) error {
+func WriteManifest(slotDir string, m g3model.Manifest) error {
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(slotDir, ManifestFilename), data, 0o644)
+	return os.WriteFile(filepath.Join(slotDir, g3model.ManifestFilename), data, 0o644)
 }
 
 // CreateEphemeralArtifactSlot creates an isolated, transient slot directory

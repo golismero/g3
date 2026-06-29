@@ -1,22 +1,20 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-jsonnet"
 	"github.com/spf13/pflag"
 
 	"github.com/golismero/g3/src/g3lib"
+	"github.com/golismero/g3/src/g3model"
 	log "github.com/golismero/g3/src/g3log"
 )
 
@@ -50,17 +48,8 @@ func main() {
 	// Metadata caches.
 	pluginsMetadataFile := filepath.Join(g3home, g3lib.G3CONFIG, g3lib.G3PLUGINS)
 
-	// Initialize the validator.
-	var validate = validator.New()
-
 	// Initialize the Jsonnet parser.
 	vm := jsonnet.MakeVM()
-
-	// This regular expression will validate plugin names.
-	re := regexp.MustCompile(`^[a-zA-Z0-9_\-]*$`)
-
-	// This regular expression will validate data types.
-	re_type := regexp.MustCompile(`^[a-z]+$`)
 
 	// We'll be storing each plugin name and its metadata here.
 	plugins := g3lib.G3PluginMetadata{}
@@ -101,20 +90,13 @@ func main() {
 		// Parse the JSON data again as a struct since that's what we'll use internally.
 		bytes := []byte(jsonStr)
 		metadata := g3lib.G3Plugin{}
-		err = json.Unmarshal(bytes, &metadata)
+		err = g3model.DecodeJSON(bytes, &metadata)
 		if err != nil {
 			return err
 		}
 
 		// Validate the JSON data.
-		err = validate.Struct(metadata)
-		if err != nil {
-			return err
-		}
 		if metadata.Importer != nil {
-			if metadata.Importer.Returns != "" && !re_type.MatchString(metadata.Importer.Returns) {
-				return errors.New("ERROR! Invalid return data type for importer: " + metadata.Importer.Returns)
-			}
 			for _, tpl := range metadata.Importer.Fingerprint {
 				_, err = g3lib.BuildTemplate(tpl)
 				if err != nil {
@@ -123,9 +105,6 @@ func main() {
 			}
 		}
 		for cmdidx, cmd := range metadata.Commands {
-			if cmd.Returns != "" && !re_type.MatchString(cmd.Returns) {
-				return fmt.Errorf("ERROR! Invalid return data type for command %d: %s", cmdidx, cmd.Returns)
-			}
 			_, err = g3lib.BuildTemplate(cmd.Condition)
 			if err != nil {
 				return fmt.Errorf("ERROR! Cannot parse command %d condition: %s", cmdidx, err.Error())
@@ -147,10 +126,7 @@ func main() {
 		// Validate the reporter phase if present.
 		if metadata.Reporter != nil {
 			seen := map[string]struct{}{}
-			for cmdidx, cmd := range metadata.Reporter.Commands {
-				if !re.MatchString(cmd.Name) {
-					return fmt.Errorf("ERROR! Invalid reporter command name at index %d: %s", cmdidx, cmd.Name)
-				}
+			for _, cmd := range metadata.Reporter.Commands {
 				if _, dup := seen[cmd.Name]; dup {
 					return fmt.Errorf("ERROR! Duplicated reporter command name: %s", cmd.Name)
 				}
@@ -168,11 +144,6 @@ func main() {
 			name := filepath.Base(path)
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 			metadata.Name = name
-		}
-
-		// Validate the plugin name.
-		if metadata.Name == "g3" || !re.MatchString(metadata.Name) {
-			return errors.New("ERROR! Invalid plugin name: " + metadata.Name)
 		}
 
 		// Make sure we don't have any duplicates.
@@ -207,7 +178,6 @@ func main() {
 		}
 
 		// Validate the existence of the Docker image, either local or remote.
-		// FIXME: use docker client libraries instead of an external command
 		if metadata.Image == "" || metadata.Image[0:1] == "-" {
 			return errors.New("ERROR! Invalid Docker image: " + metadata.Image)
 		}
@@ -243,9 +213,9 @@ func main() {
 	}
 
 	// Store the plugins metadata in JSON format.
-	jsonBytes, err := json.Marshal(plugins)
+	jsonBytes, err := g3model.EncodeJSON(plugins)
 	if err != nil {
-		log.Error("Error writing to file " + relPluginsMetadataFile + ": " + err.Error())
+		log.Error("Encoding error writing to file " + relPluginsMetadataFile + ": " + err.Error())
 		os.Exit(1)
 	}
 	err = os.WriteFile(pluginsMetadataFile, jsonBytes, 0644)

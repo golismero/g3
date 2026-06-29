@@ -13,6 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+
+	"github.com/golismero/g3/src/g3model"
 )
 
 const MONGO_URL = "MONGO_URL"
@@ -21,7 +23,7 @@ type DatastoreClient struct {
 	c *mongo.Client
 }
 
-type LoadDataCallback func(G3Data)(error)
+type LoadDataCallback func(g3model.Data)(error)
 
 // Connect to the Mongo database and ping it to ensure the connection was successful.
 // Without running at least one command, merely creating the client does not ensure a connection.
@@ -62,8 +64,8 @@ func EnumerateScans(dbclient DatastoreClient) ([]string, error) {
 }
 
 // Load a single G3 object from the database.
-func LoadOne(dbclient DatastoreClient, scanid string, dataid string) (G3Data, error) {
-	var data G3Data
+func LoadOne(dbclient DatastoreClient, scanid string, dataid string) (g3model.Data, error) {
+	var data g3model.Data
 	dataList, err := LoadData(dbclient, scanid, []string{dataid})
 	if err == nil {
 		if len(dataList) == 1 {
@@ -76,8 +78,8 @@ func LoadOne(dbclient DatastoreClient, scanid string, dataid string) (G3Data, er
 }
 
 // Load an array of G3 objects from the database.
-func LoadData(dbclient DatastoreClient, scanid string, dataIds []string) ([]G3Data, error) {
-	var jsonArray []G3Data
+func LoadData(dbclient DatastoreClient, scanid string, dataIds []string) ([]g3model.Data, error) {
+	var jsonArray []g3model.Data
 
 	// Prepare the database query.
 	// If we have a list of IDs, filter by the _id property.
@@ -96,7 +98,7 @@ func LoadData(dbclient DatastoreClient, scanid string, dataIds []string) ([]G3Da
 	}
 
 	// Fetch the data.
-	err := LoadDataWithCallback(dbclient, scanid, query, func(data G3Data)(error) {
+	err := LoadDataWithCallback(dbclient, scanid, query, func(data g3model.Data)(error) {
 		jsonArray = append(jsonArray, data)
 		return nil
 	})
@@ -106,7 +108,7 @@ func LoadData(dbclient DatastoreClient, scanid string, dataIds []string) ([]G3Da
 // Get all data IDs for a given scan.
 func GetScanDataIDs(dbclient DatastoreClient, scanid string) ([]string, error) {
 	var idArray []string
-	err := LoadDataWithCallback(dbclient, scanid, bson.M{}, func(data G3Data)(error) {
+	err := LoadDataWithCallback(dbclient, scanid, bson.M{}, func(data g3model.Data)(error) {
 		dataid, ok := data["_id"]
 		if !ok {
 			return errors.New("internal error")
@@ -118,10 +120,10 @@ func GetScanDataIDs(dbclient DatastoreClient, scanid string) ([]string, error) {
 }
 
 // Fetch data that matches a specific fingerprint.
-func LoadFingerprintMatches(dbclient DatastoreClient, scanid string, fingerprints []string) ([]G3Data, error) {
+func LoadFingerprintMatches(dbclient DatastoreClient, scanid string, fingerprints []string) ([]g3model.Data, error) {
 	query := bson.M{"_fp": bson.M{"$in": fingerprints}}
-	var jsonArray []G3Data
-	err := LoadDataWithCallback(dbclient, scanid, query, func(data G3Data)(error) {
+	var jsonArray []g3model.Data
+	err := LoadDataWithCallback(dbclient, scanid, query, func(data g3model.Data)(error) {
 		jsonArray = append(jsonArray, data)
 		return nil
 	})
@@ -129,10 +131,10 @@ func LoadFingerprintMatches(dbclient DatastoreClient, scanid string, fingerprint
 }
 
 // Fetch all data objects produced by a specific task within a scan.
-func LoadDataByTask(dbclient DatastoreClient, scanid, taskid string) ([]G3Data, error) {
+func LoadDataByTask(dbclient DatastoreClient, scanid, taskid string) ([]g3model.Data, error) {
 	query := bson.M{"_taskid": taskid}
-	var jsonArray []G3Data
-	err := LoadDataWithCallback(dbclient, scanid, query, func(data G3Data)(error) {
+	var jsonArray []g3model.Data
+	err := LoadDataWithCallback(dbclient, scanid, query, func(data g3model.Data)(error) {
 		jsonArray = append(jsonArray, data)
 		return nil
 	})
@@ -143,7 +145,7 @@ func LoadDataByTask(dbclient DatastoreClient, scanid, taskid string) ([]G3Data, 
 func GetFingerprintMatchesIDs(dbclient DatastoreClient, scanid string, fingerprints []string) ([]string, error) {
 	query := bson.M{"_fp": bson.M{"$in": fingerprints}}
 	var idArray []string
-	err := LoadDataWithCallback(dbclient, scanid, query, func(data G3Data)(error) {
+	err := LoadDataWithCallback(dbclient, scanid, query, func(data g3model.Data)(error) {
 		idArray = append(idArray, data["_id"].(string))
 		return nil
 	})
@@ -151,15 +153,15 @@ func GetFingerprintMatchesIDs(dbclient DatastoreClient, scanid string, fingerpri
 }
 
 // Fetch issues that match a specific plugin.
-func LoadIssues(dbclient DatastoreClient, scanid, tool string) ([]G3Data, error) {
+func LoadIssues(dbclient DatastoreClient, scanid, tool string) ([]g3model.Data, error) {
 	query := bson.M{
 		"$and": []bson.M{
 			{"_type": "issue"},
 			{"_tool": tool},
 		},
 	}
-	var jsonArray []G3Data
-	err := LoadDataWithCallback(dbclient, scanid, query, func(data G3Data)(error) {
+	var jsonArray []g3model.Data
+	err := LoadDataWithCallback(dbclient, scanid, query, func(data g3model.Data)(error) {
 		jsonArray = append(jsonArray, data)
 		return nil
 	})
@@ -180,7 +182,7 @@ func GetIssueIDs(dbclient DatastoreClient, scanid, tool string) ([]string, error
 		}
 	}
 	var idArray []string
-	err := LoadDataWithCallback(dbclient, scanid, query, func(data G3Data)(error) {
+	err := LoadDataWithCallback(dbclient, scanid, query, func(data g3model.Data)(error) {
 		idArray = append(idArray, data["_id"].(string))
 		return nil
 	})
@@ -189,8 +191,8 @@ func GetIssueIDs(dbclient DatastoreClient, scanid, tool string) ([]string, error
 
 // Fetch the list of tools that were used in a scan.
 func GetScanTools(dbclient DatastoreClient, scanid string) ([]string, error) {
-	tools := make(StringSet)
-	err := LoadDataWithCallback(dbclient, scanid, bson.M{}, func(data G3Data)(error) {
+	tools := make(g3model.StringSet)
+	err := LoadDataWithCallback(dbclient, scanid, bson.M{}, func(data g3model.Data)(error) {
 		name, ok := data["_tool"]
 		if ok && name.(string) != "g3" {
 			tools.Add(name.(string))
@@ -204,8 +206,8 @@ func GetScanTools(dbclient DatastoreClient, scanid string) ([]string, error) {
 
 // Fetch the list of tools that reported issues in a scan.
 func GetScanIssueTools(dbclient DatastoreClient, scanid string) ([]string, error) {
-	tools := make(StringSet)
-	err := LoadDataWithCallback(dbclient, scanid, bson.M{"_type": "issue"}, func(data G3Data)(error) {
+	tools := make(g3model.StringSet)
+	err := LoadDataWithCallback(dbclient, scanid, bson.M{"_type": "issue"}, func(data g3model.Data)(error) {
 		name, ok := data["_tool"]
 		if ok && name.(string) != "g3" {
 			tools.Add(name.(string))
@@ -247,7 +249,7 @@ func LoadDataWithCallback(dbclient DatastoreClient, scanid string, query bson.M,
 			err = e
 			continue
 		}
-		var data G3Data
+		var data g3model.Data
 		e = json.Unmarshal(bsonBytes, &data)
 		if e != nil {
 			err = e
@@ -264,7 +266,7 @@ func LoadDataWithCallback(dbclient DatastoreClient, scanid string, query bson.M,
 }
 
 // Save an array of G3 objects into the database.
-func SaveData(dbclient DatastoreClient, scanid, taskid string, outputArray []G3Data) ([]string, error) {
+func SaveData(dbclient DatastoreClient, scanid, taskid string, outputArray []g3model.Data) ([]string, error) {
 	client := dbclient.c
 
 	// We will return a list of MongoDB IDs, one for each object stored in the database.
@@ -344,9 +346,9 @@ func DropScanData(dbclient DatastoreClient, scanid string) error {
 // as a JSON Lines stream, in the strict order documented by the reporter
 // plugin contract:
 //
-//   Line 1:        the G3ScanMetadata (deduped issue ID list)
-//   Lines 2..K:    the issue G3Data objects, in G3ScanMetadata.Issues order
-//   Lines K+1..N:  every other G3Data object in the scan
+//   Line 1:        the ScanMetadata (containing deduped issue ID list)
+//   Lines 2..K:    the issue Data objects, in ScanMetadata.Issues order
+//   Lines K+1..N:  every other Data object in the scan
 //   EOF
 //
 // A goroutine writes to an io.Pipe; the worker passes the reader half to
@@ -379,10 +381,10 @@ func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string
 
 		enc := json.NewEncoder(pw)
 
-		// Line 1: G3ScanMetadata.
+		// Line 1: ScanMetadata.
 		report, err := LoadScanMetadata(rdb, scanid)
 		if err != nil {
-			encodeErr = fmt.Errorf("ReporterStdinStream: load G3ScanMetadata for %s: %w", scanid, err)
+			encodeErr = fmt.Errorf("ReporterStdinStream: load ScanMetadata for %s: %w", scanid, err)
 			return
 		}
 		if err := enc.Encode(report); err != nil {
@@ -390,7 +392,7 @@ func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string
 			return
 		}
 
-		// Lines 2..K: the deduped issue G3Data objects, in report.Issues order.
+		// Lines 2..K: the deduped issue Data objects, in report.Issues order.
 		// LoadData uses MongoDB $in, which doesn't preserve input order, so we
 		// reorder here to honor the spec contract on stdin ordering.
 		if len(report.Issues) > 0 {
@@ -399,7 +401,7 @@ func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string
 				encodeErr = fmt.Errorf("ReporterStdinStream: load issues for %s: %w", scanid, err)
 				return
 			}
-			byID := make(map[string]G3Data, len(issues))
+			byID := make(map[string]g3model.Data, len(issues))
 			for _, issue := range issues {
 				if id, ok := issue["_id"].(string); ok {
 					byID[id] = issue
@@ -437,7 +439,7 @@ func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string
 		// LoadDataWithCallback iterates a cursor. Callback returning a non-nil
 		// error stops the iteration immediately — that's the EPIPE backpressure
 		// channel for "reader closed stdin, stop streaming".
-		err = LoadDataWithCallback(mdb, scanid, query, func(data G3Data) error {
+		err = LoadDataWithCallback(mdb, scanid, query, func(data g3model.Data) error {
 			return enc.Encode(data)
 		})
 		if err != nil && err != io.ErrClosedPipe {

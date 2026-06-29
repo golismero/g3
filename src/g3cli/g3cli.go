@@ -22,6 +22,7 @@ import (
 
 	"github.com/golismero/g3/src/g3lib"
 	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3model"
 )
 
 const G3_API_BASEURL = "G3_API_BASEURL"
@@ -98,7 +99,7 @@ type CompletionsCmd struct {
 }
 
 func (c *CompletionsCmd) Run() error {
-	return g3lib.EmitShellCompletion(c.Shell, "g3cli", os.Stdout)
+	return g3model.EmitShellCompletion(c.Shell, "g3cli", os.Stdout)
 }
 
 var CLI struct {

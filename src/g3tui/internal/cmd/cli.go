@@ -14,7 +14,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/willabides/kongplete"
 
-	"github.com/golismero/g3/src/g3lib"
+	"github.com/golismero/g3/src/g3model"
 )
 
 // Version is set by Execute (which receives it from main.go's ldflags-stamped
@@ -150,5 +150,5 @@ type CompletionsCmd struct {
 
 func (c *CompletionsCmd) Run(kctx *kong.Context) error {
 	_ = kctx
-	return g3lib.EmitShellCompletion(c.Shell, "g3tui", os.Stdout)
+	return g3model.EmitShellCompletion(c.Shell, "g3tui", os.Stdout)
 }

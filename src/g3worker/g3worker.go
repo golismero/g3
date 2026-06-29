@@ -18,6 +18,7 @@ import (
 
 	"github.com/golismero/g3/src/g3lib"
 	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3model"
 )
 
 // Environment variable with the list of enabled plugins for a given worker.
@@ -738,23 +739,19 @@ func main() {
 		manifestFiles, enumErr := g3lib.EnumerateSlot(slotDir)
 		if enumErr != nil {
 			log.Error("Cannot enumerate artifact slot " + slotDir + ": " + enumErr.Error())
-			manifestFiles = []g3lib.G3ManifestFile{}
+			manifestFiles = []g3model.ManifestFile{}
 		}
 
 		// Validate plugin output; drop invalid objects, mirroring each reject
 		// into the user-visible task log as a [g3:warn] line (tagged by tool so
 		// a user can grep one tool's warnings across tasks).
-		sanitizedOutput := []g3lib.G3Data{}
+		sanitizedOutput := []g3model.Data{}
 		for _, d := range outputArray {
-			ok, verr := g3lib.IsValidData(d)
-			if !ok {
-				reason := ""
-				if verr != nil {
-					reason = ": " + verr.Error()
-				}
-				log.Error("Malformed output data" + reason + "\n" + d.String())
+			verr := d.Validate()
+			if verr != nil {
+				log.Error("Malformed output data: " + verr.Error() + "\n" + d.String())
 				if e := g3lib.SaveLogLine(sql_db, task.ScanID, task.TaskID,
-					"[g3:warn] tool="+task.Tool+" dropped malformed object"+reason); e != nil {
+					"[g3:warn] tool="+task.Tool+" dropped malformed object: "+ verr.Error()); e != nil {
 					log.Error(e.Error())
 				}
 			} else {
@@ -766,8 +763,8 @@ func main() {
 		// Partition into actionable (non-nil) and nil placeholders. Nils never
 		// count as pipeline fuel; a non-canceled empty result keeps exactly one
 		// nil to seed the scanner's negative-result cache.
-		actionable := []g3lib.G3Data{}
-		nils := []g3lib.G3Data{}
+		actionable := []g3model.Data{}
+		nils := []g3model.Data{}
 		for _, d := range sanitizedOutput {
 			if t, _ := d["_type"].(string); t == "nil" {
 				nils = append(nils, d)
@@ -783,7 +780,7 @@ func main() {
 		// so those are claimed (validated + recorded in the manifest's work[]),
 		// not treated as orphans. Fuel/persistence below still keys off
 		// actionable alone; a nil stays a nil for the scanner.
-		claimants := make([]g3lib.G3Data, 0, len(actionable)+len(nils))
+		claimants := make([]g3model.Data, 0, len(actionable)+len(nils))
 		claimants = append(claimants, actionable...)
 		for _, d := range nils {
 			if _, ok := d["_artifacts"]; ok {
@@ -791,7 +788,7 @@ func main() {
 			}
 		}
 
-		var toPersist []g3lib.G3Data
+		var toPersist []g3model.Data
 		switch {
 		case len(actionable) > 0:
 			if len(nils) > 0 {
@@ -831,7 +828,7 @@ func main() {
 		}
 
 		// Write the manifest; exit_status mirrors the verdict.
-		manifestWriteErr := g3lib.WriteManifest(slotDir, g3lib.G3Manifest{
+		manifestWriteErr := g3lib.WriteManifest(slotDir, g3model.Manifest{
 			ScanID:     task.ScanID,
 			TaskID:     task.TaskID,
 			Plugin:     plugin.Name,
@@ -862,7 +859,7 @@ func main() {
 		// the task, so the list of object IDs is lost. This will be fixed soon. For
 		// now, the managed scan's response is partially reconstructed from db queries,
 		// so re-emitted objects are dropped - a known gap.
-		newobjs := make([]g3lib.G3Data, 0, len(toPersist))
+		newobjs := make([]g3model.Data, 0, len(toPersist))
 		for _, d := range toPersist {
 			if _, ok := d["_id"]; !ok {
 				newobjs = append(newobjs, d)
@@ -873,7 +870,7 @@ func main() {
 				log.Error("Error saving data to MongoDB: " + e.Error())
 			}
 		}
-		persistentOutput := []g3lib.G3Data{}
+		persistentOutput := []g3model.Data{}
 		for _, d := range toPersist {
 			if _, ok := d["_id"]; ok {
 				persistentOutput = append(persistentOutput, d)

@@ -30,18 +30,18 @@ import (
 //                          task manifest. Absent / empty / partial is allowed.
 //                          Claimed-but-missing files cause a loud task ERROR.
 //
-type G3Data map[string]interface{}
+type Data map[string]interface{}
 
-func (data G3Data) String() string {
+func (data Data) String() string {
 	jsonBytes, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		return "<invalid G3Data object>"
+		return "<invalid Data object>"
 	}
 	return string(jsonBytes)
 }
 
 // Very rudimentary data integrity check.
-func (data G3Data) Validate() error {
+func (data Data) Validate() error {
 
 	// This ensures if a panic happens here we can recover and return false.
 	defer func() { recover() }() //nolint:errcheck

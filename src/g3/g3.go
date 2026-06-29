@@ -19,6 +19,7 @@ import (
 
 	"github.com/golismero/g3/src/g3lib"
 	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3model"
 )
 
 type InputCmd struct {
@@ -100,7 +101,7 @@ type CompletionsCmd struct {
 }
 
 func (c *CompletionsCmd) Run() error {
-	return g3lib.EmitShellCompletion(c.Shell, "g3", os.Stdout)
+	return g3model.EmitShellCompletion(c.Shell, "g3", os.Stdout)
 }
 
 var CLI struct {
@@ -290,9 +291,9 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 			"--------------------------------------------------------------------------------\n")
 
 	// Build the target objects.
-	var targetData []g3lib.G3Data
+	var targetData []g3model.Data
 	if len(parsed.Targets) > 0 {
-		targetData, err = g3lib.BuildTargets(parsed.Targets)
+		targetData, err = g3model.BuildTargets(parsed.Targets)
 		if err != nil {
 			log.Critical(err)
 			return err
@@ -402,7 +403,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 				}
 
 				// Here we will collect all the new data for this pipeline step.
-				var newData []g3lib.G3Data
+				var newData []g3model.Data
 
 				// Iterate over the data in the current pipeline.
 				for _, data := range currentData {
@@ -445,7 +446,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 
 						// If we have data matching this fingerprint,
 						// use it instead of calling the plugin.
-						var pastData []g3lib.G3Data
+						var pastData []g3model.Data
 						for _, tmp := range outputData {
 							tmp1, ok := tmp["_fp"]
 							if !ok {
@@ -543,7 +544,7 @@ func (cmd *TargetCmd) Run(ctx CmdContext) error {
 	}
 
 	// Parse each target string and generate a corresponding JSON array.
-	jsonArray, err := g3lib.BuildTargets(arguments)
+	jsonArray, err := g3model.BuildTargets(arguments)
 	if err != nil {
 		return err
 	}
@@ -628,7 +629,7 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 	}
 
 	// Get all the past commands so we know we're not repeating any test.
-	knownFingerprints := g3lib.StringSet{}
+	knownFingerprints := g3model.StringSet{}
 	for _, data := range inputJson {
 		for _, fp := range data["_fp"].([]interface{}) {
 			knownFingerprints.Add(fp.(string))
@@ -637,7 +638,7 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 
 	// We're going to iterate over every selected plugin to see if we
 	// can execute it with each of the objects in the input data.
-	totalOutput := []g3lib.G3Data{}
+	totalOutput := []g3model.Data{}
 	for _, plugin := range tools {
 		for _, data := range inputJson {
 			for index := 0; index < len(plugin.Commands); index++ {
@@ -704,17 +705,14 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 
 				// Validate the plugin output.
 				for _, data := range outputArray {
-					if ok, err := g3lib.IsValidData(data); !ok {
+					if err := data.Validate(); err != nil {
 						jsonBytes, err2 := json.MarshalIndent(data, "", "  ")
 						if err2 != nil {
-							log.Critical("Internal error!" + err.Error())
-						}
-						if err != nil {
 							log.Critical("Malformed output data: " + err.Error() + "\n" + string(jsonBytes))
 							return err
 						}
-						log.Critical("Malformed output data:\n" + string(jsonBytes))
-						return errors.New("Malformed output data:\n" + string(jsonBytes))
+						log.Critical("Malformed output data: " + err.Error() + "\n")
+						return err
 					}
 
 					// Append the output.
@@ -798,7 +796,7 @@ func (cmd *JoinCmd) Run(ctx CmdContext) error {
 	// Open each input file and parse it, then append it to a single array.
 	// If the special filename "-" is used, read from stdin. Can only be done once.
 	usedStdin := false
-	totalOutput := []g3lib.G3Data{}
+	totalOutput := []g3model.Data{}
 	for _, filepath := range cmd.Input {
 		if filepath == "-" {
 			if usedStdin {
@@ -833,7 +831,7 @@ func (cmd *FilterCmd) Run(ctx CmdContext) error {
 	}
 
 	// Filter the input data using the condition.
-	filteredOutput := []g3lib.G3Data{}
+	filteredOutput := []g3model.Data{}
 	for _, data := range inputJson {
 		ok, err := g3lib.EvalCondition(cmd.Filter, data)
 		if err != nil {
@@ -875,7 +873,7 @@ func (cmd *MergeCmd) Run(ctx CmdContext) error {
 	// Remove all data objects that are not issues.
 	// Add fake IDs for the objects that do not have one.
 	var nullid interface{} = "000000000000000000000000"
-	filteredOutput := []g3lib.G3Data{}
+	filteredOutput := []g3model.Data{}
 	for _, data := range inputJson {
 		if datatype, ok := data["_type"]; ok && datatype.(string) == "issue" {
 			if _, ok := data["_id"]; !ok {
@@ -905,11 +903,11 @@ func (cmd *MergeCmd) Run(ctx CmdContext) error {
 	}
 
 	// Go through every plugin that has implemented a merger.
-	totalOutput := []g3lib.G3Data{}
+	totalOutput := []g3model.Data{}
 	for tool, plugin := range mergers {
 
 		// Get the issues for this plugin.
-		issues := []g3lib.G3Data{}
+		issues := []g3model.Data{}
 		for _, data := range filteredOutput {
 			if name, ok := data["_tool"]; ok && name.(string) == tool {
 				issues = append(issues, data)
@@ -948,14 +946,10 @@ func (cmd *MergeCmd) Run(ctx CmdContext) error {
 		}
 
 		// Validate the plugin output. Drop any objects that don't pass the test.
-		sanitizedOutput := []g3lib.G3Data{}
+		sanitizedOutput := []g3model.Data{}
 		for _, data := range outputArray {
-			if ok, err := g3lib.IsValidData(data); !ok {
-				if err != nil {
-					log.Error("Malformed output data: " + err.Error() + "\n" + data.String())
-				} else {
-					log.Error("Malformed output data:\n" + data.String())
-				}
+			if err := data.Validate(); err != nil {
+				log.Error("Malformed output data: " + err.Error() + "\n" + data.String())
 			} else {
 				sanitizedOutput = append(sanitizedOutput, data)
 			}
