@@ -1,0 +1,5 @@
+http://www.example.com/graphiql does not seem to be running GraphQL. (Consider using -f to force the scan if GraphQL does exist on the endpoint)
+http://www.example.com/playground does not seem to be running GraphQL. (Consider using -f to force the scan if GraphQL does exist on the endpoint)
+http://www.example.com/console does not seem to be running GraphQL. (Consider using -f to force the scan if GraphQL does exist on the endpoint)
+http://www.example.com/graphql does not seem to be running GraphQL. (Consider using -f to force the scan if GraphQL does exist on the endpoint)
+[]

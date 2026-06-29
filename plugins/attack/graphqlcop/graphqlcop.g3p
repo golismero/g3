@@ -1,0 +1,19 @@
+{
+    url: "https://github.com/dolevf/graphql-cop",
+    description: "GraphQL Cop is a small Python utility to run common security tests against GraphQL APIs.",
+    image: "ghcr.io/golismero/graphqlcop",
+
+    commands: [
+
+        // Run against any http(s) URL. graphql-cop takes the full scheme-qualified
+        // URL via -t and iterates common GraphQL paths itself, so a single command
+        // covers both http and https (no -ssl split like nikto needs).
+        {
+            condition: "{{if and .url (or (eq .scheme \"http\") (eq .scheme \"https\"))}} true {{else}} false {{end}}",
+            fingerprint: ["graphqlcop {{.url}}"],
+            command: ["-t", "{{.url}}"],
+            returns: "nil",
+        },
+
+    ],
+}
