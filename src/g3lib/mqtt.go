@@ -13,7 +13,6 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
 	log "github.com/golismero/g3/src/g3log"
@@ -251,7 +250,7 @@ func SendNewScan(client MessageQueueClient, scanid, mode string, pipelines [][]s
 	msg.Mode = mode
 	msg.Pipelines = pipelines
 	msg.Report = report
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -264,7 +263,7 @@ func SendScanStop(client MessageQueueClient, scanid string) error {
 	msg.MessageType = MSG_STOP
 	msg.SenderID = GetClientID(client)
 	msg.ScanID = scanid
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -305,7 +304,7 @@ func SendScanProgress(client MessageQueueClient, scanid string, currentScanStep,
 	} else {
 		msg.Message = fmt.Sprintf("Running... (%d/%d steps complete)", currentScanStep, totalScanSteps)
 	}
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -321,7 +320,7 @@ func SendScanStopped(client MessageQueueClient, scanid string) error {
 	msg.ScanID = scanid
 	msg.Status = STATUS_CANCELED
 	msg.Message = "Scan was canceled by the user."
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -340,7 +339,7 @@ func SendScanFailed(client MessageQueueClient, scanid, errorMessage string) erro
 	msg.ScanID = scanid
 	msg.Status = STATUS_ERROR
 	msg.Message = errorMessage
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -358,7 +357,7 @@ func SendScanCompleted(client MessageQueueClient, scanid string) error {
 	msg.Status = STATUS_FINISHED
 	msg.Progress = &hundred
 	msg.Message = "Scan complete."
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -380,7 +379,7 @@ func SendTask(client MessageQueueClient, scanid, taskid, tool string, index int,
 	msg.Tool = tool
 	msg.Index = index
 	msg.DataID = dataid
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -396,7 +395,7 @@ func SendTask(client MessageQueueClient, scanid, taskid, tool string, index int,
 func SendDispatch(client MessageQueueClient, msg G3Dispatch) error {
 	msg.MessageType = MSG_DISPATCH
 	msg.SenderID = GetClientID(client)
-	if err := validator.New().Struct(msg); err != nil {
+	if err := g3model.Validate.Struct(msg); err != nil {
 		return err
 	}
 	return SendMQPayload(client, G3DISPATCHPUBTOPIC, msg)
@@ -415,7 +414,7 @@ func SendReportTask(client MessageQueueClient, scanid, taskid, tool, preset stri
 	msg.ScanID = scanid
 	msg.Tool = tool
 	msg.Preset = preset
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -443,7 +442,7 @@ func sendTaskCancelInternal(client MessageQueueClient, scanid string, tasks []st
 	msg.Tasks = tasks
 	msg.ScanID = scanid
 	msg.Handled = handled
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -457,7 +456,7 @@ func SendEmptyResponse(client MessageQueueClient, scanid string, taskid string) 
 	msg.SenderID = GetClientID(client)
 	msg.TaskID = taskid
 	msg.ScanID = scanid
-	err := validator.New().Struct(msg)
+	err := g3model.Validate.Struct(msg)
 	if err != nil {
 		return err
 	}
@@ -484,7 +483,7 @@ func SendResponse(client MessageQueueClient, task G3Task, outputArray []g3model.
 	if len(msg.Response) == 0 {
 		return "", err
 	}
-	err = validator.New().Struct(msg)
+	err = g3model.Validate.Struct(msg)
 	if err != nil {
 		return "", err
 	}
@@ -551,7 +550,7 @@ func SubscribeAsWorker(client MessageQueueClient, tools []string, callback TaskH
 		}
 
 		// Validate the task object.
-		err = validator.New().Struct(task)
+		err = g3model.Validate.Struct(task)
 		if err != nil || task.MessageType != MSG_TASK {
 			log.Error("Malformed task object received: " + err.Error())
 			return
@@ -589,7 +588,7 @@ func SubscribeAsReporter(client MessageQueueClient, tools []string, callback Rep
 		}
 
 		// Validate.
-		err = validator.New().Struct(task)
+		err = g3model.Validate.Struct(task)
 		if err != nil || task.MessageType != MSG_REPORT {
 			if err != nil {
 				log.Error("Malformed report task received: " + err.Error())
@@ -618,7 +617,7 @@ func SubscribeToCancel(client mqtt.Client, callback CancelHandler) string {
 		if err != nil {
 			log.Error("Error parsing JSON payload from MQTT message: " + err.Error())
 		} else {
-			err = validator.New().Struct(payload)
+			err = g3model.Validate.Struct(payload)
 			if err != nil || payload.MessageType != MSG_CANCEL {
 				log.Error("Malformed task object received: " + err.Error())
 			} else {
@@ -639,7 +638,7 @@ func SubscribeAsScanner(client MessageQueueClient, callback NewScanHandler) stri
 		if err != nil {
 			log.Error("Error parsing JSON payload from MQTT message: " + err.Error())
 		} else {
-			err = validator.New().Struct(payload)
+			err = g3model.Validate.Struct(payload)
 			if err != nil || payload.MessageType != MSG_SCAN {
 				log.Error("Malformed task object received: " + err.Error())
 			} else {
@@ -673,7 +672,7 @@ func SubscribeAsDispatcher(client MessageQueueClient, callback DispatchHandler) 
 		}
 
 		// Validate.
-		err = validator.New().Struct(dispatch)
+		err = g3model.Validate.Struct(dispatch)
 		if err != nil || dispatch.MessageType != MSG_DISPATCH {
 			if err != nil {
 				log.Error("Malformed dispatch object received: " + err.Error())
@@ -701,7 +700,7 @@ func SubscribeToStop(client MessageQueueClient, callback ScanStopHandler) string
 		if err != nil {
 			log.Error("Error parsing JSON payload from MQTT message: " + err.Error())
 		} else {
-			err = validator.New().Struct(payload)
+			err = g3model.Validate.Struct(payload)
 			if err != nil || payload.MessageType != MSG_STOP {
 				log.Error("Malformed task object received: " + err.Error())
 			} else {
@@ -722,7 +721,7 @@ func SubscribeToResponses(client mqtt.Client, scanid string, callback ResponseHa
 		if err != nil {
 			log.Error("Error parsing JSON payload from MQTT message: " + err.Error())
 		} else {
-			err = validator.New().Struct(payload)
+			err = g3model.Validate.Struct(payload)
 			if err != nil || payload.MessageType != MSG_RESPONSE {
 				log.Error("Malformed task object received: " + err.Error())
 			} else {
@@ -744,7 +743,7 @@ func SubscribeAsAPI(client MessageQueueClient, callback ScanStatusHandler) strin
 		if err != nil {
 			log.Error("Error parsing JSON payload from MQTT message: " + err.Error())
 		} else {
-			err = validator.New().Struct(payload)
+			err = g3model.Validate.Struct(payload)
 			if err != nil || payload.MessageType != MSG_STATUS {
 				log.Error("Malformed task object received: " + err.Error())
 			} else {

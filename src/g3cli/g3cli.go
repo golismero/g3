@@ -16,7 +16,6 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/alexeyco/simpletable"
-	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/websocket"
 	"github.com/willabides/kongplete"
 
@@ -247,7 +246,7 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 	// We only need the list of imports at this stage.
 	parsed, err := g3lib.ParseScript(nil, script)
 	if err == nil {
-		err = validator.New().Struct(parsed)
+		err = g3model.Validate.Struct(parsed)
 	}
 	if err != nil {
 		log.Critical("Error parsing file " + input + ": " + err.Error())
@@ -337,7 +336,7 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 			log.Critical(err.Error())
 			return err
 		}
-		err = validator.New().Struct(response)
+		err = g3model.Validate.Struct(response)
 		if err != nil {
 			log.Critical(err.Error())
 			return err

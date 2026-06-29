@@ -54,13 +54,13 @@ type G3MergerCommand struct {
 }
 
 type G3ReporterCommand struct {
-	Name        string              `json:"name"                validate:"required,g3name"`   // Preset name; uniqueness validated in g3config.
+	Name        string              `json:"name"                validate:"required"`          // Preset name; uniqueness validated in g3config.
 	Command     []string            `json:"command,omitempty"`                                // (Optional) Command template, env-var expansion only.
 	DockerOpt   []string            `json:"dockeropt,omitempty"`                              // (Optional) Docker options, env-var expansion only.
 }
 
 type G3ReporterPhase struct {
-	Default     string              `json:"default,omitempty"  validate:"omitempty,g3name"`   // (Optional) Name of the default preset; must reference an existing command.
+	Default     string              `json:"default,omitempty"`                                // (Optional) Name of the default preset; must reference an existing command.
 	Commands    []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"`     // (Optional) Named presets. Empty means "entrypoint runs with no args".
 }
 
@@ -70,9 +70,9 @@ type G3Plugin struct {
 	G3PluginDescription
 	Image       string              `json:"image"`                                            // Docker image. Derived from name if missing.
 	Commands    []G3ToolCommand     `json:"commands,omitempty"  validate:"omitempty,dive"`    // (Optional) Array of commands and conditions.
-	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty,dive"`    // (Optional) Command for importing files.
-	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty,dive"`    // (Optional) Command for merging issues.
-	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty,dive"`    // (Optional) Phase for generating downloadable reports.
+	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty"`         // (Optional) Command for importing files.
+	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty"`         // (Optional) Command for merging issues.
+	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty"`         // (Optional) Phase for generating downloadable reports.
 }
 
 type G3PluginMetadata map[string]G3Plugin

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/asaskevich/govalidator"
-	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
@@ -451,7 +450,7 @@ func Main() int {
 			// Validate the scan script.
 			parsed, err := g3lib.ParseServerScript(plugins, request.Script)
 			if err == nil {
-				err = validator.New().Struct(parsed)
+				err = g3model.Validate.Struct(parsed)
 			}
 			if err != nil {
 				log.Error(err)

@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kong"
-	"github.com/go-playground/validator/v10"
 	"github.com/willabides/kongplete"
 
 	"github.com/golismero/g3/src/g3lib"
@@ -266,7 +265,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 	// Validate the scan script.
 	parsed, err := g3lib.ParseServerScript(plugins, script)
 	if err == nil {
-		err = validator.New().Struct(parsed)
+		err = g3model.Validate.Struct(parsed)
 	}
 	if err != nil {
 		log.Critical(err)

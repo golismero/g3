@@ -10,8 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-playground/validator/v10"
 	_ "github.com/go-sql-driver/mysql"        // MySQL / MariaDB
+
+	"github.com/golismero/g3/src/g3model"
 )
 
 const SQL_DSN = "SQL_DSN"
@@ -368,7 +369,7 @@ func GetAllScanIDs(db SQLDBClient) ([]string, error) {
 func GetProgressList(db SQLDBClient) ([]ScanStatusEntry, error) {
 	var scanstatus []ScanStatusEntry
 	var err error
-	var validate = validator.New()
+	var validate = g3model.Validate
 
 	query := "SELECT `scanid`, `status`, `progress`, `message` FROM `progress` ORDER BY `id` DESC"
 	rows, err := db.db.Query(query)

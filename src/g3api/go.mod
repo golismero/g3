@@ -10,7 +10,6 @@ replace github.com/golismero/g3/src/g3model => ../g3model
 
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
-	github.com/go-playground/validator/v10 v10.30.3
 	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3log v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000
@@ -26,6 +25,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
