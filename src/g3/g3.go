@@ -741,10 +741,10 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 						log.Critical("Malformed output data: " + err.Error() + "\n")
 						return err
 					}
-
-					// Append the output.
-					totalOutput = append(totalOutput, outputArray...)
 				}
+
+				// Append the output once all objects validated.
+				totalOutput = append(totalOutput, outputArray...)
 			}
 		}
 	}
