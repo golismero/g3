@@ -19,5 +19,6 @@ RUN apk add --no-cache --virtual .build-deps git \
     && apk del .build-deps
 
 # Add the Golismero3 wrapper as the entrypoint.
-COPY --chmod=0755 g3p.py /usr/bin/g3p
+COPY --chmod=0755 entrypoint.py /usr/bin/g3p
+RUN ln -s /usr/bin/g3p /usr/bin/g3i
 ENTRYPOINT ["/usr/bin/g3p"]

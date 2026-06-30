@@ -60,7 +60,7 @@ def sanitize_url(s):
         return None
 
 
-def main():
+def run():
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 
     # Get the target URL and "canonicalize" it. Also keep around the original value.
@@ -125,7 +125,26 @@ def main():
     t_err.join()
     returncode = proc.wait()
 
+    # Get the JSON data from GraphQL Cop.
     data = captured["data"] if captured["data"] is not None else []
+
+    # Write the artifacts.
+    with open(os.path.join(ARTIFACTS_DIR, JSON_ARTIFACT), "w") as f:
+        json.dump(data, f)
+    with open(os.path.join(ARTIFACTS_DIR, TXT_ARTIFACT), "w") as f:
+        for line in status_lines:
+            f.write(line + "\n")
+
+    # Parse the JSON data to generate Golismero objects.
+    parse(data, target_url, orig_target_url)
+
+    return returncode
+
+
+def parse(data, target_url=None, orig_target_url=None):
+
+    # Determine if we're running or importing.
+    is_runner = target_url and orig_target_url
 
     # Extract successfully accessed URLs from the captured data.
     urls = set()
@@ -143,26 +162,27 @@ def main():
     for u in sorted(urls):
         print("Detected GraphQL endpoint: %s" % u, file=sys.stderr, flush=True)
 
-    # Write the artifacts.
-    with open(os.path.join(ARTIFACTS_DIR, JSON_ARTIFACT), "w") as f:
-        json.dump(data, f)
-    with open(os.path.join(ARTIFACTS_DIR, TXT_ARTIFACT), "w") as f:
-        for line in status_lines:
-            f.write(line + "\n")
-
     # Calculate the fingerprint.
-    fp = sorted("graphqlcop " + u for u in (urls.copy() | {target_url, orig_target_url}))
+    if is_runner:
+        fp = sorted("graphqlcop " + u for u in (urls.copy() | {target_url, orig_target_url}))
+    elif urls:
+        fp = sorted("graphqlcop " + u for u in urls)
+    else:
+        fp = None
 
     # The worker reads stdout as a JSON array of g3model.Data; declare the artifacts.
-    if not urls:
-        output = [{"_type": "nil", "_fp": fp, "_artifacts": [JSON_ARTIFACT, TXT_ARTIFACT]}]
-    else:
-        output = [{"_type": "nil", "_fp": fp, "_artifacts": [TXT_ARTIFACT]}]
+    output = []
+    if is_runner:
+        if not urls:
+            output.append({"_type": "nil", "_fp": fp, "_artifacts": [JSON_ARTIFACT, TXT_ARTIFACT]})
+        else:
+            output.append({"_type": "nil", "_fp": fp, "_artifacts": [TXT_ARTIFACT]})
+    if urls:
         output.extend(
             {
                 "_type": "url",
                 "_fp": fp,
-                "_artifacts": [JSON_ARTIFACT],
+                "_artifacts": [JSON_ARTIFACT] if is_runner else None,
                 "url": o.geturl(),
                 "scheme": o.scheme,
                 "host": o.netloc.rpartition('@')[2],
@@ -178,7 +198,22 @@ def main():
     json.dump(output, sys.stdout)
     sys.stdout.write("\n")
 
-    return returncode
+
+def main():
+    if sys.argv[0] == "/usr/bin/g3p":
+        return run()
+    if sys.argv[0] == "/usr/bin/g3i":
+        data = None
+        for line in sys.stdin:
+            try:
+                data = json.loads(line)
+            except Exception:
+                continue
+        if data:
+            parse(data)
+        return 0
+    print("Internal error", file=sys.stderr, flush=True)
+    return 1
 
 
 if __name__ == "__main__":
