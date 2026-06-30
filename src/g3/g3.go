@@ -67,6 +67,7 @@ type RunCmd struct {
 	IOCmd
 	FlagCmd
 	Tools []string `arg:"" required:"" help:"Tools to run."`
+	Artifacts string `name:"artifacts" short:"a" type:"existingdir" help:"Directory to persist tool artifacts into (one sub-slot per invocation); omit to discard artifacts."`
 }
 
 type MergeCmd struct {
@@ -91,8 +92,8 @@ type ReportCmd struct {
 	FlagCmd
 	Tool      string `name:"tool" default:"magenta" help:"Reporter plugin to run."`
 	Preset    string `name:"preset" default:"" help:"Reporter preset (when the plugin declares presets)."`
-	Artifacts string `name:"artifacts" short:"a" type:"existingdir" required:"" help:"Directory of tool artifacts to report on (mounted as /input)."`
-	Output    string `name:"output" short:"o" type:"path" required:"" help:"Output directory for the report (mounted as /output)."`
+	Artifacts string `name:"artifacts" short:"a" type:"existingdir" required:"" help:"Directory of tool artifacts to report on."`
+	Output    string `name:"output" short:"o" type:"path" required:"" help:"Output directory for the report."`
 }
 
 type CompletionsCmd struct {
@@ -104,7 +105,7 @@ func (c *CompletionsCmd) Run() error {
 }
 
 var CLI struct {
-	Version kong.VersionFlag `                   help:"Show version and exit."`
+	Version kong.VersionFlag   `                   help:"Show version and exit."`
 
 	Scan        ScanCmd        `cmd:"" aliases:"s" help:"Run a scan script."`
 	Target      TargetCmd      `cmd:"" aliases:"t" help:"Prepare a list of targets."`
@@ -635,11 +636,18 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 		}
 	}
 
+	// Width for zero-padding artifact sub-slot indices so a lexical
+	// directory listing matches numeric order. The input is shared across
+	// all tools, so its width is computed once here; each plugin's command
+	// width is computed per plugin below.
+	inputIdxWidth := len(fmt.Sprintf("%d", len(inputJson)-1))
+
 	// We're going to iterate over every selected plugin to see if we
 	// can execute it with each of the objects in the input data.
 	totalOutput := []g3model.Data{}
 	for _, plugin := range tools {
-		for _, data := range inputJson {
+		cmdIdxWidth := len(fmt.Sprintf("%d", len(plugin.Commands)-1))
+		for inputIdx, data := range inputJson {
 			for index := 0; index < len(plugin.Commands); index++ {
 
 				// Dynamically evaluate if this plugin accepts this type of data.
@@ -683,13 +691,33 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 						"--- " + plugin.Description + "\n" +
 						"--- " + plugin.URL + "\n" +
 						"--------------------------------------------------------------------------------\n")
-				slot, slotErr := g3lib.CreateEphemeralArtifactSlot()
-				if slotErr != nil {
-					log.Warningf("Cannot create ephemeral artifact slot, plugin will run without /artifacts: %s", slotErr.Error())
-					slot = ""
+
+				// Resolve the artifact slot for this invocation. With
+				// --artifacts, each (tool, input, command) triple gets its own
+				// persistent sub-slot under the user's directory so the loop's
+				// invocations never clobber each other's files; the deterministic
+				// name also makes a re-run idempotent (it overwrites that exact
+				// task's previous output rather than piling up copies). Without
+				// --artifacts we fall back to a throwaway slot removed on exit.
+				var slot string
+				persistent := cmd.Artifacts != ""
+				if persistent {
+					name := fmt.Sprintf("g3-%s-%0*d-%0*d", plugin.Name, inputIdxWidth, inputIdx, cmdIdxWidth, index)
+					slot = filepath.Join(cmd.Artifacts, name)
+					if slotErr := os.MkdirAll(slot, 0o755); slotErr != nil {
+						log.Warningf("Cannot create artifact slot %s, plugin will run without /artifacts: %s", slot, slotErr.Error())
+						slot = ""
+					}
+				} else {
+					var slotErr error
+					slot, slotErr = g3lib.CreateEphemeralArtifactSlot()
+					if slotErr != nil {
+						log.Warningf("Cannot create ephemeral artifact slot, plugin will run without /artifacts: %s", slotErr.Error())
+						slot = ""
+					}
 				}
 				outputArray, err := g3lib.RunPluginCommand(ctx.Ctx, plugin, parsed, data, slot, stderr)
-				if slot != "" {
+				if slot != "" && !persistent {
 					os.RemoveAll(slot) //nolint:errcheck
 				}
 				if err != nil {
