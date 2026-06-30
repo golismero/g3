@@ -3,6 +3,9 @@ FROM python:3-alpine
 
 WORKDIR /app
 
+# Force Python to run in unbuffered mode to get real time logs.
+ENV PYTHONUNBUFFERED=1
+
 # Pinned graphql-cop version, overridable for forks/testing.
 ARG BUILD_VERSION=1.16
 ARG GRAPHQLCOP_URL=https://github.com/dolevf/graphql-cop.git
