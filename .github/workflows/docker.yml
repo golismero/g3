@@ -70,6 +70,8 @@ jobs:
           - image: g3
             context: .
             prep: go-deps
+          - image: graphqlcop
+            context: plugins/attack/graphqlcop
           - image: hydra
             context: plugins/attack/hydra
           - image: nikto
