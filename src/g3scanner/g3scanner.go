@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -431,9 +430,6 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 	// Skip the pipeline execution part if we have no pipelines.
 	// This can happen if the scan script consisted entirely of imports.
-	// No interim progress message is emitted — the merger phase + the
-	// FINISHED notification at the end of this function cover the
-	// "completed" state.
 	if len(msg.Pipelines) == 0 {
 		log.Debug("No pipelines to be executed, skipping to reporting phase.")
 	} else {
@@ -1046,123 +1042,13 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		}
 	}
 
-	// Scanning is over, but we need to merge duplicated issues.
-	// TODO maybe make this a separate operation?
-	reportIssues := g3model.StringSet{}
-
-	// Go through every plugin that has implemented a merger.
-	for tool, plugin := range plugins {
-		if plugin.Merger == nil {
-			continue
-		}
-
-		// Check for cancelation.
-		if currentScanID == "" {
-			log.Debugf("Canceled scan, dropping all the pipelines...")
-			if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-				log.Error(err.Error())
-			}
-			return
-		}
-
-		// Build the merger command.
-		parsed, errA := g3lib.BuildMergerCommand(plugin)
-		if len(errA) > 0 {
-			text := "Error while running merger for " + plugin.Name + ":"
-			log.Error(text)
-			text = text + "\n"
-			for _, err := range errA {
-				log.Error(" - " + err.Error())
-				text = text + " - " + err.Error() + "\n"
-			}
-			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, text); err != nil {
-				log.Error(err.Error())
-			}
-			return
-		}
-
-		// Get the issues for this plugin.
-		issues, err := g3lib.LoadIssues(mdb_client, msg.ScanID, plugin.Name)
-		if err != nil {
-			log.Errorf("Error while running merger for %s: %s", tool, err.Error())
-			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error())); err != nil {
-				log.Error(err.Error())
-			}
-			return
-		}
-
-		// If there are no issues reported by this plugin, skip the plugin.
-		if len(issues) == 0 {
-			log.Debugf("Skipped merger for tool %s since it reported no issues.", tool)
-			continue
-		}
-
-		// If there is a single issue reported by this plugin, use that issue.
-		if len(issues) == 1 {
-			log.Debugf("Skipped merger for tool %s since it reported a single issue.", tool)
-			reportIssues.Add(issues[0]["_id"].(string))
-			continue
-		}
-
-		// Run the merger command locally.
-		// We don't need to send this to the workers if it's serialized.
-		// FIXME if this becomes a separate task we might do this in parallel in the workers instead!
-		log.Info("Running merger for tool: " + tool)
-		outputArray, err := g3lib.RunPluginMerger(context.Background(), plugin, parsed, issues, os.Stderr)
-		if err != nil {
-			log.Errorf("Error while running merger for %s: %s", tool, err.Error())
-			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error())); err != nil {
-				log.Error(err.Error())
-			}
-			return
-		}
-
-		// Validate the plugin output. Drop any objects that don't pass the test.
-		sanitizedOutput := []g3model.Data{}
-		for _, data := range outputArray {
-			if err := data.Validate(); err != nil {
-				log.Error("Malformed output data: " + err.Error() + "\n" + data.String())
-			} else {
-				sanitizedOutput = append(sanitizedOutput, data)
-			}
-		}
-
-		// Save the G3 objects into the database.
-		// Keep the IDs of the data objects until the end, where we generate the report.
-		oldids := []string{}
-		newobjs := []g3model.Data{}
-		for _, data := range sanitizedOutput {
-			if id, ok := data["_id"]; ok {
-				oldids = append(oldids, id.(string))
-			} else {
-				newobjs = append(newobjs, data)
-			}
-		}
-		newids, err := g3lib.SaveData(mdb_client, msg.ScanID, g3lib.NIL_TASKID, newobjs)
-		if err != nil {
-			log.Errorf("Error while running merger for %s: %s", tool, err.Error())
-			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, fmt.Sprintf("Error while running merger for %s: %s", tool, err.Error())); err != nil {
-				log.Error(err.Error())
-			}
-			return
-		}
-		reportIssues.AddMulti(oldids)
-		reportIssues.AddMulti(newids)
-		newCount := len(newids)
-		preservedCount := len(oldids)
-		deletedCount := len(issues) - preservedCount
-		log.Infof("Merger created %d new issue(s), deleted %d old issue(s), and left %d issue(s) intact.", newCount, deletedCount, preservedCount)
-	}
-
-	// Save the report in the database.
+	// Save the scan metadata in the database.
 	var info g3model.ScanMetadata
 	info.ScanID = msg.ScanID
-	info.Issues = reportIssues.ToArray()
-	sort.Strings(info.Issues)
 	err = g3lib.SaveScanMetadata(rdb_client, info)
 	if err != nil {
-		log.Error("Error saving report info: " + err.Error())
-		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Error saving report info: "+err.Error()); err != nil {
+		log.Error("Error saving scan metadata: " + err.Error())
+		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Error saving scan metadata: "+err.Error()); err != nil {
 			log.Error(err.Error())
 		}
 		return

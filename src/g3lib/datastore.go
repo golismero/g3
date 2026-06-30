@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -152,73 +151,6 @@ func GetFingerprintMatchesIDs(dbclient DatastoreClient, scanid string, fingerpri
 	return idArray, err
 }
 
-// Fetch issues that match a specific plugin.
-func LoadIssues(dbclient DatastoreClient, scanid, tool string) ([]g3model.Data, error) {
-	query := bson.M{
-		"$and": []bson.M{
-			{"_type": "issue"},
-			{"_tool": tool},
-		},
-	}
-	var jsonArray []g3model.Data
-	err := LoadDataWithCallback(dbclient, scanid, query, func(data g3model.Data)(error) {
-		jsonArray = append(jsonArray, data)
-		return nil
-	})
-	return jsonArray, err
-}
-
-// Fetch issue IDs that match a specific plugin.
-func GetIssueIDs(dbclient DatastoreClient, scanid, tool string) ([]string, error) {
-	var query bson.M
-	if tool == "*" {
-		query = bson.M{"_type": "issue"}
-	} else {
-		query = bson.M{
-			"$and": []bson.M{
-				{"_type": "issue"},
-				{"_tool": tool},
-			},
-		}
-	}
-	var idArray []string
-	err := LoadDataWithCallback(dbclient, scanid, query, func(data g3model.Data)(error) {
-		idArray = append(idArray, data["_id"].(string))
-		return nil
-	})
-	return idArray, err
-}
-
-// Fetch the list of tools that were used in a scan.
-func GetScanTools(dbclient DatastoreClient, scanid string) ([]string, error) {
-	tools := make(g3model.StringSet)
-	err := LoadDataWithCallback(dbclient, scanid, bson.M{}, func(data g3model.Data)(error) {
-		name, ok := data["_tool"]
-		if ok && name.(string) != "g3" {
-			tools.Add(name.(string))
-		}
-		return nil
-	})
-	toolsList := tools.ToArray()
-	sort.Strings(toolsList)
-	return toolsList, err
-}
-
-// Fetch the list of tools that reported issues in a scan.
-func GetScanIssueTools(dbclient DatastoreClient, scanid string) ([]string, error) {
-	tools := make(g3model.StringSet)
-	err := LoadDataWithCallback(dbclient, scanid, bson.M{"_type": "issue"}, func(data g3model.Data)(error) {
-		name, ok := data["_tool"]
-		if ok && name.(string) != "g3" {
-			tools.Add(name.(string))
-		}
-		return nil
-	})
-	toolsList := tools.ToArray()
-	sort.Strings(toolsList)
-	return toolsList, err
-}
-
 // Load an array of G3 objects from the database, invoking a callback for each.
 func LoadDataWithCallback(dbclient DatastoreClient, scanid string, query bson.M, callback LoadDataCallback) error {
 	client := dbclient.c
@@ -346,9 +278,8 @@ func DropScanData(dbclient DatastoreClient, scanid string) error {
 // as a JSON Lines stream, in the strict order documented by the reporter
 // plugin contract:
 //
-//   Line 1:        the ScanMetadata (containing deduped issue ID list)
-//   Lines 2..K:    the issue Data objects, in ScanMetadata.Issues order
-//   Lines K+1..N:  every other Data object in the scan
+//   Line 1:     the ScanMetadata
+//   Lines 2..N: every other Data object in the scan
 //   EOF
 //
 // A goroutine writes to an io.Pipe; the worker passes the reader half to
@@ -392,49 +323,8 @@ func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string
 			return
 		}
 
-		// Lines 2..K: the deduped issue Data objects, in report.Issues order.
-		// LoadData uses MongoDB $in, which doesn't preserve input order, so we
-		// reorder here to honor the spec contract on stdin ordering.
-		if len(report.Issues) > 0 {
-			issues, err := LoadData(mdb, scanid, report.Issues)
-			if err != nil {
-				encodeErr = fmt.Errorf("ReporterStdinStream: load issues for %s: %w", scanid, err)
-				return
-			}
-			byID := make(map[string]g3model.Data, len(issues))
-			for _, issue := range issues {
-				if id, ok := issue["_id"].(string); ok {
-					byID[id] = issue
-				}
-			}
-			for _, id := range report.Issues {
-				issue, ok := byID[id]
-				if !ok {
-					continue // an issue ID in the report but not in MongoDB — skip
-				}
-				if err := enc.Encode(issue); err != nil {
-					encodeErr = err
-					return
-				}
-			}
-		}
-
-		// Lines K+1..N: everything else.
-		// Build a $nin filter from the deduped issue IDs.
+		// Lines 2..N: Data.
 		query := bson.M{}
-		if len(report.Issues) > 0 {
-			objectIds := make([]primitive.ObjectID, 0, len(report.Issues))
-			for _, id := range report.Issues {
-				objid, err := primitive.ObjectIDFromHex(id)
-				if err != nil {
-					continue // malformed ID — skip, don't poison the whole stream
-				}
-				objectIds = append(objectIds, objid)
-			}
-			if len(objectIds) > 0 {
-				query = bson.M{"_id": bson.M{"$nin": objectIds}}
-			}
-		}
 
 		// LoadDataWithCallback iterates a cursor. Callback returning a non-nil
 		// error stops the iteration immediately — that's the EPIPE backpressure

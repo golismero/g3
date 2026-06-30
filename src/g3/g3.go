@@ -70,12 +70,6 @@ type RunCmd struct {
 	Artifacts string `name:"artifacts" short:"a" type:"existingdir" help:"Directory to persist tool artifacts into (one sub-slot per invocation); omit to discard artifacts."`
 }
 
-type MergeCmd struct {
-	IOCmd
-	FlagCmd
-	Tools []string `arg:"" optional:"" help:"Tools to use for merging."`
-}
-
 type JoinCmd struct {
 	OutputCmd
 	FlagCmd
@@ -112,7 +106,6 @@ var CLI struct {
 	Tools       ToolsCmd       `cmd:"" aliases:"p" help:"List the available tools."`
 	Import      ImportCmd      `cmd:"" aliases:"i" help:"Load the output of a tool."`
 	Run         RunCmd         `cmd:"" aliases:"r" help:"Run a tool."`
-	Merge       MergeCmd       `cmd:"" aliases:"m" help:"Launch issue merger plugins."`
 	Join        JoinCmd        `cmd:"" aliases:"j" help:"Join multiple G3 output files into one."`
 	Filter      FilterCmd      `cmd:"" aliases:"f" help:"Filter the input using a logical condition."`
 	Report      ReportCmd      `cmd:"" aliases:"o" help:"Generate a report by running a reporter plugin (magenta) over an artifacts directory."`
@@ -872,139 +865,6 @@ func (cmd *FilterCmd) Run(ctx CmdContext) error {
 
 	// Write the output array.
 	err = g3lib.SaveDataToFile(cmd.Output, filteredOutput, cmd.Beautify)
-	if err != nil {
-		log.Critical(err)
-		return err
-	}
-	return nil
-}
-
-func (cmd *MergeCmd) Run(ctx CmdContext) error {
-
-	// Change the log level based on the flags.
-	var stderr io.Writer
-	if cmd.Quiet {
-		stderr = io.Discard
-		log.SetLogLevel("CRITICAL")
-	} else {
-		stderr = os.Stderr
-	}
-
-	// Parse the input JSON data.
-	inputJson, err := g3lib.LoadDataFromFile(cmd.Input)
-	if err != nil {
-		log.Critical(err)
-		return err
-	}
-
-	// Remove all data objects that are not issues.
-	// Add fake IDs for the objects that do not have one.
-	var nullid interface{} = "000000000000000000000000"
-	filteredOutput := []g3model.Data{}
-	for _, data := range inputJson {
-		if datatype, ok := data["_type"]; ok && datatype.(string) == "issue" {
-			if _, ok := data["_id"]; !ok {
-				data["_id"] = nullid
-			}
-			filteredOutput = append(filteredOutput, data)
-		}
-	}
-
-	// Get the merger plugins.
-	mergers := g3lib.G3PluginMetadata{}
-	if len(cmd.Tools) > 0 {
-		for _, name := range cmd.Tools {
-			if metadata, ok := ctx.Plugins[name]; ok && metadata.Merger != nil {
-				mergers[name] = metadata
-			} else {
-				log.Critical("Tool not found or does not implement a merger: " + name)
-				return errors.New("Tool not found or does not implement a merger: " + name)
-			}
-		}
-	} else {
-		for name, metadata := range ctx.Plugins {
-			if metadata.Merger != nil {
-				mergers[name] = metadata
-			}
-		}
-	}
-
-	// Go through every plugin that has implemented a merger.
-	totalOutput := []g3model.Data{}
-	for tool, plugin := range mergers {
-
-		// Get the issues for this plugin.
-		issues := []g3model.Data{}
-		for _, data := range filteredOutput {
-			if name, ok := data["_tool"]; ok && name.(string) == tool {
-				issues = append(issues, data)
-			}
-		}
-
-		// If there are no issues reported by this plugin, skip the plugin.
-		if len(issues) == 0 {
-			log.Debugf("Skipped merger for tool %s since it reported no issues.", tool)
-			continue
-		}
-
-		// If there is a single issue reported by this plugin, use that issue.
-		if len(issues) == 1 {
-			log.Debugf("Skipped merger for tool %s since it reported a single issue.", tool)
-			totalOutput = append(totalOutput, issues[0])
-			continue
-		}
-
-		// Build the merger command.
-		parsed, errA := g3lib.BuildMergerCommand(plugin)
-		if len(errA) > 0 {
-			log.Critical("Error while running merger for " + plugin.Name + ":")
-			for _, err := range errA {
-				log.Critical(" - " + err.Error())
-			}
-			return errA[0]
-		}
-
-		// Run the merger.
-		log.Info("Running merger for tool: " + tool)
-		outputArray, err := g3lib.RunPluginMerger(context.Background(), plugin, parsed, issues, stderr)
-		if err != nil {
-			log.Criticalf("Error while running merger for %s: %s", tool, err.Error())
-			return err
-		}
-
-		// Validate the plugin output. Drop any objects that don't pass the test.
-		sanitizedOutput := []g3model.Data{}
-		for _, data := range outputArray {
-			if err := data.Validate(); err != nil {
-				log.Error("Malformed output data: " + err.Error() + "\n" + data.String())
-			} else {
-				sanitizedOutput = append(sanitizedOutput, data)
-			}
-		}
-
-		// Count how many objects were preserved, created or deleted.
-		// Remove the fake IDs we added at the beginning.
-		newCount := 0
-		preservedCount := 0
-		for _, data := range sanitizedOutput {
-			if id, ok := data["_id"]; ok {
-				if id.(string) == nullid.(string) {
-					delete(data, "_id")
-				}
-				preservedCount++
-			} else {
-				newCount++
-			}
-		}
-		deletedCount := len(issues) - preservedCount
-		log.Infof("Merger created %d new issue(s), deleted %d old issue(s), and left %d issue(s) intact.", newCount, deletedCount, preservedCount)
-
-		// Add the merged objects to the output of this command.
-		totalOutput = append(totalOutput, sanitizedOutput...)
-	}
-
-	// Write the output array.
-	err = g3lib.SaveDataToFile(cmd.Output, totalOutput, cmd.Beautify)
 	if err != nil {
 		log.Critical(err)
 		return err

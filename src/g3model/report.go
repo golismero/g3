@@ -2,8 +2,7 @@ package g3model
 
 type ScanMetadata struct {
 	ScanID string          `json:"scanid"           validate:"required,uuid"`
-	Issues []string        `json:"issues"           validate:"dive,mongodb"`
-	Config *ReportConfig `json:"config,omitempty" validate:"omitempty"`
+	Config *ReportConfig   `json:"config,omitempty" validate:"omitempty"`
 }
 
 // ReportConfig mirrors Magenta's SCHEMA_METADATA exactly: it carries the
@@ -12,16 +11,16 @@ type ScanMetadata struct {
 // time, so we keep omitempty throughout to preserve the absent-vs-set
 // distinction rather than forcing zero values onto the wire.
 type ReportConfig struct {
-	Title             string                 `json:"title,omitempty"                 validate:"omitempty"`
-	Language          string                 `json:"language,omitempty"              validate:"omitempty"`
-	MinSeverity       string                 `json:"min_severity,omitempty"          validate:"omitempty,oneof=none low medium high critical"`
-	ChartType         string                 `json:"chart_type,omitempty"            validate:"omitempty,oneof=none pie bars"`
-	ShowEmptySummary  bool                   `json:"show_empty_summary,omitempty"    validate:"omitempty"`
-	ShowEmptyChart    bool                   `json:"show_empty_chart,omitempty"      validate:"omitempty"`
-	SeverityColors    *ReportSeverityColors `json:"severity_colors,omitempty"      validate:"omitempty"`
-	ReportSectionsOrder   []string `json:"report_sections_order,omitempty"   validate:"omitempty,dive,oneof=header summary tools issues notes"`
-	IssueSubsectionsOrder []string `json:"issue_subsections_order,omitempty" validate:"omitempty,dive,oneof=severity affects taxonomy description details recommendations tools references"`
-	ProjectInfo *ReportProjectInfo `json:"project_info,omitempty" validate:"omitempty"`
+	Title             string                 `json:"title,omitempty"                   validate:"omitempty"`
+	Language          string                 `json:"language,omitempty"                validate:"omitempty"`
+	MinSeverity       string                 `json:"min_severity,omitempty"            validate:"omitempty,oneof=none low medium high critical"`
+	ChartType         string                 `json:"chart_type,omitempty"              validate:"omitempty,oneof=none pie bars"`
+	ShowEmptySummary  bool                   `json:"show_empty_summary,omitempty"      validate:"omitempty"`
+	ShowEmptyChart    bool                   `json:"show_empty_chart,omitempty"        validate:"omitempty"`
+	SeverityColors    *ReportSeverityColors  `json:"severity_colors,omitempty"         validate:"omitempty"`
+	ReportSectionsOrder   []string           `json:"report_sections_order,omitempty"   validate:"omitempty,dive,oneof=header summary tools issues notes"`
+	IssueSubsectionsOrder []string           `json:"issue_subsections_order,omitempty" validate:"omitempty,dive,oneof=severity affects taxonomy description details recommendations tools references"`
+	ProjectInfo       *ReportProjectInfo     `json:"project_info,omitempty"            validate:"omitempty"`
 }
 
 // ReportSeverityColors mirrors the fixed-key severity_colors object from

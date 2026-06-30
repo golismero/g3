@@ -68,7 +68,6 @@ Commands:
   tools     List the available tools.
   import    Load the output of a tool.
   run       Run a tool.
-  merge     Launch issue merger plugins.
   join      Join multiple G3 output files into one.
   filter    Filter the input using a logical condition.
   report    Produce a Markdown vulnerability report.

@@ -48,11 +48,6 @@ type G3ImporterCommand struct {
 	Returns     string              `json:"returns,omitempty"   validate:"omitempty,g3type"`  // (Optional) Data type returned by the importer.
 }
 
-type G3MergerCommand struct {
-	Command     []string            `json:"command,omitempty"`                                // (Optional) Command template for a tool.
-	DockerOpt   []string            `json:"dockeropt,omitempty"`                              // (Optional) Docker options for the tool.
-}
-
 type G3ReporterCommand struct {
 	Name        string              `json:"name"                validate:"required"`          // Preset name; uniqueness validated in g3config.
 	Command     []string            `json:"command,omitempty"`                                // (Optional) Command template, env-var expansion only.
@@ -71,8 +66,22 @@ type G3Plugin struct {
 	Image       string              `json:"image"`                                            // Docker image. Derived from name if missing.
 	Commands    []G3ToolCommand     `json:"commands,omitempty"  validate:"omitempty,dive"`    // (Optional) Array of commands and conditions.
 	Importer    *G3ImporterCommand  `json:"importer,omitempty"  validate:"omitempty"`         // (Optional) Command for importing files.
-	Merger      *G3MergerCommand    `json:"merger,omitempty"    validate:"omitempty"`         // (Optional) Command for merging issues.
-	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty"`         // (Optional) Phase for generating downloadable reports.
+	Reporter    *G3ReporterPhase    `json:"reporter,omitempty"  validate:"omitempty"`         // (Optional) Commands for generating vulnerability reports.
+}
+
+func (plugin G3Plugin) String() string {
+	output := plugin.G3PluginDescription.String()
+	output += "Features:\n"
+	if len(plugin.Commands) > 0 {
+		output += " - Can be piped with other tools\n"
+	}
+	if plugin.Importer != nil {
+		output += " - Can import files from this tool\n"
+	}
+	if plugin.Reporter != nil {
+		output += " - Can produce vulnerability reports\n"
+	}
+	return output
 }
 
 type G3PluginMetadata map[string]G3Plugin
@@ -223,48 +232,12 @@ func BuildImporterCommand(plugin G3Plugin) (ParsedPluginCommand, []error) {
 	return parsed, errorArray
 }
 
-// Build the command line and Docker options for the merger.
-func BuildMergerCommand(plugin G3Plugin) (ParsedPluginCommand, []error) {
-	var parsed ParsedPluginCommand
-	var errorArray []error
-	var tmpErrA []error
-
-	// Trivial case, the plugin did not define a merger.
-	if plugin.Merger == nil {
-		errorArray = append(errorArray, fmt.Errorf("plugin %s does not implement an merger", plugin.Name))
-		return parsed, errorArray
-	}
-
-	// Build the tool command line and docker options.
-	// These templates are expanded using the environment variables.
-	// Note how this is different from running a tool against a live target.
-	environment := GetEnvironmentMap()
-	command := []string{}
-	if len(plugin.Merger.Command) > 0 {
-		command, tmpErrA = ExpandTemplateArray(plugin.Merger.Command, environment)
-		errorArray = append(errorArray, tmpErrA...)
-	}
-	dockerOpt := []string{"-i", "--rm", "--entrypoint", "/usr/bin/g3m"}
-	if len(plugin.Merger.DockerOpt) > 0 {
-		dockerOpt, tmpErrA = ExpandTemplateArray(plugin.Merger.DockerOpt, environment)
-		errorArray = append(errorArray, tmpErrA...)
-	}
-
-	// Return a non conditional command and an array of parsing errors.
-	parsed.Command = command
-	parsed.DockerOpt = dockerOpt
-	parsed.Returns = "issue"
-	return parsed, errorArray
-}
-
 // Build the command line and Docker options for a reporter run. presetName is
 // the caller-supplied preset; resolution order is:
 //   1. presetName, if non-empty (must match a declared command name)
 //   2. plugin.Reporter.Default, if non-empty
 //   3. first command in plugin.Reporter.Commands
 //   4. no command at all (the container entrypoint runs with no args)
-// The default DockerOpt overrides the image entrypoint to /usr/bin/g3r,
-// mirroring how importer/merger override to /usr/bin/g3i and /usr/bin/g3m.
 func BuildReporterCommand(plugin G3Plugin, presetName string) (ParsedPluginCommand, []error) {
 	var parsed ParsedPluginCommand
 	var errorArray []error
@@ -369,24 +342,6 @@ func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginC
 // artifact files; the /artifacts mount is intentionally not provided.
 func RunPluginImporter(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, stderr io.Writer) ([]g3model.Data, error) {
 	return runPluginInternal(ctx, plugin, parsed, stdin, "", stderr)
-}
-
-// Run a merger, passing a list of issues as input. Mergers do not write
-// artifact files; the /artifacts mount is intentionally not provided.
-func RunPluginMerger(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, issues []g3model.Data, stderr io.Writer) ([]g3model.Data, error) {
-
-	// Convert the input data to JSON format.
-	jsonData, err := json.Marshal(issues)
-	if err != nil {
-		return []g3model.Data{}, err
-	}
-
-	// Write the input JSON into stdin for the plugin.
-	var stdin bytes.Buffer
-	stdin.Write(jsonData)
-
-	// Run the command on the plugin's container.
-	return runPluginInternal(ctx, plugin, parsed, &stdin, "", stderr)
 }
 
 // Build the "-e NAME" docker args for every host env var matching G3_ENV_*.
@@ -522,8 +477,7 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 	commandLine := []string{"docker", "run", "-q", "--cidfile", tempfile.Name(), "-v", "./resources:/resources:ro"}
 
 	// Mount the caller-supplied artifact slot as /artifacts inside the plugin
-	// container. Empty means "no artifact slot" (used by importers and mergers,
-	// and by callers that don't need plugins to persist files).
+	// container. Empty means "no artifact slot".
 	if artifactsHostDir != "" {
 		commandLine = append(commandLine, "-v", artifactsHostDir+":/artifacts:rw")
 	}

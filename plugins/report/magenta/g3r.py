@@ -7,10 +7,10 @@ Contract (see docs/superpowers/specs/2026-05-16-reporter-plugins-design.md):
             sub-object mirrors magenta's metadata schema *exactly* (title,
             language, min_severity, severity_colors, project_info, ...), so we
             extract it verbatim and hand it to magenta via `-m`. The remaining
-            lines (issues + other G3Data) are NOT read here — magenta walks
-            /input on disk through its own parsers — so once line 1 is read we
-            repoint stdin to /dev/null. That EPIPEs the worker's pipe writer and
-            stops it streaming MongoDB results we would never consume.
+            lines (g3model.Data) are NOT read here — magenta walks /input on
+            disk through its own parsers — so once line 1 is read we repoint
+            stdin to /dev/null. That EPIPEs the worker's pipe writer and stops
+            it streaming MongoDB results we would never consume.
   /input  : ro — full scan tree. magenta's process_files() does os.walk(/input)
             and matches each file by tool prefix (nmap.*, testssl.*, etc.).
             Our tool plugins already write artifacts under that convention.
@@ -31,7 +31,7 @@ MAGENTA = "/app/magenta/magenta.py"
 
 
 def read_metadata():
-    """Read line 1 of stdin — the G3ScanMetadata header — and return it parsed.
+    """Read line 1 of stdin — the ScanMetadata header — and return it parsed.
 
     The worker always streams this object first, so a missing or malformed
     header is a contract violation: we surface it (non-zero exit) rather than
@@ -40,11 +40,11 @@ def read_metadata():
     """
     line = sys.stdin.readline()
     if not line.strip():
-        sys.exit("g3r: expected G3ScanMetadata on stdin line 1, got empty stream")
+        sys.exit("g3r: expected ScanMetadata on stdin line 1, got empty stream")
     try:
         return json.loads(line)
     except json.JSONDecodeError as exc:
-        sys.exit("g3r: malformed G3ScanMetadata header on stdin: %s" % exc)
+        sys.exit("g3r: malformed ScanMetadata header on stdin: %s" % exc)
 
 
 def main():
@@ -58,7 +58,7 @@ def main():
 
     argv = ["python3", MAGENTA, "report", INPUT_DIR]
 
-    # G3ScanMetadata.config (optional) is, by construction, exactly magenta's
+    # ScanMetadata .config file (optional) is, by construction, exactly magenta's
     # -m/--metadata schema. When present, materialize it to a temp file and pass
     # it through; absent config means magenta uses its built-in DEFAULT_METADATA.
     config = metadata.get("config")
