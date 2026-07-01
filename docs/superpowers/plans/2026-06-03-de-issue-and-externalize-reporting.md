@@ -6,7 +6,7 @@
 
 **Architecture:** The engine's issue-handling plumbing is *retained* (Magenta will be the future sole issue producer). We delete only the in-process `MarkdownReporter` + i18n, and rewrite the four issue-producing plugins so each emits its **input asset enriched with `_artifacts`** (the existing nmap host pattern) instead of an issue. hydra additionally emits a new `credential` asset type. `report` becomes a dispatch of the already-registered Magenta reporter plugin.
 
-**Tech Stack:** Go 1.25 (six binaries under `src/`), Python 3 plugin scripts, Jsonnet `.g3p` definitions, Docker, MQTT/Mongo/Redis/MariaDB. **No test harness exists in this repo** — verification is `make bin` / `go build` for compilation, `g3config` for plugin re-registration, and functional command runs. Each task's verification reflects that.
+**Tech Stack:** Go 1.25 (multiple binaries under `src/`), Python 3 plugin scripts, Jsonnet `.g3p` definitions, Docker, MQTT/Mongo/Redis/MariaDB. **No test harness exists in this repo** — verification is `make bin` / `go build` for compilation, `g3config` for plugin re-registration, and functional command runs. Each task's verification reflects that.
 
 **Design spec:** [docs/superpowers/specs/2026-06-03-de-issue-and-externalize-reporting-design.md](../specs/2026-06-03-de-issue-and-externalize-reporting-design.md)
 

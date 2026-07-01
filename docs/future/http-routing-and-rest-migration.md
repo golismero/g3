@@ -321,8 +321,6 @@ Committing to publishing is the hinge that makes monorepo strictly better than p
 
 **Submodule fold-back + sequencing.** `sdk/python` is *currently a git submodule* pointing at a separate `g3client-python` repo, and Knife depends on it via a git URL (`g3client @ git+https://github.com/golismero/g3client-python.git@main`), not PyPI. Fold the submodule back into `sdk/python/` **after** the PyPI publish path exists, then migrate Knife to a plain `g3client>=X` PyPI dependency — in that order, so Knife never regresses to cloning the whole monorepo. If a fold-back lands before PyPI is ready, the interim dependency is `git+https://github.com/golismero/g3.git@main#subdirectory=sdk/python` — works, but shallow-clones the full monorepo tree on each install (temporary network/disk cost, no correctness impact). History: copy-and-archive the old repo, or `git subtree`/`git-filter-repo` to fold its history inline — an execution detail for fold-back time.
 
-**Related cleanup — drop the vanity module paths (decided 2026-06-24).** The internal modules use `golismero.com/g3lib`-style vanity paths that only resolve via `replace ../` — a pre-public-repo artifact from before the code was on GitHub. Rename them repo-wide to real paths under the actual remote (`github.com/golismero/g3/src/g3lib`, `…/src/g3log`, …). This is a mechanical change across every `go.mod` `module`/`replace`/`require` line and every import statement, **orthogonal to the REST migration** (do it as its own small cleanup), but a natural companion: once done, the SDK's go-gettable path is just one consistent scheme rather than a special case, and the per-module `replace ../` directives can retire in favor of a single repo-root `go.work` workspace (the modern idiom for local cross-module development).
-
 ### SDK generators
 
 **Decided (2026-06-24):** open-source generators, one per language, wired into the build — no commercial/cloud SDK services (Speakeasy/Fern), which clash with the fork-friendly OSS posture and add account friction for forks.
@@ -367,17 +365,17 @@ Files uploaded via `POST /file` that are never imported sit in `_uploads/` forev
 
 If/when middleware grows beyond just `requireToken` (request IDs, structured access logs, panic recovery, per-route timeouts, route groups, sub-routers), chi is the natural step. Stdlib mux gives routing but not declarative middleware chains. Don't preempt.
 
-### Logging: retire `g3log` for `log/slog`
+### Logging: retire the `g3/log` wrapper for `log/slog`
 
 **Deferred (2026-06-25).** Fully orthogonal to the REST migration and to every other tier here — it touches no HTTP code, so there is no reason to bundle it. Carve it out as its own self-contained cleanup whenever it's worth doing, not as a precursor to this work.
 
-The shape: `src/g3log/` is an 85-line syntactic-sugar wrapper over the (unmaintained) `github.com/apsdehal/go-logger` — leveled stderr logging, bare `%{message}` format, `G3_LOG_LEVEL` switch. No DB/MQTT log-shipping, no hidden function; it's a separate module only for dependency isolation + sharing across the six binaries. The endpoint is stdlib `log/slog`: drops a dependency and makes structured access logs fall out naturally.
+The shape: `src/g3/log/` is an 85-line syntactic-sugar wrapper over the (unmaintained) `github.com/apsdehal/go-logger` — leveled stderr logging, bare `%{message}` format, `G3_LOG_LEVEL` switch. No DB/MQTT log-shipping, no hidden function; it lives as a subpackage of the shared `g3` module (formerly the standalone `g3log` module), shared across all binaries. The endpoint is stdlib `log/slog`: drops a dependency and makes structured access logs fall out naturally.
 
 In practice it's more involved than a mechanical find-replace, which is why it's not free to fold into another tier:
 
 - **Semantics, not just calls.** Custom levels `NOTICE`/`CRITICAL` have no slog equivalent — each needs a deliberate mapping (collapse into slog's four, or define custom `slog.Level` ints) and every call site re-leveled accordingly, not blindly rewritten.
-- **User-visible output change across all six binaries.** Bare `%{message}` becomes structured `time/level/msg`. Desirable for access logs, but anything parsing stderr today breaks, and the handler/format choice has to be made (and made consistently) per binary.
-- **Cross-module coupling.** The exported `g3log.LogLevel` var is read outside the logger — `src/g3lib/mqtt.go:516` gates debug behavior on it. That, plus `G3_LOG_LEVEL`, has to move to a shared `slog.LevelVar` without breaking the gate.
+- **User-visible output change across all binaries.** Bare `%{message}` becomes structured `time/level/msg`. Desirable for access logs, but anything parsing stderr today breaks, and the handler/format choice has to be made (and made consistently) per binary.
+- **Cross-module coupling.** The exported `log.LogLevel` var (from `g3/log`) is read outside the logger — `src/g3lib/mqtt.go:516` gates debug behavior on it. That, plus `G3_LOG_LEVEL`, has to move to a shared `slog.LevelVar` without breaking the gate.
 - **Wide and multi-module.** Every `log.*` call site across all binaries (13 files import it today), spread over six separate Go modules each with its own `go.mod` — so it also brushes up against the module-path / `go.work` cleanup.
 
 ---
@@ -406,7 +404,7 @@ Resolved by the 2026-06-24 direction:
 - ~~**`apiPath` prefix handling**~~ — it's the huma mount prefix (`humago`/`humachi`); verify trailing-slash redirect behavior once.
 - ~~**Response shape / status codes**~~ — decided: RFC 7807 `problem+json` end-to-end, no `{status,data}` envelope, real success codes incl. `204`. (See *Response status-code contract*.)
 - ~~**huma confirmation**~~ — confirmed; no prototype needed.
-- ~~**Logging**~~ — split out: orthogonal to this migration, deferred as its own standalone cleanup. (See *Deferred items → Logging: retire g3log*.)
+- ~~**Logging**~~ — split out: orthogonal to this migration, deferred as its own standalone cleanup. (See *Deferred items → Logging: retire the g3/log wrapper*.)
 - ~~**Go client location**~~ — decided: `sdk/go/`, a separate module in the same repo (no separate git repo), owning its generated types, decoupled from `g3lib`. (See *Module & package layout*.)
 - ~~**Client SDK generators**~~ — decided: `ogen` (Go) + `openapi-python-client` (Python); no commercial generators. (See *SDK generators*.)
 
@@ -416,4 +414,4 @@ Still open:
 - **Generator 3.1 verification** — confirm ogen / openapi-python-client output quality and whether huma emits 3.1 or 3.0.3 for them; a plan-time check, not a re-decision. (See *SDK generators*.)
 - **WebSocket expansion** — written up in **[`websocket-event-protocol.md`](websocket-event-protocol.md)** (event types, subscription filters, OpenAPI/AsyncAPI boundary). Deferred, out of scope here.
 
-**Likely files when scheduled:** `src/g3api/g3api.go` (route table → huma operations), `src/g3lib/api.go` (`Req*` structs → huma input/output types; `Decode`/`Validate*`/`MakeApiRequest` deleted), a new `sdk/go/` generated client + the binaries (`src/g3cli/`, `src/g3tui/`) that import it, `sdk/python/` (regenerated transport under the kept facade), plus a generated-spec artifact + client-generation tooling in the build. (The `src/g3log/` removal is *not* in this list — it's the separate deferred logging cleanup.)
+**Likely files when scheduled:** `src/g3api/g3api.go` (route table → huma operations), `src/g3lib/api.go` (`Req*` structs → huma input/output types; `Decode`/`Validate*`/`MakeApiRequest` deleted), a new `sdk/go/` generated client + the binaries (`src/g3cli/`, `src/g3tui/`) that import it, `sdk/python/` (regenerated transport under the kept facade), plus a generated-spec artifact + client-generation tooling in the build. (The `src/g3/log/` removal is *not* in this list — it's the separate deferred logging cleanup.)

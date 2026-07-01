@@ -23,7 +23,7 @@ To build a single binary (from `src/`):
 cd src && make ../bin/g3        # or g3api, g3cli, g3config, g3scanner, g3worker
 ```
 
-Each binary lives in its own Go module under `src/<name>/` with a `go.mod` that uses `replace` directives to reference `g3lib` and `g3log` locally.
+Each binary lives in its own Go module under `src/<name>/` with a `go.mod` that uses `replace` directives to reference the shared modules (`g3lib`, `g3`) locally. The one naming exception is the local CLI: its source module is `src/g3bin/` (it still builds the `g3`/`g3.exe` binary), because the plain `g3` name now belongs to the shared client/server module.
 
 ## Running
 
@@ -67,8 +67,9 @@ User (CLI / HTTP)
 
 ### Shared Libraries
 
-- **`src/g3lib/`** — Core types and logic: `common.go` (G3Data, G3Plugin), `task.go` (G3Task, CancelTracker), `api.go` (WebSocket), `report.go`, `script.go`, `datastore.go`, `sql.go`, `jwt.go`
-- **`src/g3log/`** — Logging wrapper used by all binaries
+- **`src/g3/`** — Shared data model and helpers used by both client and server (formerly `g3model`). This is the home for code common to the two sides, and is expected to grow as client-side logic currently duplicated in the clients (and in `g3lib`) migrates here.
+  - **`src/g3/log/`** — Logging wrapper imported by all binaries (formerly the standalone `g3log` module, now a subpackage of `g3`). Imported under the `log` alias, so call sites read `log.SetLogLevel`, `log.LogLevel`, etc.
+- **`src/g3lib/`** — Core types and logic: `common.go` (G3Data, G3Plugin), `task.go` (G3Task, CancelTracker), `api.go` (WebSocket), `report.go`, `script.go`, `datastore.go`, `sql.go`, `jwt.go`. Trending toward a **server-only** module as shared client/server code moves into `g3`.
 
 ### Plugin System
 

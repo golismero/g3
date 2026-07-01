@@ -194,7 +194,7 @@ there) is out of scope for this change.
 ## Phased plan (single spec, staged execution)
 
 1. **Reporter + i18n removal** (Components 1 & 3). Self-contained; engine
-   issue-handling untouched. Build-verify all six binaries.
+   issue-handling untouched. Build-verify all binaries.
 2. **Plugin de-issue refactor** (Component 2, minus `credential`): testssl,
    nikto/nikto-slow, nmap → echo-importers; delete per-plugin mergers, i18n,
    and issue code; update `.g3p` files. Re-run `g3config`.
