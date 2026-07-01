@@ -12,7 +12,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"        // MySQL / MariaDB
 
-	"github.com/golismero/g3/src/g3model"
+	"github.com/golismero/g3/src/g3"
 )
 
 const SQL_DSN = "SQL_DSN"
@@ -369,7 +369,7 @@ func GetAllScanIDs(db SQLDBClient) ([]string, error) {
 func GetProgressList(db SQLDBClient) ([]ScanStatusEntry, error) {
 	var scanstatus []ScanStatusEntry
 	var err error
-	var validate = g3model.Validate
+	var validate = g3.Validate
 
 	query := "SELECT `scanid`, `status`, `progress`, `message` FROM `progress` ORDER BY `id` DESC"
 	rows, err := db.db.Query(query)

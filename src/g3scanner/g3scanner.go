@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/golismero/g3/src/g3lib"
-	log "github.com/golismero/g3/src/g3log"
-	"github.com/golismero/g3/src/g3model"
+	log "github.com/golismero/g3/src/g3/log"
+	"github.com/golismero/g3/src/g3"
 )
 
 // Environment variables with the scanner configuration.
@@ -25,24 +25,24 @@ const G3_SCANNER_MAX_DEPTH = "G3_SCANNER_MAX_DEPTH"         // Defaults to 0 for
 type PipelineState struct {
 	StepIndex    int               // Current step in the pipeline.
 	CommandIndex int               // Current subcommand in the plugin.
-	PendingTasks g3model.StringSet // Task IDs we are waiting for in this step. Could be from another pipeline.
-	CurrentData  g3model.StringSet // Currently held data in the pipeline that's been saved to the database.
-	NewData      g3model.StringSet // Data being collected in this step that's been saved to the database.
+	PendingTasks g3.StringSet // Task IDs we are waiting for in this step. Could be from another pipeline.
+	CurrentData  g3.StringSet // Currently held data in the pipeline that's been saved to the database.
+	NewData      g3.StringSet // Data being collected in this step that's been saved to the database.
 }
 
 // This structure correlates the pending task IDs and the fingerprints for the data we are waiting for.
-type FPToPendingTasks map[string]g3model.StringSet
+type FPToPendingTasks map[string]g3.StringSet
 
 func (pending FPToPendingTasks) Add(taskid string, fingerprint []string) {
 	for _, fp := range fingerprint {
 		if _, ok := pending[fp]; !ok {
-			pending[fp] = make(g3model.StringSet)
+			pending[fp] = make(g3.StringSet)
 		}
 		pending[fp].Add(taskid)
 	}
 }
 func (pending FPToPendingTasks) Find(fingerprint []string) []string {
-	found := make(g3model.StringSet)
+	found := make(g3.StringSet)
 	for _, fp := range fingerprint {
 		if pending, ok := pending[fp]; ok && len(pending) > 0 {
 			found.AddMulti(pending.ToArray())
@@ -60,12 +60,12 @@ func (pending FPToPendingTasks) Remove(taskid string) {
 
 // Global variables for the current scan information.
 var currentScanID = ""
-var runningTasks *g3model.SyncStringSet
+var runningTasks *g3.SyncStringSet
 
 func main() {
 	var wg sync.WaitGroup
 
-	runningTasks = g3model.NewSyncStringSet()
+	runningTasks = g3.NewSyncStringSet()
 
 	// Load the environment variables.
 	g3lib.LoadDotEnvFile()
@@ -466,9 +466,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 			pipelineState := make([]PipelineState, len(msg.Pipelines))
 			fpToTasks := make(FPToPendingTasks)
 			for pipeidx := 0; pipeidx < len(pipelineState); pipeidx++ {
-				pipelineState[pipeidx].PendingTasks = g3model.StringSet{}
-				pipelineState[pipeidx].CurrentData = g3model.StringSet{}
-				pipelineState[pipeidx].NewData = g3model.StringSet{}
+				pipelineState[pipeidx].PendingTasks = g3.StringSet{}
+				pipelineState[pipeidx].CurrentData = g3.StringSet{}
+				pipelineState[pipeidx].NewData = g3.StringSet{}
 				pipelineState[pipeidx].CurrentData.AddMulti(startData)
 			}
 
@@ -688,7 +688,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 						continue
 					}
 					state.CurrentData = state.NewData
-					state.NewData = g3model.StringSet{}
+					state.NewData = g3.StringSet{}
 					state.StepIndex++
 					needRedo = true
 					log.Debugf("No pending tasks on pipeline %d, moving on to next step %d", pipeidx, state.StepIndex)
@@ -797,7 +797,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							state.NewData.AddMulti(response.Response)
 							if len(state.PendingTasks) == 0 { // last subcommand has ended
 								state.CurrentData = state.NewData
-								state.NewData = g3model.StringSet{}
+								state.NewData = g3.StringSet{}
 								state.StepIndex++
 								log.Debugf("No pending tasks on pipeline %d, moving on to next step %d", pipeidx, state.StepIndex)
 							}
@@ -1043,7 +1043,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 
 	// Save the scan metadata in the database.
-	var info g3model.ScanMetadata
+	var info g3.ScanMetadata
 	info.ScanID = msg.ScanID
 	err = g3lib.SaveScanMetadata(rdb_client, info)
 	if err != nil {

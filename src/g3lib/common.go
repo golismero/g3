@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
-	"github.com/golismero/g3/src/g3model"
-	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3"
+	log "github.com/golismero/g3/src/g3/log"
 )
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -166,8 +166,8 @@ func ResolveInstanceID(envKey string) (string, error) {
 }
 
 // Read an array of Data objects from a file.
-func LoadDataFromFile(filepath string) ([]g3model.Data, error) {
-	var inputJson []g3model.Data
+func LoadDataFromFile(filepath string) ([]g3.Data, error) {
+	var inputJson []g3.Data
 	var err error
 
 	// Open the file.
@@ -200,7 +200,7 @@ func LoadDataFromFile(filepath string) ([]g3model.Data, error) {
 }
 
 // Write an array of Data objects into a file.
-func SaveDataToFile(filepath string, outputArray []g3model.Data, beautify bool) error {
+func SaveDataToFile(filepath string, outputArray []g3.Data, beautify bool) error {
 
 	// Save the combined output in JSON format.
 	var jsonOutput []byte

@@ -14,8 +14,8 @@ import (
 
 	"github.com/kballard/go-shellquote"
 
-	log "github.com/golismero/g3/src/g3log"
-	"github.com/golismero/g3/src/g3model"
+	log "github.com/golismero/g3/src/g3/log"
+	"github.com/golismero/g3/src/g3"
 )
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -59,7 +59,7 @@ type G3ReporterPhase struct {
 	Commands    []G3ReporterCommand `json:"commands,omitempty" validate:"omitempty,dive"`     // (Optional) Named presets. Empty means "entrypoint runs with no args".
 }
 
-type G3PluginDescription = g3model.PluginDescription
+type G3PluginDescription = g3.PluginDescription
 
 type G3Plugin struct {
 	G3PluginDescription
@@ -130,7 +130,7 @@ func LoadPlugins() G3PluginMetadata {
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Evaluate a logical condition.
-func EvalCondition(condition string, data g3model.Data) (bool, error) {
+func EvalCondition(condition string, data g3.Data) (bool, error) {
 
 	// Evaluate the template. We expect it to generate a text with the
 	// string "true" or "false", anything else we treat as an error.
@@ -152,7 +152,7 @@ func EvalCondition(condition string, data g3model.Data) (bool, error) {
 }
 
 // Evaluate the condition for the tool to run or not.
-func EvalToolCondition(plugin G3Plugin, index int, data g3model.Data) (bool, error) {
+func EvalToolCondition(plugin G3Plugin, index int, data g3.Data) (bool, error) {
 
 	// Do not send data back to the plugin that created it.
 	if plugin.Name == data["_tool"] {
@@ -164,7 +164,7 @@ func EvalToolCondition(plugin G3Plugin, index int, data g3model.Data) (bool, err
 }
 
 // Build the command line for the plugin to execute inside the container, and its matching Docker options.
-func BuildToolCommand(plugin G3Plugin, index int, data g3model.Data) (ParsedPluginCommand, []error) {
+func BuildToolCommand(plugin G3Plugin, index int, data g3.Data) (ParsedPluginCommand, []error) {
 	var errorArray []error
 	var command []string
 	var tmpErrA []error
@@ -297,7 +297,7 @@ func BuildReporterCommand(plugin G3Plugin, presetName string) (ParsedPluginComma
 }
 
 // Build the plugin fingerprint.
-func BuildPluginFingerprint(fingerprintTemplate []string, data g3model.Data) ([]string, []error) {
+func BuildPluginFingerprint(fingerprintTemplate []string, data g3.Data) ([]string, []error) {
 	var errorArray []error
 	var fingerprint []string
 	for _, token := range fingerprintTemplate {
@@ -322,12 +322,12 @@ func BuildPluginFingerprint(fingerprintTemplate []string, data g3model.Data) ([]
 // Run the command on the plugin's container. artifactsHostDir, if non-empty,
 // is bind-mounted into the plugin container as /artifacts:rw — the per-task
 // slot the plugin may write into. Pass "" if no artifact slot is wanted.
-func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, data g3model.Data, artifactsHostDir string, stderr io.Writer) ([]g3model.Data, error) {
+func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, data g3.Data, artifactsHostDir string, stderr io.Writer) ([]g3.Data, error) {
 
 	// Convert the input data to JSON format.
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		return []g3model.Data{}, err
+		return []g3.Data{}, err
 	}
 
 	// Write the input JSON into stdin for the plugin.
@@ -340,7 +340,7 @@ func RunPluginCommand(ctx context.Context, plugin G3Plugin, parsed ParsedPluginC
 
 // Run an importer, passing the input file as a reader. Importers do not write
 // artifact files; the /artifacts mount is intentionally not provided.
-func RunPluginImporter(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, stderr io.Writer) ([]g3model.Data, error) {
+func RunPluginImporter(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, stderr io.Writer) ([]g3.Data, error) {
 	return runPluginInternal(ctx, plugin, parsed, stdin, "", stderr)
 }
 
@@ -458,8 +458,8 @@ func RunPluginReporter(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 }
 
 // Run a plugin but take the input from a reader.
-func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, artifactsHostDir string, stderr io.Writer) ([]g3model.Data, error) {
-	var outputArray []g3model.Data
+func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPluginCommand, stdin io.Reader, artifactsHostDir string, stderr io.Writer) ([]g3.Data, error) {
+	var outputArray []g3.Data
 	var stdout bytes.Buffer
 
 	// Get the network name for Golismero.
@@ -556,7 +556,7 @@ func runPluginInternal(ctx context.Context, plugin G3Plugin, parsed ParsedPlugin
 	// Inject a nil placeholder for any empty result (success OR error) so the
 	// worker can seed the negative-result cache. Cancellation already returned.
 	if len(outputArray) == 0 {
-		dummy := g3model.Data{}
+		dummy := g3.Data{}
 		dummy["_type"] = "nil"
 		outputArray = append(outputArray, dummy)
 	}

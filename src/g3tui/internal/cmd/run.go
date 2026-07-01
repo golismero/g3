@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/muesli/termenv"
 
-	log "github.com/golismero/g3/src/g3log"
+	log "github.com/golismero/g3/src/g3/log"
 	"github.com/golismero/g3/src/g3tui/internal/client"
 	"github.com/golismero/g3/src/g3tui/internal/pipelines"
 	"github.com/golismero/g3/src/g3tui/internal/ui"

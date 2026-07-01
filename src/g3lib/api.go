@@ -11,8 +11,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/golismero/g3/src/g3model"
-	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3"
+	log "github.com/golismero/g3/src/g3/log"
 )
 
 const G3_DEBUG_API = "G3_DEBUG_API"
@@ -43,7 +43,7 @@ func MakeApiRequest(ctx context.Context, baseurl string, endpoint string, token 
 	doDebugAPI := DoDebugAPI()
 
 	// Validate the request structure.
-	err := g3model.Validate.Struct(body)
+	err := g3.Validate.Struct(body)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func MakeApiRequest(ctx context.Context, baseurl string, endpoint string, token 
 		}
 
 		// Validate the response structure.
-		err = g3model.Validate.Struct(response)
+		err = g3.Validate.Struct(response)
 
 		// We may get a 2xx with an error status, in theory.
 		// The server should never do this, but let's cover that case anyway.
@@ -149,7 +149,7 @@ func DownloadFile(ctx context.Context, baseurl string, endpoint string, token st
 	doDebugAPI := DoDebugAPI()
 
 	// Validate the request structure.
-	if err := g3model.Validate.Struct(body); err != nil {
+	if err := g3.Validate.Struct(body); err != nil {
 		return err
 	}
 
@@ -317,7 +317,7 @@ type ReqStartScan struct {
 func (req *ReqStartScan) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqCreateScan struct {
@@ -325,7 +325,7 @@ type ReqCreateScan struct {
 func (req *ReqCreateScan) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqAddTargets struct {
@@ -335,17 +335,17 @@ type ReqAddTargets struct {
 func (req *ReqAddTargets) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqInsertData struct {
 	ScanID string   `json:"scanid"              validate:"uuid"`
-	Data   []g3model.Data `json:"data"                validate:"required,min=1"`
+	Data   []g3.Data `json:"data"                validate:"required,min=1"`
 }
 func (req *ReqInsertData) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqImport struct {
@@ -356,7 +356,7 @@ type ReqImport struct {
 func (req *ReqImport) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqStopScan struct {
@@ -365,7 +365,7 @@ type ReqStopScan struct {
 func (req *ReqStopScan) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqEnumerateScans struct {
@@ -373,7 +373,7 @@ type ReqEnumerateScans struct {
 func (req *ReqEnumerateScans) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqDeleteScan struct {
@@ -382,7 +382,7 @@ type ReqDeleteScan struct {
 func (req *ReqDeleteScan) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqGetScanProgressTable struct {
@@ -390,7 +390,7 @@ type ReqGetScanProgressTable struct {
 func (req *ReqGetScanProgressTable) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqGetScanDataIDs struct {
@@ -399,7 +399,7 @@ type ReqGetScanDataIDs struct {
 func (req *ReqGetScanDataIDs) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqLoadData struct {
@@ -410,7 +410,7 @@ type ReqLoadData struct {
 func (req *ReqLoadData) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqTaskArtifacts struct {
@@ -420,7 +420,7 @@ type ReqTaskArtifacts struct {
 func (req *ReqTaskArtifacts) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqTaskCancel struct {
@@ -430,7 +430,7 @@ type ReqTaskCancel struct {
 func (req *ReqTaskCancel) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqTaskDispatch struct {
@@ -447,7 +447,7 @@ type ReqTaskDispatch struct {
 func (req *ReqTaskDispatch) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqQueryLog struct {
@@ -457,7 +457,7 @@ type ReqQueryLog struct {
 func (req *ReqQueryLog) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqQueryScanTaskList struct {
@@ -466,7 +466,7 @@ type ReqQueryScanTaskList struct {
 func (req *ReqQueryScanTaskList) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqQueryScanTaskStatus struct {
@@ -475,7 +475,7 @@ type ReqQueryScanTaskStatus struct {
 func (req *ReqQueryScanTaskStatus) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqListPlugins struct {
@@ -483,7 +483,7 @@ type ReqListPlugins struct {
 func (req *ReqListPlugins) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 type ReqGetEnv struct {
@@ -491,7 +491,7 @@ type ReqGetEnv struct {
 func (req *ReqGetEnv) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }
 
 // PluginListItem is the human/GUI-facing plugin summary served by
@@ -502,7 +502,7 @@ func (req *ReqGetEnv) Decode(r *http.Request) error {
 //   Importer — accepts a file to import      (plugin.Importer != nil)
 //   Reporter — generates downloadable reports (plugin.Reporter != nil)
 //   Runnable — has at least one tool command  (len(plugin.Commands) > 0)
-type PluginListItem g3model.PluginListItem
+type PluginListItem g3.PluginListItem
 
 type ReqCheckScriptSyntax struct {
 	Script string               `json:"script"              validate:"required"`
@@ -510,5 +510,5 @@ type ReqCheckScriptSyntax struct {
 func (req *ReqCheckScriptSyntax) Decode(r *http.Request) error {
 	if err := ValidateHttpRequest(r); err != nil { return err }
 	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
-	return g3model.Validate.Struct(req)
+	return g3.Validate.Struct(req)
 }

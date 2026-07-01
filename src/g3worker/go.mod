@@ -4,14 +4,11 @@ go 1.26.2
 
 replace github.com/golismero/g3/src/g3lib => ../g3lib
 
-replace github.com/golismero/g3/src/g3log => ../g3log
-
-replace github.com/golismero/g3/src/g3model => ../g3model
+replace github.com/golismero/g3/src/g3 => ../g3
 
 require (
 	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
-	github.com/golismero/g3/src/g3log v0.0.0-00010101000000-000000000000
-	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000
+	github.com/golismero/g3/src/g3 v0.0.0-00010101000000-000000000000
 )
 
 require (

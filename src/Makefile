@@ -1,4 +1,4 @@
-.PHONY: all update lint g3lib g3log g3model
+.PHONY: all update lint g3lib g3
 
 GO_FLAGS   ?=
 GO_LDFLAGS ?=
@@ -14,13 +14,12 @@ ZERO_VERSION    := v0.0.0-00010101000000-000000000000
 
 all: ../bin/g3 ../bin/g3api ../bin/g3cli ../bin/g3config ../bin/g3scanner ../bin/g3tui ../bin/g3worker
 
-g3log:
-	cd g3log && go build -ldflags="$(GO_LDFLAGS)"
+# Client-side SDK.
+g3:
+	cd g3 && go build -ldflags="$(GO_LDFLAGS)"
 
-g3model:
-	cd g3model && go build -ldflags="$(GO_LDFLAGS)"
-
-g3lib: g3log g3model
+# Server-side SDK.
+g3lib: g3
 	cd g3lib && go build -ldflags="$(GO_LDFLAGS)"
 
 ../bin/g3: g3lib 

@@ -40,10 +40,6 @@ jobs:
 
   # Detect which Go modules a push touched, so golangci-lint only runs for
   # modules whose source (or whose shared-library deps) actually changed.
-  # g3log has no internal deps; g3lib depends on g3log; the six binaries
-  # depend on both — so a change to g3log fans out to everything, a change
-  # to g3lib fans out to the binaries (but not g3log), and a change inside
-  # a binary's own dir affects only that binary.
   #
   # The dorny step is gated on push events; for workflow_dispatch and
   # workflow_call the outputs stay empty and the golangci `if:` below
@@ -57,12 +53,12 @@ jobs:
     outputs:
       g3: ${{ steps.filter.outputs.g3 }}
       g3api: ${{ steps.filter.outputs.g3api }}
+      g3bin: ${{ steps.filter.outputs.g3bin }}
       g3cli: ${{ steps.filter.outputs.g3cli }}
       g3config: ${{ steps.filter.outputs.g3config }}
       g3lib: ${{ steps.filter.outputs.g3lib }}
-      g3log: ${{ steps.filter.outputs.g3log }}
-      g3model: ${{ steps.filter.outputs.g3model }}
       g3scanner: ${{ steps.filter.outputs.g3scanner }}
+      g3tui: ${{ steps.filter.outputs.g3tui }}
       g3worker: ${{ steps.filter.outputs.g3worker }}
     steps:
       - uses: actions/checkout@v4
@@ -72,44 +68,39 @@ jobs:
         if: github.event_name == 'push'
         with:
           filters: |
-            g3log:
-              - 'src/g3log/**'
-            g3model:
-              - 'src/g3model/**'
-            g3lib:
-              - 'src/g3lib/**'
-              - 'src/g3log/**'
-              - 'src/g3model/**'
             g3:
               - 'src/g3/**'
+            g3lib:
+              - 'src/g3/**'
               - 'src/g3lib/**'
-              - 'src/g3log/**'
-              - 'src/g3model/**'
+            g3bin:
+              - 'src/g3/**'
+              - 'src/g3lib/**'
+              - 'src/g3bin/**'
             g3api:
+              - 'src/g3/**'
+              - 'src/g3lib/**'
               - 'src/g3api/**'
-              - 'src/g3lib/**'
-              - 'src/g3log/**'
-              - 'src/g3model/**'
             g3cli:
+              - 'src/g3/**'
+              - 'src/g3lib/**'
               - 'src/g3cli/**'
-              - 'src/g3lib/**'
-              - 'src/g3log/**'
-              - 'src/g3model/**'
             g3config:
+              - 'src/g3/**'
+              - 'src/g3lib/**'
               - 'src/g3config/**'
-              - 'src/g3lib/**'
-              - 'src/g3log/**'
-              - 'src/g3model/**'
             g3scanner:
+              - 'src/g3/**'
+              - 'src/g3lib/**'
               - 'src/g3scanner/**'
+            g3tui:
+              - 'src/g3/**'
               - 'src/g3lib/**'
-              - 'src/g3log/**'
-              - 'src/g3model/**'
+              - 'src/g3tui/**'
             g3worker:
-              - 'src/g3worker/**'
+              - 'src/g3/**'
               - 'src/g3lib/**'
-              - 'src/g3log/**'
-              - 'src/g3model/**'
+              - 'src/g3worker/**'
 
   golangci:
     name: golangci-lint (${{ matrix.module }})
@@ -120,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [g3, g3api, g3cli, g3config, g3lib, g3log, g3scanner, g3worker]
+        module: [g3, g3api, g3cli, g3config, g3lib, g3scanner, g3tui, g3worker]
     # `matrix` isn't available in job-level `if:`, but it is available in
     # job-level `env:`. Compose the gate here and each meaningful step
     # references SHOULD_RUN. Skip a matrix cell only when this is a push

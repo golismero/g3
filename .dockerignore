@@ -8,9 +8,9 @@
 !src/
 src/g3/g3
 src/g3api/g3api
+src/g3bin/g3bin
 src/g3cli/g3cli
 src/g3lib/g3lib
-src/g3log/g3log
 src/g3scanner/g3scanner
 src/g3cli/g3cli
 src/g3tui/g3tui

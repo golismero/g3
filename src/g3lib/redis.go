@@ -10,7 +10,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/golismero/g3/src/g3model"
+	"github.com/golismero/g3/src/g3"
 )
 
 const REDIS_HOST = "REDIS_HOST"
@@ -72,8 +72,8 @@ func (rdb RedisConnection) TaskKey(scanid string, taskid string, key string) str
 }
 
 // Load the scan metadata object from Redis.
-func LoadScanMetadata(rdb RedisConnection, scanid string) (g3model.ScanMetadata, error) {
-	var report g3model.ScanMetadata
+func LoadScanMetadata(rdb RedisConnection, scanid string) (g3.ScanMetadata, error) {
+	var report g3.ScanMetadata
 	jsonStr, err := rdb.c.Get(context.Background(), rdb.ScanKey(scanid, "metadata")).Result()
 	if err != nil {
 		return report, err
@@ -84,7 +84,7 @@ func LoadScanMetadata(rdb RedisConnection, scanid string) (g3model.ScanMetadata,
 }
 
 // Save the scan metadata object into Redis.
-func SaveScanMetadata(rdb RedisConnection, info g3model.ScanMetadata) error {
+func SaveScanMetadata(rdb RedisConnection, info g3.ScanMetadata) error {
 	jsonBytes, err := json.Marshal(info)
 	if err != nil {
 		return err

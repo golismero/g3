@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/golismero/g3/src/g3lib"
-	"github.com/golismero/g3/src/g3model"
-	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3"
+	log "github.com/golismero/g3/src/g3/log"
 )
 
 func main() {
@@ -90,7 +90,7 @@ func main() {
 		// Parse the JSON data again as a struct since that's what we'll use internally.
 		bytes := []byte(jsonStr)
 		metadata := g3lib.G3Plugin{}
-		err = g3model.DecodeJSON(bytes, &metadata)
+		err = g3.DecodeJSON(bytes, &metadata)
 		if err != nil {
 			return err
 		}
@@ -211,7 +211,7 @@ func main() {
 	}
 
 	// Store the plugins metadata in JSON format.
-	jsonBytes, err := g3model.EncodeJSON(plugins)
+	jsonBytes, err := g3.EncodeJSON(plugins)
 	if err != nil {
 		log.Error("Encoding error writing to file " + relPluginsMetadataFile + ": " + err.Error())
 		os.Exit(1)

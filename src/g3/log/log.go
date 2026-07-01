@@ -1,4 +1,4 @@
-package g3log
+package g3
 
 import (
 	"fmt"

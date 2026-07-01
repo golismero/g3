@@ -17,8 +17,8 @@ import (
 	"github.com/willabides/kongplete"
 
 	"github.com/golismero/g3/src/g3lib"
-	log "github.com/golismero/g3/src/g3log"
-	"github.com/golismero/g3/src/g3model"
+	log "github.com/golismero/g3/src/g3/log"
+	"github.com/golismero/g3/src/g3"
 )
 
 type InputCmd struct {
@@ -96,7 +96,7 @@ type CompletionsCmd struct {
 }
 
 func (c *CompletionsCmd) Run() error {
-	return g3model.EmitShellCompletion(c.Shell, "g3", os.Stdout)
+	return g3.EmitShellCompletion(c.Shell, "g3", os.Stdout)
 }
 
 var CLI struct {
@@ -260,7 +260,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 	// Validate the scan script.
 	parsed, err := g3lib.ParseServerScript(plugins, script)
 	if err == nil {
-		err = g3model.Validate.Struct(parsed)
+		err = g3.Validate.Struct(parsed)
 	}
 	if err != nil {
 		log.Critical(err)
@@ -285,9 +285,9 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 			"--------------------------------------------------------------------------------\n")
 
 	// Build the target objects.
-	var targetData []g3model.Data
+	var targetData []g3.Data
 	if len(parsed.Targets) > 0 {
-		targetData, err = g3model.BuildTargets(parsed.Targets)
+		targetData, err = g3.BuildTargets(parsed.Targets)
 		if err != nil {
 			log.Critical(err)
 			return err
@@ -404,7 +404,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 				cmdIdxWidth := len(fmt.Sprintf("%d", len(plugin.Commands)-1))
 
 				// Here we will collect all the new data for this pipeline step.
-				var newData []g3model.Data
+				var newData []g3.Data
 
 				// Iterate over the data in the current pipeline.
 				//
@@ -461,7 +461,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 
 						// If we have data matching this fingerprint,
 						// use it instead of calling the plugin.
-						var pastData []g3model.Data
+						var pastData []g3.Data
 						for _, tmp := range outputData {
 							tmp1, ok := tmp["_fp"]
 							if !ok {
@@ -579,7 +579,7 @@ func (cmd *TargetCmd) Run(ctx CmdContext) error {
 	}
 
 	// Parse each target string and generate a corresponding JSON array.
-	jsonArray, err := g3model.BuildTargets(arguments)
+	jsonArray, err := g3.BuildTargets(arguments)
 	if err != nil {
 		return err
 	}
@@ -664,7 +664,7 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 	}
 
 	// Get all the past commands so we know we're not repeating any test.
-	knownFingerprints := g3model.StringSet{}
+	knownFingerprints := g3.StringSet{}
 	for _, data := range inputJson {
 		for _, fp := range data["_fp"].([]interface{}) {
 			knownFingerprints.Add(fp.(string))
@@ -679,7 +679,7 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 
 	// We're going to iterate over every selected plugin to see if we
 	// can execute it with each of the objects in the input data.
-	totalOutput := []g3model.Data{}
+	totalOutput := []g3.Data{}
 	for _, plugin := range tools {
 		cmdIdxWidth := len(fmt.Sprintf("%d", len(plugin.Commands)-1))
 		for inputIdx, data := range inputJson {
@@ -858,7 +858,7 @@ func (cmd *JoinCmd) Run(ctx CmdContext) error {
 	// Open each input file and parse it, then append it to a single array.
 	// If the special filename "-" is used, read from stdin. Can only be done once.
 	usedStdin := false
-	totalOutput := []g3model.Data{}
+	totalOutput := []g3.Data{}
 	for _, filepath := range cmd.Input {
 		if filepath == "-" {
 			if usedStdin {
@@ -893,7 +893,7 @@ func (cmd *FilterCmd) Run(ctx CmdContext) error {
 	}
 
 	// Filter the input data using the condition.
-	filteredOutput := []g3model.Data{}
+	filteredOutput := []g3.Data{}
 	for _, data := range inputJson {
 		ok, err := g3lib.EvalCondition(cmd.Filter, data)
 		if err != nil {

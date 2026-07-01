@@ -23,8 +23,8 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/golismero/g3/src/g3lib"
-	"github.com/golismero/g3/src/g3model"
-	log "github.com/golismero/g3/src/g3log"
+	"github.com/golismero/g3/src/g3"
+	log "github.com/golismero/g3/src/g3/log"
 )
 
 const G3_API_ID = "G3_API_ID"                   // MQTT client ID. Must be unique in your deployment or bad things will happen.
@@ -88,7 +88,7 @@ func runImport(plugins g3lib.G3PluginMetadata, mdb g3lib.DatastoreClient, artifa
 		return nil, http.StatusBadRequest, errors.New("tool not found or has no importer: " + tool)
 	}
 
-	if g3model.Validate.Var(fileid, "required,uuid") != nil {
+	if g3.Validate.Var(fileid, "required,uuid") != nil {
 		return nil, http.StatusBadRequest, errors.New("invalid file ID: " + fileid)
 	}
 
@@ -528,7 +528,7 @@ func Main() int {
 			// Validate the scan script.
 			parsed, err := g3lib.ParseServerScript(plugins, request.Script)
 			if err == nil {
-				err = g3model.Validate.Struct(parsed)
+				err = g3.Validate.Struct(parsed)
 			}
 			if err != nil {
 				log.Error(err)
@@ -562,7 +562,7 @@ func Main() int {
 
 			// Add the targets to the database.
 			if len(parsed.Targets) > 0 {
-				targetData, err := g3model.BuildTargets(parsed.Targets)
+				targetData, err := g3.BuildTargets(parsed.Targets)
 				if err != nil {
 					log.Error(err)
 					g3lib.SendApiError(w, http.StatusBadRequest, "Runtime error in script: "+err.Error())
@@ -682,7 +682,7 @@ func Main() int {
 				return
 			}
 
-			targetData, err := g3model.BuildTargets(request.Targets)
+			targetData, err := g3.BuildTargets(request.Targets)
 			if err != nil {
 				log.Error(err)
 				g3lib.SendApiError(w, http.StatusBadRequest, "Invalid target: "+err.Error())
@@ -1404,7 +1404,7 @@ func Main() int {
 			// Get the requested data objects. When taskid is set, the call is
 			// "fetch the output of one specific task"; otherwise it's by ID
 			// list (or all data when the list is empty).
-			var data []g3model.Data
+			var data []g3.Data
 			if request.TaskID != "" {
 				data, err = g3lib.LoadDataByTask(mdb_client, request.ScanID, request.TaskID)
 			} else {
@@ -1444,11 +1444,11 @@ func Main() int {
 			// capability flags (importer/reporter/runnable). A plugin may
 			// expose any combination, so consumers filter on the booleans
 			// rather than inferring capability from the name or category.
-			var pluginList []g3model.PluginListItem
+			var pluginList []g3.PluginListItem
 			for _, name := range pluginNames {
 				plugin := plugins[name]
-				pluginList = append(pluginList, g3model.PluginListItem{
-					PluginDescription: g3model.PluginDescription{
+				pluginList = append(pluginList, g3.PluginListItem{
+					PluginDescription: g3.PluginDescription{
 						Name:        plugin.Name,
 						Category:    plugin.Category,
 						URL:         plugin.URL,

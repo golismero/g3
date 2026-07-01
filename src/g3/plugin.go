@@ -1,4 +1,4 @@
-package g3model
+package g3
 
 import "fmt"
 

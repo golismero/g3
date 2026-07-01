@@ -12,7 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/golismero/g3/src/g3model"
+	"github.com/golismero/g3/src/g3"
 )
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -131,7 +131,7 @@ func _findInData(data any, path []string, propname string) ([]string, interface{
 				}
 				path = path[:len(path)-1]
 			}
-		case g3model.Data:
+		case g3.Data:
 			for key, value := range typedData {
 				//fmt.Fprintf(os.Stderr, "KEY: %v\n", key)
 				if key == propname {
@@ -178,7 +178,7 @@ func _matchProperty(data interface{}, propname string, wanted any) bool {
 					return true
 				}
 			}
-		case g3model.Data:
+		case g3.Data:
 			for key, value := range typedData {
 				if key == propname && value == wanted {
 					return true

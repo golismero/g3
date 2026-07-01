@@ -7,7 +7,7 @@ Contract (see docs/superpowers/specs/2026-05-16-reporter-plugins-design.md):
             sub-object mirrors magenta's metadata schema *exactly* (title,
             language, min_severity, severity_colors, project_info, ...), so we
             extract it verbatim and hand it to magenta via `-m`. The remaining
-            lines (g3model.Data) are NOT read here — magenta walks /input on
+            lines (g3.Data) are NOT read here — magenta walks /input on
             disk through its own parsers — so once line 1 is read we repoint
             stdin to /dev/null. That EPIPEs the worker's pipe writer and stops
             it streaming MongoDB results we would never consume.

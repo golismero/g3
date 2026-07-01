@@ -1,4 +1,4 @@
-package g3model
+package g3
 
 type ScanMetadata struct {
 	ScanID string          `json:"scanid"           validate:"required,uuid"`

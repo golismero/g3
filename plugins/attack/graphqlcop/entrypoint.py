@@ -170,7 +170,7 @@ def parse(data, target_url=None, orig_target_url=None):
     else:
         fp = None
 
-    # The worker reads stdout as a JSON array of g3model.Data; declare the artifacts.
+    # The worker reads stdout as a JSON array of g3.Data; declare the artifacts.
     output = []
     if is_runner:
         if not urls:

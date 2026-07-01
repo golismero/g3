@@ -1,4 +1,4 @@
-package g3model
+package g3
 
 // ManifestFilename is the name of the per-task manifest the worker writes into
 // each task's artifact slot directory.

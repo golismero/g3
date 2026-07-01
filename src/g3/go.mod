@@ -1,8 +1,9 @@
-module github.com/golismero/g3/src/g3model
+module github.com/golismero/g3/src/g3
 
 go 1.26.2
 
 require (
+	github.com/apsdehal/go-logger v0.0.0-20190515212710-b0d6ccfee0e6
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 )

@@ -20,8 +20,8 @@ import (
 	"github.com/willabides/kongplete"
 
 	"github.com/golismero/g3/src/g3lib"
-	log "github.com/golismero/g3/src/g3log"
-	"github.com/golismero/g3/src/g3model"
+	log "github.com/golismero/g3/src/g3/log"
+	"github.com/golismero/g3/src/g3"
 )
 
 const G3_API_BASEURL = "G3_API_BASEURL"
@@ -98,7 +98,7 @@ type CompletionsCmd struct {
 }
 
 func (c *CompletionsCmd) Run() error {
-	return g3model.EmitShellCompletion(c.Shell, "g3cli", os.Stdout)
+	return g3.EmitShellCompletion(c.Shell, "g3cli", os.Stdout)
 }
 
 var CLI struct {
@@ -246,7 +246,7 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 	// We only need the list of imports at this stage.
 	parsed, err := g3lib.ParseScript(nil, script)
 	if err == nil {
-		err = g3model.Validate.Struct(parsed)
+		err = g3.Validate.Struct(parsed)
 	}
 	if err != nil {
 		log.Critical("Error parsing file " + input + ": " + err.Error())
@@ -336,7 +336,7 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 			log.Critical(err.Error())
 			return err
 		}
-		err = g3model.Validate.Struct(response)
+		err = g3.Validate.Struct(response)
 		if err != nil {
 			log.Critical(err.Error())
 			return err
