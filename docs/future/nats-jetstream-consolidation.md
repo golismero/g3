@@ -258,7 +258,7 @@ absorbing Part 2 of the predecessor note.
 7. **JetStream persistence is younger** than mosquitto's decade-old engine; the accounts/JWT
    security model has a learning curve (start with config-file accounts + mTLS).
 8. **Mongo stays.** KV/ObjectStore/streams have no secondary indexes or ad-hoc queries;
-   reports/mergers/augmenters need document queries. Mongo is the lone, justified survivor.
+   report generation needs document queries. Mongo is the lone, justified survivor.
 
 ---
 

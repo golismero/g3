@@ -73,19 +73,21 @@ User (CLI / HTTP)
 ### Plugin System
 
 Plugins live under `plugins/*/`. Each plugin directory contains:
-- `<name>.g3p` — Jsonnet plugin definition (commands, conditions, fingerprints, importers, mergers). Jsonnet is a JSON superset (comments, trailing commas, `|||` multiline text blocks, plus variables/imports/std library if ever needed); `g3config` evaluates each file to JSON.
+- `<name>.g3p` — Jsonnet plugin definition (commands, conditions, fingerprints, importers, reporters). Jsonnet is a JSON superset (comments, trailing commas, `|||` multiline text blocks, plus variables/imports/std library if ever needed); `g3config` evaluates each file to JSON.
 - `Dockerfile` — Containerized tool
 - `g3i.py` — Importer: parses raw tool output → G3Data JSON
-- `g3m.py` — Merger: deduplicates results across runs
+- `g3r.py` — Reporter: synthesizes findings into a downloadable report (reporter plugins only, e.g. Magenta)
 - `g3p.sh` — Container entrypoint
 
 `g3config` scans plugin directories and writes a registry to `config/`.
+
+Tool plugins emit raw findings (via commands/importers) but do **not** synthesize `_type:issue` objects — issue generation is exclusively the job of the reporter plugin (Magenta), which reads the accumulated scan data and produces the final vulnerability report. There is no separate merger phase; the scanner saves scan metadata and dispatches the reporter directly at the end of a scan.
 
 Plugin Docker images default to `ghcr.io/golismero/<plugin-name>` when a `.g3p` omits the `image:` field (see `src/g3config/g3config.go`). A `.g3p` can override with any image reference — local tag, third-party registry, fork namespace — so private deployments and forks don't need to patch the framework. Multiple plugins can also share one image (the three `nmap.g3p` variants all point to `ghcr.io/golismero/nmap`).
 
 ### Key Technologies
 
 - **Go 1.25**, Kong (CLI), gorilla/websocket, golang-jwt, go-playground/validator, go-chart
-- **Python 3** for plugin importer/merger scripts
+- **Python 3** for plugin importer/reporter scripts
 - **MongoDB** — scan data; **MariaDB** — execution logs; **Redis** — report cache; **MQTT (Mosquitto)** — task queue
 - **Docker** — plugin isolation (worker mounts Docker socket to launch containers)

@@ -199,7 +199,7 @@ sequenceDiagram
         Scanner->>API: SendScanProgress n / total ["status"]
     end
 
-    Scanner->>Scanner: run mergers, save report
+    Scanner->>Scanner: save scan metadata, dispatch reporter (if declared)
     Scanner->>API: SendScanCompleted ["status"]
     API->>User: WS notify (via /ws subscription)
 ```
