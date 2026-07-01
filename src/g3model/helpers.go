@@ -20,13 +20,15 @@ var Validate *validator.Validate = validator.New(validator.WithRequiredStructEna
 func init() {
 	Validate.RegisterAlias("g3type", "alpha,lowercase,min=3")
 	re_g3name := regexp.MustCompile(`^[a-z][a-z0-9_\\-]*$`)
-	Validate.RegisterValidation("g3name", func(fl validator.FieldLevel) bool {
+	err := Validate.RegisterValidation("g3name", func(fl validator.FieldLevel) bool {
 			return re_g3name.Match([]byte(fl.Field().String()))
 		})
+	if err != nil {panic(err.Error())}
 	re_is_paragraph := regexp.MustCompile(`^[^\r\n]+$`)
-	Validate.RegisterValidation("paragraph", func(fl validator.FieldLevel) bool {
+	err = Validate.RegisterValidation("paragraph", func(fl validator.FieldLevel) bool {
 			return re_is_paragraph.Match([]byte(fl.Field().String()))
 		})
+	if err != nil {panic(err.Error())}
 }
 
 // Validates pointer whether it points to a struct or to a slice/array.

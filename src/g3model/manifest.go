@@ -6,9 +6,9 @@ const ManifestFilename = "manifest.json"
 
 // ManifestFile describes one file in the task's artifact slot.
 type ManifestFile struct {
-	Name     string `json:"name"     validate="required"`
-	Size     int64  `json:"size"     validate="ge=0"`
-	Modified int64  `json:"modified" validate="gt=0"`
+	Name     string `json:"name"     validate:"required"`
+	Size     int64  `json:"size"     validate:"ge=0"`
+	Modified int64  `json:"modified" validate:"gt=0"`
 }
 
 // ManifestWork describes one sub-command run within the task: a command line
@@ -16,8 +16,8 @@ type ManifestFile struct {
 // filenames the plugin claimed for that command via _artifacts. The filenames
 // reference entries in Manifest.Files.
 type ManifestWork struct {
-	Cmd       string   `json:"cmd"       validate="required"`
-	Artifacts []string `json:"artifacts" validate="omitempty"`
+	Cmd       string   `json:"cmd"       validate:"required"`
+	Artifacts []string `json:"artifacts" validate:"omitempty"`
 }
 
 // Manifest is the per-task record written into
@@ -31,13 +31,13 @@ type ManifestWork struct {
 // but absent from every Work.Artifacts are intentional orphans (debug, forensic
 // retention).
 type Manifest struct {
-	ScanID     string         `json:"scan_id"     validate="required,uuid,ne=ne=00000000-0000-0000-0000-000000000000"`
-	TaskID     string         `json:"task_id"     validate="required,uuid,ne=ne=00000000-0000-0000-0000-000000000000"`
-	Plugin     string         `json:"plugin"      validate="required"`
-	Tool       string         `json:"tool"        validate="required"`
-	ExitStatus string         `json:"exit_status" validate="required"`
-	StartedAt  int64          `json:"started_at"  validate="gt=0"`
-	EndedAt    int64          `json:"ended_at"    validate="gt=0"`
-	Files      []ManifestFile `json:"files"       validate="dive"`
-	Work       []ManifestWork `json:"work"        validate="dive"`
+	ScanID     string         `json:"scan_id"     validate:"required,uuid,ne=ne=00000000-0000-0000-0000-000000000000"`
+	TaskID     string         `json:"task_id"     validate:"required,uuid,ne=ne=00000000-0000-0000-0000-000000000000"`
+	Plugin     string         `json:"plugin"      validate:"required"`
+	Tool       string         `json:"tool"        validate:"required"`
+	ExitStatus string         `json:"exit_status" validate:"required"`
+	StartedAt  int64          `json:"started_at"  validate:"gt=0"`
+	EndedAt    int64          `json:"ended_at"    validate:"gt=0"`
+	Files      []ManifestFile `json:"files"       validate:"dive"`
+	Work       []ManifestWork `json:"work"        validate:"dive"`
 }

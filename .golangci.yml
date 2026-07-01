@@ -6,6 +6,8 @@ linters:
     rules:
       - linters: [staticcheck]
         text: "ST1005"
+      - linters: [staticcheck]
+        text: "ST1006"
   settings:
     errcheck:
       exclude-functions:

@@ -87,7 +87,7 @@ func (self SubscriptionData) Logs() ([]LogLine, error) {
 }
 
 func (self SubscriptionData) Input() (string, error) {
-	var data_id string = NIL_UUID
+	var data_id = NIL_UUID
 	if self.Channel != "input" {
 		return data_id, errors.New("Not an input event")
 	}

@@ -4,7 +4,7 @@ import "fmt"
 
 type PluginDescription struct {
 	Name        string `json:"name"         validate:"omitempty,g3name"`      // Tool name. Must be unique.
-	Category    string `json:"category"     validate:"omitempty,g3name`       // Defaults to parent directory name.
+	Category    string `json:"category"     validate:"omitempty,g3name"`      // Defaults to parent directory name.
 	Description string `json:"description"  validate:"omitempty,paragraph"`   // Description for humans.
 	URL         string `json:"url"          validate:"omitempty,url"`         // URL for humans.
 }

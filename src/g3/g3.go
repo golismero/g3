@@ -43,6 +43,7 @@ type FlagCmd struct {
 type ScanCmd struct {
 	IOCmd
 	FlagCmd
+	Artifacts string `name:"artifacts" short:"a" type:"path" help:"Directory to persist tool artifacts into (created if absent; one sub-slot per invocation); omit to discard artifacts."`
 }
 
 type TargetCmd struct {
@@ -67,7 +68,7 @@ type RunCmd struct {
 	IOCmd
 	FlagCmd
 	Tools []string `arg:"" required:"" help:"Tools to run."`
-	Artifacts string `name:"artifacts" short:"a" type:"existingdir" help:"Directory to persist tool artifacts into (one sub-slot per invocation); omit to discard artifacts."`
+	Artifacts string `name:"artifacts" short:"a" type:"path" help:"Directory to persist tool artifacts into (created if absent; one sub-slot per invocation); omit to discard artifacts."`
 }
 
 type JoinCmd struct {
@@ -361,9 +362,15 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 	} else {
 
 		// Run the commands for each pipeline sequentially.
+		// Widths for zero-padding artifact sub-slot indices so a lexical
+		// directory listing matches numeric order. The pipeline count is known
+		// upfront; the per-step, per-data and per-command widths are computed at
+		// their respective loop entries below (each bound is known there).
 		currentScanStep := 0
+		pipeIdxWidth := len(fmt.Sprintf("%d", len(parsed.Pipelines)-1))
 		for pipeidx := 0; pipeidx < len(parsed.Pipelines); pipeidx++ {
 			pipeline := parsed.Pipelines[pipeidx]
+			stepIdxWidth := len(fmt.Sprintf("%d", len(pipeline)-1))
 			log.Debugf("Entering pipeline %d", pipeidx)
 
 			// Check for cancelation.
@@ -394,12 +401,27 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 					log.Error("Missing plugin: " + tool)
 					return errors.New("Missing plugin: " + tool)
 				}
+				cmdIdxWidth := len(fmt.Sprintf("%d", len(plugin.Commands)-1))
 
 				// Here we will collect all the new data for this pipeline step.
 				var newData []g3model.Data
 
 				// Iterate over the data in the current pipeline.
-				for _, data := range currentData {
+				//
+				// TODO: dataIdx feeds the persistent --artifacts sub-slot name
+				// (g3-<tool>-<pipeidx>-<stepidx>-<dataIdx>-<cmdIdx>), which makes
+				// re-runs idempotent only as far as this index is stable. For
+				// step 0 currentData is targetData (stable), but for later steps
+				// it is the previous step's output, so a downstream dataIdx is
+				// only as stable as the upstream tool's output count and order.
+				// A tool that emits a different number of results, or the same
+				// results in a different order, on a re-run will shift downstream
+				// dataIdx values and produce new slots instead of overwriting the
+				// old ones. Fix direction if this ever bites: key the slot on
+				// something intrinsic to the data object (e.g. its fingerprint)
+				// rather than its positional index.
+				dataIdxWidth := len(fmt.Sprintf("%d", len(currentData)-1))
+				for dataIdx, data := range currentData {
 
 					// Check for cancelation.
 					if *cmdctx.Cancelled {
@@ -481,13 +503,33 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 								"--------------------------------------------------------------------------------\n",
 							int(((currentScanStep-1)*100)/totalScanSteps), currentScanStep-1, totalScanSteps,
 							plugin.Name, plugin.Description, plugin.URL)
-						slot, slotErr := g3lib.CreateEphemeralArtifactSlot()
-						if slotErr != nil {
-							log.Warningf("Cannot create ephemeral artifact slot, plugin will run without /artifacts: %s", slotErr.Error())
-							slot = ""
+						// Resolve the artifact slot for this invocation. With
+						// --artifacts, each (pipeline, step, data, command) coordinate
+						// gets its own persistent sub-slot under the user's directory
+						// so invocations never clobber each other's files; the
+						// deterministic name makes a re-run idempotent (it overwrites
+						// that exact coordinate's previous output). Without --artifacts
+						// we fall back to a throwaway slot removed on exit.
+						var slot string
+						persistent := cmd.Artifacts != ""
+						if persistent {
+							name := fmt.Sprintf("g3-%s-%0*d-%0*d-%0*d-%0*d",
+								plugin.Name, pipeIdxWidth, pipeidx, stepIdxWidth, stepidx, dataIdxWidth, dataIdx, cmdIdxWidth, index)
+							slot = filepath.Join(cmd.Artifacts, name)
+							if slotErr := os.MkdirAll(slot, 0o755); slotErr != nil {
+								log.Warningf("Cannot create artifact slot %s, plugin will run without /artifacts: %s", slot, slotErr.Error())
+								slot = ""
+							}
+						} else {
+							var slotErr error
+							slot, slotErr = g3lib.CreateEphemeralArtifactSlot()
+							if slotErr != nil {
+								log.Warningf("Cannot create ephemeral artifact slot, plugin will run without /artifacts: %s", slotErr.Error())
+								slot = ""
+							}
 						}
 						resultData, err := g3lib.RunPluginCommand(ctx, plugin, parsed, data, slot, stderr)
-						if slot != "" {
+						if slot != "" && !persistent {
 							os.RemoveAll(slot) //nolint:errcheck
 						}
 						if err != nil {

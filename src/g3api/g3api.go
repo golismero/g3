@@ -288,12 +288,6 @@ func (sws *SyncWebSocket) WriteData(msgtype string, data any) error {
 	return sws.WriteResponse(response)
 }
 
-func (sws *SyncWebSocket) WriteSuccess() error {
-	response := WSResponse{}
-	response.MsgType = "success"
-	return sws.WriteResponse(response)
-}
-
 func (sws *SyncWebSocket) WriteError(text string) error {
 	response := WSResponse{}
 	response.MsgType = "error"
@@ -1671,7 +1665,10 @@ func Main() int {
 
 				default:
 					log.Errorf("Unknown websocket request type: %v", request.MsgType)
-					conn.WriteError("Unknown websocket request type.")
+					err := conn.WriteError("Unknown websocket request type.")
+					if err != nil {
+						log.Error(err.Error())
+					}
 				}
 			}
 		}))
