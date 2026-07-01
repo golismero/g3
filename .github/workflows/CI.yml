@@ -73,14 +73,14 @@ jobs:
             g3lib:
               - 'src/g3/**'
               - 'src/g3lib/**'
-            g3bin:
-              - 'src/g3/**'
-              - 'src/g3lib/**'
-              - 'src/g3bin/**'
             g3api:
               - 'src/g3/**'
               - 'src/g3lib/**'
               - 'src/g3api/**'
+            g3bin:
+              - 'src/g3/**'
+              - 'src/g3lib/**'
+              - 'src/g3bin/**'
             g3cli:
               - 'src/g3/**'
               - 'src/g3lib/**'
@@ -111,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [g3, g3api, g3cli, g3config, g3lib, g3scanner, g3tui, g3worker]
+        module: [g3, g3api, g3bin, g3cli, g3config, g3lib, g3scanner, g3tui, g3worker]
     # `matrix` isn't available in job-level `if:`, but it is available in
     # job-level `env:`. Compose the gate here and each meaningful step
     # references SHOULD_RUN. Skip a matrix cell only when this is a push
