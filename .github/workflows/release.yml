@@ -175,12 +175,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # All four cross-compile modules share the same Go toolchain version,
-      # so reading from any module's go.mod works. g3's go.mod is the
-      # natural pick for this job.
+      # All four cross-compile modules share the same Go toolchain version.
       - uses: actions/setup-go@v5
         with:
-          go-version-file: src/g3/go.mod
+          go-version-file: go.work
 
       # g3config builds natively (no GOOS/GOARCH override — it only runs on
       # the runner) and emits the platform-agnostic plugin registry JSONs
@@ -196,7 +194,7 @@ jobs:
       # GOOS/GOARCH apply only to this cross-compile step. CGO_ENABLED=0
       # produces a static binary identical in shape to the g3cli/g3tui
       # outputs — same -trimpath, same -ldflags, same Version injection.
-      - name: Build g3
+      - name: Build g3bin
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -206,7 +204,7 @@ jobs:
         run: |
           set -e
           mkdir -p "dist/${TARGET}"
-          ( cd src/g3 && \
+          ( cd src/g3bin && \
             go build \
               -trimpath \
               -ldflags="-s -w -X github.com/golismero/g3/src/g3lib.Version=${VERSION}" \

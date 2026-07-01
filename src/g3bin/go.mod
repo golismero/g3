@@ -1,4 +1,4 @@
-module github.com/golismero/g3/src/g3
+module github.com/golismero/g3/src/g3bin
 
 go 1.26.2
 

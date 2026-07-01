@@ -24,7 +24,7 @@ g3lib: g3log g3model
 	cd g3lib && go build -ldflags="$(GO_LDFLAGS)"
 
 ../bin/g3: g3lib 
-	cd g3 && go build $(GO_FLAGS) -ldflags="$(GO_LDFLAGS)" -o ../../bin/g3
+	cd g3bin && go build $(GO_FLAGS) -ldflags="$(GO_LDFLAGS)" -o ../../bin/g3
 
 ../bin/g3api: g3lib
 	cd g3api && go build $(GO_FLAGS) -ldflags="$(GO_LDFLAGS)" -o ../../bin/g3api
