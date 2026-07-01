@@ -44,7 +44,7 @@ func requireToken(expected string, h http.HandlerFunc) http.HandlerFunc {
 		hdr := r.Header.Get("Authorization")
 		token, ok := strings.CutPrefix(hdr, "Bearer ")
 		if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
-			g3lib.SendApiError(w, http.StatusUnauthorized, "Unauthorized.")
+			sendApiError(w, http.StatusUnauthorized, "Unauthorized.")
 			return
 		}
 		h(w, r)
@@ -59,15 +59,15 @@ func requireManagedScan(w http.ResponseWriter, db g3lib.SQLDBClient, scanid stri
 	entry, err := g3lib.GetScanStatus(db, scanid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			g3lib.SendApiError(w, http.StatusNotFound, "Scan does not exist.")
+			sendApiError(w, http.StatusNotFound, "Scan does not exist.")
 			return err
 		}
 		log.Error(err)
-		g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+		sendApiError(w, http.StatusInternalServerError, "Internal error.")
 		return err
 	}
 	if entry.Status != g3lib.STATUS_MANAGED {
-		g3lib.SendApiError(w, http.StatusConflict, "Operation requires a managed scan.")
+		sendApiError(w, http.StatusConflict, "Operation requires a managed scan.")
 		return errors.New("scan is not managed: " + scanid)
 	}
 	return nil
@@ -132,6 +132,47 @@ func runImport(plugins g3lib.G3PluginMetadata, mdb g3lib.DatastoreClient, artifa
 	}
 	log.Debug("Imported file: " + fileid)
 	return ids, 0, nil
+}
+
+func validateHttpRequest(r *http.Request) error {
+	if r.Method != "POST" {
+		return errors.New("invalid HTTP method")
+	}
+	if h, ok := r.Header["Content-Type"]; !ok || len(h) != 1 || h[0] != "application/json" {
+		return errors.New("invalid or missing Content-Type header")
+	}
+	if h, ok := r.Header["Content-Length"]; !ok || len(h) != 1 || h[0] == "0" {
+		return errors.New("missing payload")
+	}
+	return nil
+}
+
+func decodeHttpRequest(r *http.Request, req any) error {
+	if err := validateHttpRequest(r); err != nil { return err }
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil { return err }
+	return g3.Validate.Struct(req)
+}
+
+func sendApiResponse(w http.ResponseWriter, data any) {
+	internalSendApiResponse(w, http.StatusOK, "success", data)
+}
+
+func sendApiError(w http.ResponseWriter, statusCode int, errorMsg string) {
+	internalSendApiResponse(w, statusCode, "error", errorMsg)
+}
+
+func internalSendApiResponse(w http.ResponseWriter, statusCode int, status string, data any) {
+	var response g3.APIResponse
+	response.Status = status
+	response.Data = data
+	respBytes, err := g3.EncodeJSON(response)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError) //nolint:errcheck
+		log.Error("Error encoding API response: " + err.Error())
+		return
+	}
+	w.WriteHeader(statusCode) //nolint:errcheck
+	w.Write(respBytes) //nolint:errcheck
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -517,11 +558,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/start", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/start")
-			var request g3lib.ReqStartScan
-			err := request.Decode(r)
+			var request g3.ReqStartScan
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -532,7 +573,7 @@ func Main() int {
 			}
 			if err != nil {
 				log.Error(err)
-				g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script: "+err.Error())
+				sendApiError(w, http.StatusBadRequest, "Syntax error in script: "+err.Error())
 				return
 			}
 
@@ -544,7 +585,7 @@ func Main() int {
 			// intentionally allow "nothing to do"; orchestrated scans do not.
 			if len(parsed.Imports) == 0 && (len(parsed.Pipelines) == 0 || len(parsed.Targets) == 0) {
 				log.Error("Empty scan rejected: nothing to do (need an import, or a pipeline run with at least one target).")
-				g3lib.SendApiError(w, http.StatusBadRequest, "Empty scan: a scan must declare at least one import, or at least one pipeline run with a target.")
+				sendApiError(w, http.StatusBadRequest, "Empty scan: a scan must declare at least one import, or at least one pipeline run with a target.")
 				return
 			}
 
@@ -565,13 +606,13 @@ func Main() int {
 				targetData, err := g3.BuildTargets(parsed.Targets)
 				if err != nil {
 					log.Error(err)
-					g3lib.SendApiError(w, http.StatusBadRequest, "Runtime error in script: "+err.Error())
+					sendApiError(w, http.StatusBadRequest, "Runtime error in script: "+err.Error())
 					return
 				}
 				_, err = g3lib.SaveData(mdb_client, scanID, "", targetData)
 				if err != nil {
 					log.Error(err)
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+					sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 					return
 				}
 			}
@@ -584,9 +625,9 @@ func Main() int {
 				if err != nil {
 					log.Error(err)
 					if status == http.StatusBadRequest {
-						g3lib.SendApiError(w, http.StatusBadRequest, "Syntax error in script, "+err.Error())
+						sendApiError(w, http.StatusBadRequest, "Syntax error in script, "+err.Error())
 					} else {
-						g3lib.SendApiError(w, http.StatusInternalServerError, "Error while running importer: "+parsedImport.Tool)
+						sendApiError(w, http.StatusInternalServerError, "Error while running importer: "+parsedImport.Tool)
 					}
 					return false
 				}
@@ -601,7 +642,7 @@ func Main() int {
 			// Insert the new scan ID into the SQL database before dispatching the MQTT message.
 			if err := g3lib.InsertScanProgress(sql_db, scanID); err != nil {
 				log.Error(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
 
@@ -614,13 +655,13 @@ func Main() int {
 				if err = g3lib.UpdateScanProgress(sql_db, scanID, g3lib.STATUS_ERROR, nil, "Internal server error."); err != nil {
 					log.Error(err)
 				}
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
 			log.Info("Started scan with ID: " + scanID)
 
 			// Return the response.
-			g3lib.SendApiResponse(w, scanID)
+			sendApiResponse(w, scanID)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -630,10 +671,10 @@ func Main() int {
 		// the Python g3client) to host on-demand task dispatch.
 		http.HandleFunc(apiPath+"/scan/create", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/create")
-			var request g3lib.ReqCreateScan
-			if err := request.Decode(r); err != nil {
+			var request g3.ReqCreateScan
+			if err := decodeHttpRequest(r, &request); err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -643,12 +684,12 @@ func Main() int {
 			// the scan via GetScanStatus, then mark it MANAGED.
 			if err := g3lib.InsertScanProgress(sql_db, scanid); err != nil {
 				log.Error(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
 			if err := g3lib.UpdateScanProgress(sql_db, scanid, g3lib.STATUS_MANAGED, nil, "Externally managed."); err != nil {
 				log.Error(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
 
@@ -656,11 +697,11 @@ func Main() int {
 			// owning <scanid> creation for managed scans is consistent.
 			if err := os.MkdirAll(filepath.Join(artifactsRoot, scanid), 0o755); err != nil {
 				log.Error("Cannot create scan dir: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
 
-			g3lib.SendApiResponse(w, scanid)
+			sendApiResponse(w, scanid)
 			log.Info("Created managed scan with ID: " + scanid)
 		}))
 
@@ -671,10 +712,10 @@ func Main() int {
 		// Mongo IDs so the caller can immediately dispatch tasks against them.
 		http.HandleFunc(apiPath+"/scan/target/add", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/target/add")
-			var request g3lib.ReqAddTargets
-			if err := request.Decode(r); err != nil {
+			var request g3.ReqAddTargets
+			if err := decodeHttpRequest(r, &request); err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -685,18 +726,18 @@ func Main() int {
 			targetData, err := g3.BuildTargets(request.Targets)
 			if err != nil {
 				log.Error(err)
-				g3lib.SendApiError(w, http.StatusBadRequest, "Invalid target: "+err.Error())
+				sendApiError(w, http.StatusBadRequest, "Invalid target: "+err.Error())
 				return
 			}
 
 			ids, err := g3lib.SaveData(mdb_client, request.ScanID, g3lib.NIL_TASKID, targetData)
 			if err != nil {
 				log.Error(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
 
-			g3lib.SendApiResponse(w, ids)
+			sendApiResponse(w, ids)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -705,10 +746,10 @@ func Main() int {
 		// Returns the inserted Mongo IDs.
 		http.HandleFunc(apiPath+"/scan/data/insert", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/data/insert")
-			var request g3lib.ReqInsertData
-			if err := request.Decode(r); err != nil {
+			var request g3.ReqInsertData
+			if err := decodeHttpRequest(r, &request); err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -719,7 +760,7 @@ func Main() int {
 			for i, obj := range request.Data {
 				if err := obj.Validate(); err != nil {
 					log.Error(err)
-					g3lib.SendApiError(w, http.StatusBadRequest, fmt.Sprintf("Invalid data at index %d: %s", i, err.Error()))
+					sendApiError(w, http.StatusBadRequest, fmt.Sprintf("Invalid data at index %d: %s", i, err.Error()))
 					return
 				}
 			}
@@ -727,11 +768,11 @@ func Main() int {
 			ids, err := g3lib.SaveData(mdb_client, request.ScanID, g3lib.NIL_TASKID, request.Data)
 			if err != nil {
 				log.Error(err)
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
 
-			g3lib.SendApiResponse(w, ids)
+			sendApiResponse(w, ids)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -740,10 +781,10 @@ func Main() int {
 		// Reuses the same runImport helper that drives /scan/start's imports.
 		http.HandleFunc(apiPath+"/scan/import", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/import")
-			var request g3lib.ReqImport
-			if err := request.Decode(r); err != nil {
+			var request g3.ReqImport
+			if err := decodeHttpRequest(r, &request); err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -755,14 +796,14 @@ func Main() int {
 			if err != nil {
 				log.Error(err)
 				if status == http.StatusBadRequest {
-					g3lib.SendApiError(w, http.StatusBadRequest, err.Error())
+					sendApiError(w, http.StatusBadRequest, err.Error())
 				} else {
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal server error.")
+					sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				}
 				return
 			}
 
-			g3lib.SendApiResponse(w, ids)
+			sendApiResponse(w, ids)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -770,11 +811,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/progress", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/progress")
-			var request g3lib.ReqGetScanProgressTable
-			err := request.Decode(r)
+			var request g3.ReqGetScanProgressTable
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -782,9 +823,9 @@ func Main() int {
 			progressList, err := g3lib.GetProgressList(sql_db)
 			if err != nil {
 				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 			} else {
-				g3lib.SendApiResponse(w, progressList)
+				sendApiResponse(w, progressList)
 			}
 		}))
 
@@ -793,11 +834,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/tasks", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/tasks")
-			var request g3lib.ReqQueryScanTaskList
-			err := request.Decode(r)
+			var request g3.ReqQueryScanTaskList
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -805,9 +846,9 @@ func Main() int {
 			tasklist, err := g3lib.QueryTaskIDsFromLog(sql_db, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 			} else {
-				g3lib.SendApiResponse(w, tasklist)
+				sendApiResponse(w, tasklist)
 			}
 		}))
 
@@ -816,11 +857,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/logs", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/logs")
-			var request g3lib.ReqQueryLog
-			err := request.Decode(r)
+			var request g3.ReqQueryLog
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -835,10 +876,10 @@ func Main() int {
 				}
 				if err := g3lib.QueryLog(sql_db, cb, request.ScanID); err != nil {
 					log.Error(err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+					sendApiError(w, http.StatusInternalServerError, "Internal error.")
 					return
 				}
-				g3lib.SendApiResponse(w, entries)
+				sendApiResponse(w, entries)
 				return
 			}
 
@@ -846,9 +887,9 @@ func Main() int {
 			tasklog, err := g3lib.QueryLogForTask(sql_db, request.ScanID, request.TaskID)
 			if err != nil {
 				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 			} else {
-				g3lib.SendApiResponse(w, tasklog)
+				sendApiResponse(w, tasklog)
 			}
 		}))
 
@@ -857,11 +898,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/tasks/status", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/tasks/status")
-			var request g3lib.ReqQueryScanTaskStatus
-			err := request.Decode(r)
+			var request g3.ReqQueryScanTaskStatus
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -874,13 +915,13 @@ func Main() int {
 			taskStates, err := g3lib.GetTaskStates(rdb_client, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
 			logEntries, err := g3lib.QueryTaskStatus(sql_db, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
 			logByTask := make(map[string]g3lib.TaskStatusEntry, len(logEntries))
@@ -946,10 +987,10 @@ func Main() int {
 			scanStatus, err := g3lib.GetScanStatus(sql_db, request.ScanID)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
-			g3lib.SendApiResponse(w, g3lib.ScanTaskStatusResponse{
+			sendApiResponse(w, g3lib.ScanTaskStatusResponse{
 				ScanStatus: scanStatus.Status,
 				Tasks:      entries,
 			})
@@ -960,11 +1001,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/stop", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/stop")
-			var request g3lib.ReqStopScan
-			err := request.Decode(r)
+			var request g3.ReqStopScan
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -973,9 +1014,9 @@ func Main() int {
 			err = g3lib.SendScanStop(mq_client, request.ScanID)
 			if err != nil {
 				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 			} else {
-				g3lib.SendApiResponse(w, request.ScanID)
+				sendApiResponse(w, request.ScanID)
 			}
 		}))
 
@@ -984,11 +1025,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/list", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/list")
-			var request g3lib.ReqEnumerateScans
-			err := request.Decode(r)
+			var request g3.ReqEnumerateScans
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -996,9 +1037,9 @@ func Main() int {
 			scanidlist, err := g3lib.GetAllScanIDs(sql_db)
 			if err != nil {
 				log.Error(err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 			} else {
-				g3lib.SendApiResponse(w, scanidlist)
+				sendApiResponse(w, scanidlist)
 			}
 		}))
 
@@ -1007,11 +1048,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/delete", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/delete")
-			var request g3lib.ReqDeleteScan
-			err := request.Decode(r)
+			var request g3.ReqDeleteScan
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -1021,7 +1062,7 @@ func Main() int {
 
 			// Delete the scan data.
 			scanid := request.ScanID
-			if g3lib.DoDebugAPI() {
+			if g3.DoDebugAPI() {
 				log.Infof("Scan with ID %s protected from deletion due to server debug mode.", scanid)
 			} else {
 				log.Infof("Deleting scan with ID: %s", scanid)
@@ -1072,7 +1113,7 @@ func Main() int {
 			// If we logged any errors, return with an error condition.
 			// Otherwise, we succeeded.
 			if reterr != "" {
-				g3lib.SendApiError(w, http.StatusInternalServerError, reterr)
+				sendApiError(w, http.StatusInternalServerError, reterr)
 			} else {
 				// Notify WS subscribers so they can drop the row
 				// immediately rather than wait for the next periodic
@@ -1080,7 +1121,7 @@ func Main() int {
 				// success; partial failures leave the row in some tables
 				// and the next snapshot will reconcile.
 				removeNotify.SendNotification(g3lib.G3ScanRemoved{ScanID: scanid})
-				g3lib.SendApiResponse(w, nil)
+				sendApiResponse(w, nil)
 			}
 		}))
 
@@ -1095,11 +1136,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/task/artifacts", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/artifacts")
-			var request g3lib.ReqTaskArtifacts
-			err := request.Decode(r)
+			var request g3.ReqTaskArtifacts
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -1112,7 +1153,7 @@ func Main() int {
 			switch state {
 			case "DISPATCHED", "RUNNING":
 				w.Header().Set("Retry-After", "2")
-				g3lib.SendApiError(w, http.StatusTooEarly, "task is still "+state)
+				sendApiError(w, http.StatusTooEarly, "task is still "+state)
 				return
 			case "DONE", "WARNING", "ERROR", "CANCELED":
 				// Terminal via Redis. Tool name lives in the same per-task hash
@@ -1127,12 +1168,12 @@ func Main() int {
 				sqlState, sqlTool, qerr := g3lib.ReconstructTaskStateFromLogs(sql_db, request.ScanID, request.TaskID)
 				if qerr != nil {
 					log.Error("ReconstructTaskStateFromLogs failed: " + qerr.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+					sendApiError(w, http.StatusInternalServerError, "Internal error.")
 					return
 				}
 				if sqlState == "" && state == "" {
 					// No record anywhere: task never existed in this scan.
-					g3lib.SendApiError(w, http.StatusNotFound, "task not found")
+					sendApiError(w, http.StatusNotFound, "task not found")
 					return
 				}
 				// If Redis was terminal, use that; if SQL is more authoritative
@@ -1147,11 +1188,11 @@ func Main() int {
 					// Proceed to bundling.
 				case "WAITING", "RUNNING", "UNKNOWN":
 					w.Header().Set("Retry-After", "2")
-					g3lib.SendApiError(w, http.StatusTooEarly, "task is not yet complete")
+					sendApiError(w, http.StatusTooEarly, "task is not yet complete")
 					return
 				default:
 					log.Error("Unexpected effective task state: " + effectiveState)
-					g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+					sendApiError(w, http.StatusInternalServerError, "Internal error.")
 					return
 				}
 			}
@@ -1164,11 +1205,11 @@ func Main() int {
 			slotDir := filepath.Join(artifactsRoot, request.ScanID, request.TaskID)
 			if _, err := os.Stat(slotDir); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
-					g3lib.SendApiError(w, http.StatusNotFound, "task produced no output")
+					sendApiError(w, http.StatusNotFound, "task produced no output")
 					return
 				}
 				log.Error("stat slot dir failed: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
 			// Fallback tool name if SQL didn't have it (e.g. brand-new task that
@@ -1180,11 +1221,11 @@ func Main() int {
 			filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, toolName, request.TaskID, &buf)
 			if bundleErr != nil {
 				if errors.Is(bundleErr, os.ErrNotExist) {
-					g3lib.SendApiError(w, http.StatusNotFound, "task produced no output")
+					sendApiError(w, http.StatusNotFound, "task produced no output")
 					return
 				}
 				log.Error("BundleTaskSlot failed: " + bundleErr.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
+				sendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
 				return
 			}
 			w.Header().Set("Content-Type", contentType)
@@ -1206,22 +1247,22 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/task/cancel", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/cancel")
-			var request g3lib.ReqTaskCancel
-			err := request.Decode(r)
+			var request g3.ReqTaskCancel
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
 			log.Infof("Scan %s - Canceling task(s) with IDs: %v", request.ScanID, request.TaskIDs)
 			if err := g3lib.SendTaskCancel(mq_client, request.ScanID, request.TaskIDs); err != nil {
 				log.Error("SendTaskCancel failed: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "failed to publish cancel")
+				sendApiError(w, http.StatusInternalServerError, "failed to publish cancel")
 				return
 			}
 
-			g3lib.SendApiResponse(w, nil)
+			sendApiResponse(w, nil)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1238,18 +1279,18 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/task/dispatch", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/dispatch")
-			var request g3lib.ReqTaskDispatch
-			err := request.Decode(r)
+			var request g3.ReqTaskDispatch
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 			log.Info("Dispatching tasks to scan with ID: " + request.ScanID)
 
 			plugin, ok := plugins[request.Tool]
 			if !ok {
-				g3lib.SendApiError(w, http.StatusBadRequest, "unknown tool: "+request.Tool)
+				sendApiError(w, http.StatusBadRequest, "unknown tool: "+request.Tool)
 				return
 			}
 
@@ -1262,21 +1303,21 @@ func Main() int {
 			switch request.Kind {
 			case "tool":
 				if len(plugin.Commands) == 0 {
-					g3lib.SendApiError(w, http.StatusBadRequest, "tool "+request.Tool+" does not implement the tool phase")
+					sendApiError(w, http.StatusBadRequest, "tool "+request.Tool+" does not implement the tool phase")
 					return
 				}
 				if request.DataID == "" {
-					g3lib.SendApiError(w, http.StatusBadRequest, "kind=tool requires dataid")
+					sendApiError(w, http.StatusBadRequest, "kind=tool requires dataid")
 					return
 				}
 				loaded, err := g3lib.LoadData(mdb_client, request.ScanID, []string{request.DataID})
 				if err != nil {
 					log.Error("LoadData failed: " + err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "failed to load data object")
+					sendApiError(w, http.StatusInternalServerError, "failed to load data object")
 					return
 				}
 				if len(loaded) == 0 {
-					g3lib.SendApiError(w, http.StatusBadRequest, "data object not found: "+request.DataID)
+					sendApiError(w, http.StatusBadRequest, "data object not found: "+request.DataID)
 					return
 				}
 				data := loaded[0]
@@ -1284,7 +1325,7 @@ func Main() int {
 					match, err := g3lib.EvalToolCondition(plugin, i, data)
 					if err != nil {
 						log.Errorf("EvalToolCondition failed for tool %s index %d: %s", request.Tool, i, err.Error())
-						g3lib.SendApiError(w, http.StatusInternalServerError, "condition evaluation failed")
+						sendApiError(w, http.StatusInternalServerError, "condition evaluation failed")
 						return
 					}
 					if match {
@@ -1292,17 +1333,17 @@ func Main() int {
 					}
 				}
 				if len(indices) == 0 {
-					g3lib.SendApiError(w, http.StatusBadRequest, "no command in tool "+request.Tool+" matches the given data")
+					sendApiError(w, http.StatusBadRequest, "no command in tool "+request.Tool+" matches the given data")
 					return
 				}
 			case "report":
 				if plugin.Reporter == nil {
-					g3lib.SendApiError(w, http.StatusBadRequest, "tool "+request.Tool+" does not implement a reporter")
+					sendApiError(w, http.StatusBadRequest, "tool "+request.Tool+" does not implement a reporter")
 					return
 				}
 				if request.Preset != "" {
 					if len(plugin.Reporter.Commands) == 0 {
-						g3lib.SendApiError(w, http.StatusBadRequest, "tool "+request.Tool+" declares no reporter presets")
+						sendApiError(w, http.StatusBadRequest, "tool "+request.Tool+" declares no reporter presets")
 						return
 					}
 					found := false
@@ -1313,13 +1354,13 @@ func Main() int {
 						}
 					}
 					if !found {
-						g3lib.SendApiError(w, http.StatusBadRequest, "unknown preset for tool "+request.Tool+": "+request.Preset)
+						sendApiError(w, http.StatusBadRequest, "unknown preset for tool "+request.Tool+": "+request.Preset)
 						return
 					}
 				}
 				indices = []int{0}
 			default:
-				g3lib.SendApiError(w, http.StatusBadRequest, "unknown kind: "+request.Kind)
+				sendApiError(w, http.StatusBadRequest, "unknown kind: "+request.Kind)
 				return
 			}
 
@@ -1344,18 +1385,13 @@ func Main() int {
 				}
 				if err := g3lib.SendDispatch(mq_client, dispatch); err != nil {
 					log.Error("SendDispatch failed: " + err.Error())
-					g3lib.SendApiError(w, http.StatusInternalServerError, "failed to publish dispatch")
+					sendApiError(w, http.StatusInternalServerError, "failed to publish dispatch")
 					return
 				}
 				taskIds = append(taskIds, taskid)
 			}
 
-			w.WriteHeader(http.StatusAccepted)
-			response := g3lib.APIResponse{
-				Status: "success",
-				Data:   map[string][]string{"task_ids": taskIds},
-			}
-			response.Write(w)
+			internalSendApiResponse(w, http.StatusAccepted, "success", map[string][]string{"task_ids": taskIds})
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1363,11 +1399,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/datalist", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/datalist")
-			var request g3lib.ReqGetScanDataIDs
-			err := request.Decode(r)
+			var request g3.ReqGetScanDataIDs
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -1375,9 +1411,9 @@ func Main() int {
 			idArray, err := g3lib.GetScanDataIDs(mdb_client, request.ScanID)
 			if err != nil {
 				log.Errorf("Error fetching data for scan %s: %s", request.ScanID, err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Could not fetch data IDs for scan.")
+				sendApiError(w, http.StatusInternalServerError, "Could not fetch data IDs for scan.")
 			} else {
-				g3lib.SendApiResponse(w, idArray)
+				sendApiResponse(w, idArray)
 			}
 		}))
 
@@ -1386,18 +1422,18 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/scan/data", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/data")
-			var request g3lib.ReqLoadData
-			err := request.Decode(r)
+			var request g3.ReqLoadData
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
 			// Make sure the request is not too large.
 			if len(request.DataIDs) > 100 {
 				log.Errorf("Too many data IDs: %d", len(request.DataIDs))
-				g3lib.SendApiError(w, http.StatusBadRequest, "Too many data IDs.")
+				sendApiError(w, http.StatusBadRequest, "Too many data IDs.")
 				return
 			}
 
@@ -1412,9 +1448,9 @@ func Main() int {
 			}
 			if err != nil {
 				log.Errorf("Error fetching data for scan %s: %s", request.ScanID, err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Could not fetch data objects for scan.")
+				sendApiError(w, http.StatusInternalServerError, "Could not fetch data objects for scan.")
 			} else {
-				g3lib.SendApiResponse(w, data)
+				sendApiResponse(w, data)
 			}
 		}))
 
@@ -1423,11 +1459,11 @@ func Main() int {
 		//
 		http.HandleFunc(apiPath+"/plugin/list", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: plugin/list")
-			var request g3lib.ReqListPlugins
-			err := request.Decode(r)
+			var request g3.ReqListPlugins
+			err := decodeHttpRequest(r, &request)
 			if err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -1461,7 +1497,7 @@ func Main() int {
 			}
 
 			// Send the response back to the caller.
-			g3lib.SendApiResponse(w, pluginList)
+			sendApiResponse(w, pluginList)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1471,13 +1507,13 @@ func Main() int {
 		// them so consumers can reason about capabilities (e.g. IPv6 support).
 		http.HandleFunc(apiPath+"/config/env", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: config/env")
-			var request g3lib.ReqGetEnv
-			if err := request.Decode(r); err != nil {
+			var request g3.ReqGetEnv
+			if err := decodeHttpRequest(r, &request); err != nil {
 				log.Error("Error decoding payload: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
-			g3lib.SendApiResponse(w, g3lib.GetSharedEnv())
+			sendApiResponse(w, g3lib.GetSharedEnv())
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1487,7 +1523,7 @@ func Main() int {
 			log.Debug("Handling: file/upload")
 			if r.Method != http.MethodPost {
 				log.Error("Method not allowed: " + r.Method)
-				g3lib.SendApiError(w, http.StatusMethodNotAllowed, "Error decoding payload.")
+				sendApiError(w, http.StatusMethodNotAllowed, "Error decoding payload.")
 				return
 			}
 
@@ -1512,19 +1548,19 @@ func Main() int {
 			reader, err := r.MultipartReader()
 			if err != nil {
 				log.Error("Error reading multipart form: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 			p, err := reader.NextPart()
 			if err != nil {
 				log.Error("Error reading multipart file form: " + err.Error())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 			defer p.Close()
 			if p.FormName() != "file" {
 				log.Error("Invalid form part name: " + p.FormName())
-				g3lib.SendApiError(w, http.StatusBadRequest, "Bad request.")
+				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
 
@@ -1534,7 +1570,7 @@ func Main() int {
 			uploadsDir := filepath.Join(artifactsRoot, "_uploads")
 			if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 				log.Error("Cannot create uploads dir " + uploadsDir + ": " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
 			binPath := filepath.Join(uploadsDir, filename+".bin")
@@ -1542,7 +1578,7 @@ func Main() int {
 			fd, err := os.OpenFile(binPath, os.O_WRONLY|os.O_CREATE, 0600)
 			if err != nil {
 				log.Error("Error creating upload file: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
 			defer fd.Close()
@@ -1550,19 +1586,19 @@ func Main() int {
 			if err != nil {
 				os.Remove(binPath) //nolint:errcheck
 				log.Error("Error writing to upload file: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
 			err = os.WriteFile(txtPath, []byte(p.FileName()), 0600)
 			if err != nil {
 				os.Remove(binPath) //nolint:errcheck
 				log.Error("Error saving upload file metadata: " + err.Error())
-				g3lib.SendApiError(w, http.StatusInternalServerError, "Internal error.")
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
 				return
 			}
 
 			// Return the new filename to the caller.
-			g3lib.SendApiResponse(w, filename)
+			sendApiResponse(w, filename)
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////

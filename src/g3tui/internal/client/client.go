@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/golismero/g3/src/g3"
 	"github.com/golismero/g3/src/g3lib"
 )
 
@@ -27,12 +28,12 @@ func New(baseURL, wsURL, token string) *Client {
 	return &Client{BaseURL: baseURL, WSURL: wsURL, Token: token, HTTP: http.DefaultClient}
 }
 
-// call is a thin convenience over g3lib.MakeApiRequest that decodes Data
+// call is a thin convenience over g3.MakeApiRequest that decodes Data
 // into the caller's destination via json round-trip. We use this rather
 // than asserting on map[string]interface{} as g3cli does — keeps the
 // per-endpoint methods short.
 func (c *Client) call(ctx context.Context, endpoint string, body any, dest any) error {
-	resp, err := g3lib.MakeApiRequest(ctx, c.BaseURL, endpoint, c.Token, body)
+	resp, err := g3.MakeApiRequest(ctx, c.BaseURL, endpoint, c.Token, body)
 	if err != nil {
 		return err
 	}
@@ -56,7 +57,7 @@ func (c *Client) call(ctx context.Context, endpoint string, body any, dest any) 
 // ListScans → /scan/list. Returns just the IDs (the server response shape).
 func (c *Client) ListScans(ctx context.Context) ([]string, error) {
 	var out []string
-	if err := c.call(ctx, "/scan/list", g3lib.ReqEnumerateScans{}, &out); err != nil {
+	if err := c.call(ctx, "/scan/list", g3.ReqEnumerateScans{}, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -65,7 +66,7 @@ func (c *Client) ListScans(ctx context.Context) ([]string, error) {
 // GetProgress → /scan/progress. Returns the full progress table.
 func (c *Client) GetProgress(ctx context.Context) ([]g3lib.ScanStatusEntry, error) {
 	var out []g3lib.ScanStatusEntry
-	if err := c.call(ctx, "/scan/progress", g3lib.ReqGetScanProgressTable{}, &out); err != nil {
+	if err := c.call(ctx, "/scan/progress", g3.ReqGetScanProgressTable{}, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -74,7 +75,7 @@ func (c *Client) GetProgress(ctx context.Context) ([]g3lib.ScanStatusEntry, erro
 // GetTaskStatus → /scan/tasks/status for one scan.
 func (c *Client) GetTaskStatus(ctx context.Context, scanID string) (g3lib.ScanTaskStatusResponse, error) {
 	var out g3lib.ScanTaskStatusResponse
-	err := c.call(ctx, "/scan/tasks/status", g3lib.ReqQueryScanTaskStatus{ScanID: scanID}, &out)
+	err := c.call(ctx, "/scan/tasks/status", g3.ReqQueryScanTaskStatus{ScanID: scanID}, &out)
 	return out, err
 }
 
@@ -82,7 +83,7 @@ func (c *Client) GetTaskStatus(ctx context.Context, scanID string) (g3lib.ScanTa
 // G3TaskLog response (top-level taskid, lines:[{timestamp,text}]).
 func (c *Client) GetTaskLogs(ctx context.Context, scanID, taskID string) (g3lib.G3TaskLog, error) {
 	var out g3lib.G3TaskLog
-	err := c.call(ctx, "/scan/logs", g3lib.ReqQueryLog{ScanID: scanID, TaskID: taskID}, &out)
+	err := c.call(ctx, "/scan/logs", g3.ReqQueryLog{ScanID: scanID, TaskID: taskID}, &out)
 	return out, err
 }
 
@@ -91,7 +92,7 @@ func (c *Client) GetTaskLogs(ctx context.Context, scanID, taskID string) (g3lib.
 // ORDER BY timestamp,id ASC). Used by the full-screen logs viewer.
 func (c *Client) GetScanLogs(ctx context.Context, scanID string) ([]g3lib.LogEntry, error) {
 	var out []g3lib.LogEntry
-	err := c.call(ctx, "/scan/logs", g3lib.ReqQueryLog{ScanID: scanID}, &out)
+	err := c.call(ctx, "/scan/logs", g3.ReqQueryLog{ScanID: scanID}, &out)
 	return out, err
 }
 
@@ -106,7 +107,7 @@ func (c *Client) GetReport(ctx context.Context, scanID string) (string, string, 
 	var dispatch struct {
 		TaskIDs []string `json:"task_ids"`
 	}
-	if err := c.call(ctx, "/scan/task/dispatch", g3lib.ReqTaskDispatch{ScanID: scanID, Kind: "report", Tool: "magenta"}, &dispatch); err != nil {
+	if err := c.call(ctx, "/scan/task/dispatch", g3.ReqTaskDispatch{ScanID: scanID, Kind: "report", Tool: "magenta"}, &dispatch); err != nil {
 		return "", "", err
 	}
 	if len(dispatch.TaskIDs) == 0 {
@@ -143,7 +144,7 @@ func (c *Client) GetReport(ctx context.Context, scanID string) (string, string, 
 
 	// 3. Download the report artifact into memory.
 	var buf bytes.Buffer
-	if err := g3lib.DownloadFile(ctx, c.BaseURL, "/scan/task/artifacts", c.Token, g3lib.ReqTaskArtifacts{ScanID: scanID, TaskID: taskID}, &buf); err != nil {
+	if err := g3.DownloadFile(ctx, c.BaseURL, "/scan/task/artifacts", c.Token, g3.ReqTaskArtifacts{ScanID: scanID, TaskID: taskID}, &buf); err != nil {
 		return "", "", err
 	}
 	return buf.String(), "", nil
@@ -154,7 +155,7 @@ func (c *Client) GetReport(ctx context.Context, scanID string) (string, string, 
 // objects themselves.
 func (c *Client) GetScanDataList(ctx context.Context, scanID string) ([]string, error) {
 	var out []string
-	if err := c.call(ctx, "/scan/datalist", g3lib.ReqGetScanDataIDs{ScanID: scanID}, &out); err != nil {
+	if err := c.call(ctx, "/scan/datalist", g3.ReqGetScanDataIDs{ScanID: scanID}, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -167,33 +168,33 @@ func (c *Client) GetScanDataList(ctx context.Context, scanID string) ([]string, 
 // re-marshal each one with the desired indentation for output.
 func (c *Client) GetScanData(ctx context.Context, scanID string, dataIDs []string) ([]map[string]any, error) {
 	var out []map[string]any
-	err := c.call(ctx, "/scan/data", g3lib.ReqLoadData{ScanID: scanID, DataIDs: dataIDs}, &out)
+	err := c.call(ctx, "/scan/data", g3.ReqLoadData{ScanID: scanID, DataIDs: dataIDs}, &out)
 	return out, err
 }
 
 // StartScan → /scan/start. Returns the new scan ID.
 func (c *Client) StartScan(ctx context.Context, script string) (string, error) {
 	var out string
-	err := c.call(ctx, "/scan/start", g3lib.ReqStartScan{Script: script}, &out)
+	err := c.call(ctx, "/scan/start", g3.ReqStartScan{Script: script}, &out)
 	return out, err
 }
 
 // StopScan → /scan/stop.
 func (c *Client) StopScan(ctx context.Context, scanID string) error {
 	var sink any
-	return c.call(ctx, "/scan/stop", g3lib.ReqStopScan{ScanID: scanID}, &sink)
+	return c.call(ctx, "/scan/stop", g3.ReqStopScan{ScanID: scanID}, &sink)
 }
 
 // DeleteScan → /scan/delete.
 func (c *Client) DeleteScan(ctx context.Context, scanID string) error {
 	var sink any
-	return c.call(ctx, "/scan/delete", g3lib.ReqDeleteScan{ScanID: scanID}, &sink)
+	return c.call(ctx, "/scan/delete", g3.ReqDeleteScan{ScanID: scanID}, &sink)
 }
 
 // ListPlugins → /plugin/list.
 func (c *Client) ListPlugins(ctx context.Context) ([]PluginListEntry, error) {
-	var raw []g3lib.PluginListItem
-	if err := c.call(ctx, "/plugin/list", g3lib.ReqListPlugins{}, &raw); err != nil {
+	var raw []g3.PluginListItem
+	if err := c.call(ctx, "/plugin/list", g3.ReqListPlugins{}, &raw); err != nil {
 		return nil, err
 	}
 	out := make([]PluginListEntry, 0, len(raw))
@@ -251,7 +252,7 @@ func (c *Client) UploadFile(ctx context.Context, localPath string) (string, erro
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("upload failed: %s: %s", resp.Status, string(body))
 	}
-	var api g3lib.APIResponse
+	var api g3.APIResponse
 	if err := json.Unmarshal(body, &api); err != nil {
 		return "", err
 	}

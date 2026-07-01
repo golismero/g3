@@ -19,9 +19,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/willabides/kongplete"
 
-	"github.com/golismero/g3/src/g3lib"
-	log "github.com/golismero/g3/src/g3/log"
 	"github.com/golismero/g3/src/g3"
+	log "github.com/golismero/g3/src/g3/log"
+	"github.com/golismero/g3/src/g3lib"
 )
 
 const G3_API_BASEURL = "G3_API_BASEURL"
@@ -183,7 +183,7 @@ func main() {
 	}
 
 	// When debugging the API, show the URLs.
-	if g3lib.DoDebugAPI() {
+	if g3.DoDebugAPI() {
 		log.Debug("API debug mode is on!")
 		log.Debug("Base API URL:  " + cmdctx.BaseURL)
 		log.Debug("Websocket URL: " + cmdctx.WebSocketURL)
@@ -316,11 +316,11 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 			log.Critical(err.Error())
 			return err
 		}
-		var response g3lib.APIResponse
+		var response g3.APIResponse
 		if res.StatusCode != http.StatusOK {
 			response.Status = "error"
 			response.Data = res.Status
-			var tmp g3lib.APIResponse
+			var tmp g3.APIResponse
 			err = json.Unmarshal(respBytes, &tmp)
 			if err == nil {
 				_, ok := tmp.Data.(string)
@@ -361,9 +361,9 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 	}
 
 	// Send the scan request to the server.
-	var req g3lib.ReqStartScan
+	var req g3.ReqStartScan
 	req.Script = parsed.String()
-	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/start", vars.Token, req)
+	resp, err := g3.MakeApiRequest(ctx, baseUrl, "/scan/start", vars.Token, req)
 	if err != nil {
 		log.Critical("Error sending API request: " + err.Error())
 		return err
@@ -396,7 +396,7 @@ func (cmd *ProgressCmd) Run(vars CmdContext) error {
 	//ctx := vars.Ctx
 
 	// Figure out if we have to show debug output for the API calls.
-	doDebugAPI := g3lib.DoDebugAPI()
+	doDebugAPI := g3.DoDebugAPI()
 
 	// Connect to the websocket API.
 	headers := http.Header{}
@@ -443,8 +443,8 @@ func (cmd *LogsCmd) Run(vars CmdContext) error {
 		scanidlist = append(scanidlist, cmd.ScanID)
 	} else {
 		log.Debug("Querying list of scans...")
-		var req g3lib.ReqEnumerateScans
-		resp, err := g3lib.MakeApiRequest(ctx, vars.BaseURL, "/scan/list", vars.Token, req)
+		var req g3.ReqEnumerateScans
+		resp, err := g3.MakeApiRequest(ctx, vars.BaseURL, "/scan/list", vars.Token, req)
 		if err != nil {
 			log.Critical("Error sending API request: " + err.Error())
 			return err
@@ -484,9 +484,9 @@ func (cmd *LogsCmd) Run(vars CmdContext) error {
 	} else {
 		for _, scanid := range scanidlist {
 			log.Debugf("Querying list of tasks for scan %s...", scanid)
-			var req g3lib.ReqQueryScanTaskList
+			var req g3.ReqQueryScanTaskList
 			req.ScanID = scanid
-			resp, err := g3lib.MakeApiRequest(ctx, vars.BaseURL, "/scan/tasks", vars.Token, req)
+			resp, err := g3.MakeApiRequest(ctx, vars.BaseURL, "/scan/tasks", vars.Token, req)
 			if err != nil {
 				log.Critical("Error sending API request: " + err.Error())
 				return err
@@ -529,10 +529,10 @@ func (cmd *LogsCmd) Run(vars CmdContext) error {
 		if ok {
 			for _, taskid := range taskidlist {
 				log.Debugf("Querying logs for scan %s, task %s...", scanid, taskid)
-				var req g3lib.ReqQueryLog
+				var req g3.ReqQueryLog
 				req.ScanID = scanid
 				req.TaskID = taskid
-				resp, err := g3lib.MakeApiRequest(ctx, vars.BaseURL, "/scan/logs", vars.Token, req)
+				resp, err := g3.MakeApiRequest(ctx, vars.BaseURL, "/scan/logs", vars.Token, req)
 				if err != nil {
 					log.Critical("Error sending API request: " + err.Error())
 					return err
@@ -668,8 +668,8 @@ func (cmd *LsCmd) Run(vars CmdContext) error {
 	ctx := vars.Ctx
 
 	// Get the list of scan IDs.
-	var req g3lib.ReqEnumerateScans
-	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/list", vars.Token, req)
+	var req g3.ReqEnumerateScans
+	resp, err := g3.MakeApiRequest(ctx, baseUrl, "/scan/list", vars.Token, req)
 	if err != nil {
 		log.Critical("Error sending API request: " + err.Error())
 		return err
@@ -725,8 +725,8 @@ func (cmd *PsCmd) Run(vars CmdContext) error {
 	quiet := CLI.Quiet
 
 	// Get the scan progress.
-	var req g3lib.ReqGetScanProgressTable
-	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/progress", vars.Token, req)
+	var req g3.ReqGetScanProgressTable
+	resp, err := g3.MakeApiRequest(ctx, baseUrl, "/scan/progress", vars.Token, req)
 	if err != nil {
 		log.Critical("Error sending API request: " + err.Error())
 		return err
@@ -880,9 +880,9 @@ func (cmd *PsCmd) runTaskView(vars CmdContext) error {
 	baseUrl := vars.BaseURL
 	quiet := CLI.Quiet
 
-	var req g3lib.ReqQueryScanTaskStatus
+	var req g3.ReqQueryScanTaskStatus
 	req.ScanID = cmd.ScanID
-	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/tasks/status", vars.Token, req)
+	resp, err := g3.MakeApiRequest(ctx, baseUrl, "/scan/tasks/status", vars.Token, req)
 	if err != nil {
 		log.Critical("Error sending API request: " + err.Error())
 		return err
@@ -994,9 +994,9 @@ func (cmd *PsCmd) runTaskView(vars CmdContext) error {
 func (cmd *CancelCmd) Run(vars CmdContext) error {
 
 	// Cancel the running scan.
-	var req g3lib.ReqStopScan
+	var req g3.ReqStopScan
 	req.ScanID = cmd.ScanID
-	resp, err := g3lib.MakeApiRequest(vars.Ctx, vars.BaseURL, "/scan/stop", vars.Token, req)
+	resp, err := g3.MakeApiRequest(vars.Ctx, vars.BaseURL, "/scan/stop", vars.Token, req)
 	if err != nil {
 		log.Critical("Error sending API request: " + err.Error())
 		return err
@@ -1040,13 +1040,13 @@ func (cmd *ReportCmd) Run(vars CmdContext) error {
 	baseUrl := vars.BaseURL
 
 	// 1. Dispatch the reporter plugin.
-	dreq := g3lib.ReqTaskDispatch{
+	dreq := g3.ReqTaskDispatch{
 		ScanID: cmd.ScanID,
 		Kind:   "report",
 		Tool:   cmd.Tool,
 		Preset: cmd.Preset,
 	}
-	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/task/dispatch", vars.Token, dreq)
+	resp, err := g3.MakeApiRequest(ctx, baseUrl, "/scan/task/dispatch", vars.Token, dreq)
 	if err != nil {
 		log.Critical("Error sending API request: " + err.Error())
 		return err
@@ -1066,7 +1066,7 @@ func (cmd *ReportCmd) Run(vars CmdContext) error {
 	// 2. Poll the task status until the reporter task reaches a terminal state.
 	state := ""
 	for {
-		sresp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/tasks/status", vars.Token, g3lib.ReqQueryScanTaskStatus{ScanID: cmd.ScanID})
+		sresp, err := g3.MakeApiRequest(ctx, baseUrl, "/scan/tasks/status", vars.Token, g3.ReqQueryScanTaskStatus{ScanID: cmd.ScanID})
 		if err != nil {
 			log.Critical("Error sending API request: " + err.Error())
 			return err
@@ -1119,7 +1119,7 @@ func (cmd *ReportCmd) Run(vars CmdContext) error {
 		defer f.Close()
 		dst = f
 	}
-	if err := g3lib.DownloadFile(ctx, baseUrl, "/scan/task/artifacts", vars.Token, g3lib.ReqTaskArtifacts{ScanID: cmd.ScanID, TaskID: taskID}, dst); err != nil {
+	if err := g3.DownloadFile(ctx, baseUrl, "/scan/task/artifacts", vars.Token, g3.ReqTaskArtifacts{ScanID: cmd.ScanID, TaskID: taskID}, dst); err != nil {
 		log.Critical("Error downloading report: " + err.Error())
 		return err
 	}
@@ -1136,9 +1136,9 @@ func (cmd *ExportCmd) Run(vars CmdContext) error {
 		dataidlist = cmd.DataIDs
 	} else {
 		log.Debugf("Querying IDs of data objects for scan %s...", cmd.ScanID)
-		var req g3lib.ReqGetScanDataIDs
+		var req g3.ReqGetScanDataIDs
 		req.ScanID = cmd.ScanID
-		resp, err := g3lib.MakeApiRequest(ctx, vars.BaseURL, "/scan/datalist", vars.Token, req)
+		resp, err := g3.MakeApiRequest(ctx, vars.BaseURL, "/scan/datalist", vars.Token, req)
 		if err != nil {
 			log.Critical("Error sending API request: " + err.Error())
 			return err
@@ -1195,10 +1195,10 @@ func (cmd *ExportCmd) Run(vars CmdContext) error {
 	for index := 0; index < len(dataidlist); index += batchSize {
 		sliceEnd := min(index+batchSize, len(dataidlist))
 		batch := dataidlist[index:sliceEnd]
-		var req g3lib.ReqLoadData
+		var req g3.ReqLoadData
 		req.ScanID = cmd.ScanID
 		req.DataIDs = batch
-		resp, err := g3lib.MakeApiRequest(ctx, vars.BaseURL, "/scan/data", vars.Token, req)
+		resp, err := g3.MakeApiRequest(ctx, vars.BaseURL, "/scan/data", vars.Token, req)
 		if err != nil {
 			log.Critical("Error sending API request: " + err.Error())
 			return err
@@ -1257,8 +1257,8 @@ func (cmd *ToolsCmd) Run(vars CmdContext) error {
 	baseUrl := vars.BaseURL
 
 	// Get the remote list of plugins.
-	var req g3lib.ReqListPlugins
-	resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/plugin/list", vars.Token, req)
+	var req g3.ReqListPlugins
+	resp, err := g3.MakeApiRequest(ctx, baseUrl, "/plugin/list", vars.Token, req)
 	if err != nil {
 		log.Critical("Error sending API request: " + err.Error())
 		return err
@@ -1383,9 +1383,9 @@ func (cmd *RmCmd) Run(vars CmdContext) error {
 	//
 	for _, scanid := range arguments {
 		log.Debugf("Stopping scan with ID %s...", scanid)
-		var req g3lib.ReqStopScan
+		var req g3.ReqStopScan
 		req.ScanID = scanid
-		resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/stop", vars.Token, req)
+		resp, err := g3.MakeApiRequest(ctx, baseUrl, "/scan/stop", vars.Token, req)
 		if err != nil {
 			log.Critical("Error sending API request: " + err.Error())
 		} else if resp.Status != "success" {
@@ -1396,9 +1396,9 @@ func (cmd *RmCmd) Run(vars CmdContext) error {
 	// Delete the scan data.
 	for _, scanid := range arguments {
 		log.Infof("Deleting scan with ID %s...", scanid)
-		var req g3lib.ReqDeleteScan
+		var req g3.ReqDeleteScan
 		req.ScanID = scanid
-		resp, err := g3lib.MakeApiRequest(ctx, baseUrl, "/scan/delete", vars.Token, req)
+		resp, err := g3.MakeApiRequest(ctx, baseUrl, "/scan/delete", vars.Token, req)
 		if err != nil {
 			log.Critical("Error sending API request: " + err.Error())
 		} else if resp.Status != "success" {
