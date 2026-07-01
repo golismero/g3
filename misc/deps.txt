@@ -6,7 +6,6 @@ github.com/alecthomas/kong@v1.15.0
 github.com/alecthomas/repr@v0.5.2
 github.com/alexeyco/simpletable@v1.0.0
 github.com/apsdehal/go-logger@v0.0.0-20190515212710-b0d6ccfee0e6
-github.com/asaskevich/govalidator@v0.0.0-20230301143203-a9d515a09cc2
 github.com/atotto/clipboard@v0.1.4
 github.com/aymanbagabas/go-osc52/v2@v2.0.1
 github.com/aymanbagabas/go-udiff@v0.3.1

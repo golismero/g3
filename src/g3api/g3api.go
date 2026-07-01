@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/asaskevich/govalidator"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
@@ -89,7 +88,7 @@ func runImport(plugins g3lib.G3PluginMetadata, mdb g3lib.DatastoreClient, artifa
 		return nil, http.StatusBadRequest, errors.New("tool not found or has no importer: " + tool)
 	}
 
-	if !govalidator.IsUUIDv4(fileid) {
+	if g3model.Validate.Var(fileid, "required,uuid") != nil {
 		return nil, http.StatusBadRequest, errors.New("invalid file ID: " + fileid)
 	}
 

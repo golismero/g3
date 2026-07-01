@@ -9,7 +9,6 @@ replace github.com/golismero/g3/src/g3log => ../g3log
 replace github.com/golismero/g3/src/g3model => ../g3model
 
 require (
-	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3log v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3model v0.0.0-00010101000000-000000000000

@@ -11,9 +11,9 @@ type PluginDescription struct {
 
 type PluginListItem struct {
 	PluginDescription
-	IsImporter  bool   `json:"importer,omitempty"`
-	IsReporter  bool   `json:"reporter,omitempty"`
-	IsRunnable  bool   `json:"runnable,omitempty"`
+	IsImporter  bool   `json:"importer,omitempty,omitzero"`
+	IsReporter  bool   `json:"reporter,omitempty,omitzero"`
+	IsRunnable  bool   `json:"runnable,omitempty,omitzero"`
 }
 
 func (plugin PluginDescription) String() string {
