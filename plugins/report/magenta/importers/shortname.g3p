@@ -1,5 +1,5 @@
 {
-    category: "Importer",
+    category: "importer",
     url: "https://github.com/irsdl/IIS-ShortName-Scanner",
     description:"This tool scans for IIS short name (8.3) disclosure vulnerabilities.",
     image: "ghcr.io/golismero/magenta",

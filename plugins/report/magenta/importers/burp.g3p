@@ -1,5 +1,5 @@
 {
-    category: "Importer",
+    category: "importer",
     url: "https://portswigger.net/burp/pro",
     description: "Burp Suite Pro is a software security application used for penetration testing of web applications.",
     image: "ghcr.io/golismero/magenta",

@@ -1,5 +1,5 @@
 {
-    category: "Importer",
+    category: "importer",
     url: "https://www.tenable.com/products/nessus",
     description: "Nessus is a proprietary vulnerability scanner developed by Tenable, Inc.",
     image: "ghcr.io/golismero/magenta",

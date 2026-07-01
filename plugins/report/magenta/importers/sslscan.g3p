@@ -1,5 +1,5 @@
 {
-    category: "Importer",
+    category: "importer",
     url: "https://github.com/rbsec/sslscan",
     description: "SSLScan tests SSL/TLS enabled services to discover supported cipher suites.",
     image: "ghcr.io/golismero/magenta",

@@ -1,5 +1,5 @@
 {
-    category: "Importer",
+    category: "importer",
     url: "https://www.attackforge.com/",
     description: "AttackForge helps you manage your penetration testing programs, and deliver large-scale pentesting services.",
     image: "ghcr.io/golismero/magenta",

@@ -160,9 +160,7 @@ func main() {
 		if metadata.Category == "" {
 			category := filepath.Base(filepath.Dir(filepath.Join(path, "..")))
 			if category == "." {
-				category = "Unknown"
-			} else {
-				category = strings.Title(category) //nolint:staticcheck
+				category = "unknown"
 			}
 			metadata.Category = category
 		}
