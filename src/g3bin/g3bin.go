@@ -259,9 +259,6 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 
 	// Validate the scan script.
 	parsed, err := g3lib.ParseServerScript(plugins, script)
-	if err == nil {
-		err = g3.Validate.Struct(parsed)
-	}
 	if err != nil {
 		log.Critical(err)
 		return err

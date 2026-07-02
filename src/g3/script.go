@@ -2,29 +2,31 @@ package g3
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/kballard/go-shellquote"
 )
 
-type ParsedImport struct {
-	Tool string             `json:"tool"                validate:"required"`
-	Path string             `json:"path"                validate:"required"`
+type ImportStatement struct {
+	Tool string               `json:"tool"                validate:"required,g3name"`
+	Path string               `json:"path"                validate:"required"`
 }
 
-type ParsedReport struct {
-	Tool   string             `json:"tool"                validate:"required"`
-	Preset string             `json:"preset,omitempty"`
+type ReportStatement struct {
+	Tool   string             `json:"tool"                validate:"required,g3name"`
+	Preset string             `json:"preset,omitempty"    validate:"omitempty,g3name"`
 }
 
 type ParsedScript struct {
-	Targets []string        `json:"targets,omitempty"   validate:"omitempty"`
-	Imports []ParsedImport  `json:"imports,omitempty"   validate:"omitempty,dive"`
-	Mode string             `json:"mode,omitempty"      validate:"omitempty"`
-	Pipelines [][]string    `json:"pipelines,omitempty" validate:"omitempty"`
-	Report *ParsedReport    `json:"report,omitempty"    validate:"omitempty"`
+	Targets []string          `json:"targets,omitempty"   validate:"omitempty"`
+	Imports []ImportStatement `json:"imports,omitempty"   validate:"omitempty,dive"`
+	Mode string               `json:"mode,omitempty"      validate:"omitempty,oneof=sequential parallel"`
+	Pipelines [][]string      `json:"pipelines,omitempty" validate:"omitempty"`
+	Report *ReportStatement   `json:"report,omitempty"    validate:"omitempty,dive"`
 }
 
 func (parsed ParsedScript) String() string {
@@ -73,9 +75,9 @@ func (parsed ParsedScript) String() string {
 //
 //   # comment
 //   mode parallel
-//   target 192.168.1.1 example.com
+//   target 192.168.1.1 https://www.example.net
 //   import nmap samples/nmap.xml
-//   dnsrecon
+//   testssl
 //   nmap | testssl
 //
 func ParseScript(script string) (ParsedScript, error) {
@@ -95,7 +97,7 @@ func ParseScript(script string) (ParsedScript, error) {
 		commands, err := shellquote.Split(line)
 		if err != nil {
 			err = fmt.Errorf("syntax error on line %d: %s", lineno+1, err.Error())
-			return ParsedScript{}, err
+			return parsed, err
 		}
 		if len(commands) == 0 {
 			continue
@@ -105,7 +107,7 @@ func ParseScript(script string) (ParsedScript, error) {
 		// — report must be the LAST line of the script.
 		if parsed.Report != nil {
 			err = fmt.Errorf("syntax error on line %d: report directive must be the last line of the script", lineno+1)
-			return ParsedScript{}, err
+			return parsed, err
 		}
 
 		// The "target" command adds a target for scanning.
@@ -113,12 +115,12 @@ func ParseScript(script string) (ParsedScript, error) {
 		if commands[0] == "target" {
 			if len(commands) < 2 {
 				err = fmt.Errorf("syntax error on line %d: invalid targets", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			for _, token := range commands {
 				if token == "|" {
 					err = fmt.Errorf("syntax error on line %d: cannot mix pipelines and targets", lineno+1)
-					return ParsedScript{}, err
+					return parsed, err
 				}
 			}
 
@@ -126,7 +128,7 @@ func ParseScript(script string) (ParsedScript, error) {
 			_, err = BuildTargets(commands[1:])
 			if err != nil {
 				err = fmt.Errorf("syntax error on line %d: %s", lineno+1, err.Error())
-				return ParsedScript{}, err
+				return parsed, err
 			}
 
 			// Add the target to the parsed structure.
@@ -139,12 +141,12 @@ func ParseScript(script string) (ParsedScript, error) {
 		if commands[0] == "import" {
 			if len(commands) < 3 {
 				err = fmt.Errorf("syntax error on line %d: invalid import", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			for _, token := range commands {
 				if token == "|" {
 					err = fmt.Errorf("syntax error on line %d: cannot mix pipelines and imports", lineno+1)
-					return ParsedScript{}, err
+					return parsed, err
 				}
 			}
 
@@ -157,13 +159,13 @@ func ParseScript(script string) (ParsedScript, error) {
 				}
 				if _, err := os.Stat(token); err != nil {
 					err = fmt.Errorf("runtime error on line %d: %s", lineno+1, err.Error())
-					return ParsedScript{}, err
+					return parsed, err
 				}
 			}
 
 			// Add the import files to the parsed structure.
 			for _, token := range commands[2:] {
-				var parsedImport ParsedImport
+				var parsedImport ImportStatement
 				parsedImport.Tool = commands[1]
 				parsedImport.Path = token
 				parsed.Imports = append(parsed.Imports, parsedImport)
@@ -176,16 +178,16 @@ func ParseScript(script string) (ParsedScript, error) {
 		if commands[0] == "mode" {
 			if len(commands) != 2 {
 				err = fmt.Errorf("syntax error on line %d: invalid mode command", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			if parsed.Mode != "" {
 				err = fmt.Errorf("syntax error on line %d: mode command can only be used once in a script", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			parsed.Mode = commands[1]
 			if parsed.Mode != "sequential" && parsed.Mode != "parallel" {
 				err = fmt.Errorf("syntax error on line %d: unknown mode", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			continue
 		}
@@ -200,11 +202,11 @@ func ParseScript(script string) (ParsedScript, error) {
 		if commands[0] == "report" {
 			if parsed.Report != nil {
 				err = fmt.Errorf("syntax error on line %d: only one report directive per script is allowed", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			if len(commands) > 2 {
 				err = fmt.Errorf("syntax error on line %d: report directive takes at most one argument: <tool>[:<preset>]", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			// Resolve <tool>[:<preset>]. A bare "report" defaults to magenta.
 			tool := "magenta"
@@ -217,11 +219,11 @@ func ParseScript(script string) (ParsedScript, error) {
 					preset = toolArg[i+1:]
 					if tool == "" {
 						err = fmt.Errorf("syntax error on line %d: missing tool name in report directive", lineno+1)
-						return ParsedScript{}, err
+						return parsed, err
 					}
 				}
 			}
-			parsed.Report = &ParsedReport{Tool: tool, Preset: preset}
+			parsed.Report = &ReportStatement{Tool: tool, Preset: preset}
 			continue
 		}
 
@@ -233,11 +235,11 @@ func ParseScript(script string) (ParsedScript, error) {
 			token = strings.TrimSpace(token)
 			if token == "" {
 				err = fmt.Errorf("syntax error on line %d: missing tool in pipeline", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			if strings.Contains(token, " ") {
 				err = fmt.Errorf("syntax error on line %d: tools do not take arguments", lineno+1)
-				return ParsedScript{}, err
+				return parsed, err
 			}
 			pipeline = append(pipeline, token)
 		}
@@ -254,7 +256,7 @@ func ParseScript(script string) (ParsedScript, error) {
 	// Return the object with the parsed script.
 	// This is not exactly the same object that is sent to g3scanner later,
 	// since targets and imports are executed locally, and pipelines remotely.
-	return parsed, nil
+	return parsed, Validate.Struct(parsed)
 }
 
 // Reusable pipelines for building scripts.
@@ -304,4 +306,18 @@ func GetBuiltInPipelines(compact bool) map[string]string {
 		out[name] = script
 	}
 	return out
+}
+
+func IsScriptSupported(parsed ParsedScript, tools []string) error {
+	if parsed.Report != nil && !slices.Contains(tools, parsed.Report.Tool) {
+		return errors.New("unsupported tool: " + parsed.Report.Tool)
+	}
+	for _, pipeline := range parsed.Pipelines {
+		for _, tool := range pipeline {
+			if !slices.Contains(tools, tool) {
+				return errors.New("unsupported tool: " + tool)
+			}
+		}
+	}
+	return nil
 }

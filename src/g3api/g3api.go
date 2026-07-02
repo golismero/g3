@@ -568,9 +568,6 @@ func Main() int {
 
 			// Validate the scan script.
 			parsed, err := g3lib.ParseServerScript(plugins, request.Script)
-			if err == nil {
-				err = g3.Validate.Struct(parsed)
-			}
 			if err != nil {
 				log.Error(err)
 				sendApiError(w, http.StatusBadRequest, "Syntax error in script: "+err.Error())
@@ -620,7 +617,7 @@ func Main() int {
 			// Import the files into the database. Each import runs in its own
 			// closure so the `defer stdin.Close()` fires per-iteration rather
 			// than accumulating open file descriptors until the handler returns.
-			importOne := func(parsedImport g3lib.ParsedImport) bool {
+			importOne := func(parsedImport g3.ImportStatement) bool {
 				_, status, err := runImport(plugins, mdb_client, artifactsRoot, scanID, parsedImport.Tool, parsedImport.Path)
 				if err != nil {
 					log.Error(err)

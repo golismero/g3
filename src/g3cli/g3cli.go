@@ -241,13 +241,8 @@ func (cmd *ScanCmd) Run(vars CmdContext) error {
 	}
 	script := string(scriptBytes)
 
-	// Parse the script. We don't need to perform a full validation,
-	// so we don't pass the collection of plugins for checking.
-	// We only need the list of imports at this stage.
-	parsed, err := g3lib.ParseScript(nil, script)
-	if err == nil {
-		err = g3.Validate.Struct(parsed)
-	}
+	// Parse the script.
+	parsed, err := g3.ParseScript(script)
 	if err != nil {
 		log.Critical("Error parsing file " + input + ": " + err.Error())
 		return err

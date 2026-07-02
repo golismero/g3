@@ -1,7 +1,7 @@
 // Package script assembles a complete g3 script string from the wizard's
 // structured form values. Plain string templating; no parser round-trip
 // in the render path (the wizard validates Custom… content separately
-// via g3lib.ParseScript before reaching this builder).
+// via g3.ParseScript before reaching this builder).
 package script
 
 import (

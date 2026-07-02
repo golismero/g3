@@ -7,15 +7,10 @@ import (
 	"github.com/golismero/g3/src/g3"
 )
 
-type ParsedImport = g3.ParsedImport
-type ParsedReport = g3.ParsedReport
-type ParsedScript = g3.ParsedScript
-
-func ParseScript(plugins []string, script string) (ParsedScript, error) {
-	// TODO restore runtime validation of plugin names
-	return g3.ParseScript(script)
-}
-
-func ParseServerScript(plugins G3PluginMetadata, script string) (ParsedScript, error) {
-	return ParseScript(slices.Collect(maps.Keys(plugins)), script)
+func ParseServerScript(plugins G3PluginMetadata, script string) (g3.ParsedScript, error) {
+	parsed, err := g3.ParseScript(script)
+	if err == nil {
+		err = g3.IsScriptSupported(parsed, slices.Collect(maps.Keys(plugins)))
+	}
+	return parsed, err
 }

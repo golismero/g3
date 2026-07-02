@@ -123,10 +123,7 @@ type G3Scan struct {            // MessageType: MSG_SCAN
 	G3Message
 	Mode string                 `json:"mode"        validate:"required"`
 	Pipelines [][]string        `json:"pipelines"`  // can be empty
-	// Report mirrors ParsedScript.Report. Non-nil means the script declared a
-	// report directive. Tool names the reporter plugin to dispatch (magenta by
-	// default for a bare `report`); the report is always run as a worker task.
-	Report *ParsedReport        `json:"report,omitempty"`
+	Report *g3.ReportStatement  `json:"report,omitempty"`
 }
 
 type G3ScanStatus struct {      // MessageType: MSG_STATUS
@@ -242,7 +239,7 @@ func GetClientID(client MessageQueueClient) string {
 }
 
 // Send a new scan message to the broker.
-func SendNewScan(client MessageQueueClient, scanid, mode string, pipelines [][]string, report *ParsedReport) error {
+func SendNewScan(client MessageQueueClient, scanid, mode string, pipelines [][]string, report *g3.ReportStatement) error {
 	msg := G3Scan{}
 	msg.MessageType = MSG_SCAN
 	msg.SenderID = GetClientID(client)

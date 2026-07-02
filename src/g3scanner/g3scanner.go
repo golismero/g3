@@ -318,7 +318,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	defer log.Info("Finished scan: " + msg.ScanID)
 	log.Info("Started scan: " + msg.ScanID)
 	if log.LogLevel == "DEBUG" {
-		var script g3lib.ParsedScript
+		var script g3.ParsedScript
 		script.Pipelines = msg.Pipelines
 		log.Debug("Pipeline script:\n------------------------------\n" + script.String() + "------------------------------")
 	}

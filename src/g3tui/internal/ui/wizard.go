@@ -12,7 +12,8 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/golismero/g3/src/g3lib"
+
+	"github.com/golismero/g3/src/g3"
 	"github.com/golismero/g3/src/g3tui/internal/client"
 	"github.com/golismero/g3/src/g3tui/internal/pipelines"
 	"github.com/golismero/g3/src/g3tui/internal/script"
@@ -476,8 +477,8 @@ func (w Wizard) closeCustomEditor() Wizard {
 }
 
 func validateCustomContent(content string) error {
-	wrapped := fmt.Sprintf("mode parallel\ntarget placeholder.local\n%s", content)
-	_, err := g3lib.ParseScript(nil, wrapped)
+	wrapped := fmt.Sprintf("mode parallel\ntarget 1.1.1.1\n%s", content)
+	_, err := g3.ParseScript(wrapped)
 	return err
 }
 

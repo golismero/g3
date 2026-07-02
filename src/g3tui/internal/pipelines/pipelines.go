@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/golismero/g3/src/g3lib"
 	log "github.com/golismero/g3/src/g3/log"
 	"github.com/golismero/g3/src/g3"
 )
@@ -99,8 +98,8 @@ func loadDir(dir string) (map[string]string, error) {
 // with synthetic mode and target lines. Embedded files skip this — they
 // were validated at PR review time and are part of the binary.
 func validate(content string) error {
-	wrapped := fmt.Sprintf("mode parallel\ntarget placeholder.local\n%s", content)
-	_, err := g3lib.ParseScript(nil, wrapped)
+	wrapped := fmt.Sprintf("mode parallel\ntarget 1.1.1.1\n%s", content)
+	_, err := g3.ParseScript(wrapped)
 	return err
 }
 
