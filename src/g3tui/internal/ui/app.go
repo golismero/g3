@@ -51,9 +51,6 @@ const (
 	panelFocusCount = 3
 )
 
-// bannerExpiredMsg clears any active error banner ~5s after it appeared.
-type bannerExpiredMsg struct{}
-
 // Minimum dashboard footprint. Below either threshold the dashboard
 // stops trying to render — the panels' internal min-content rows would
 // otherwise overflow, push the title bar off the top, and produce the
@@ -173,6 +170,12 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v, cmd := a.logsViewer.Update(m)
 			a.logsViewer = &v
 			return a, cmd
+		}
+		// A dashboard error banner is user-dismissed: esc clears it and
+		// consumes the keystroke so nothing else reacts to that press.
+		if a.banner != "" && key.Matches(m, Keys.Back) {
+			a.banner = ""
+			return a, nil
 		}
 		// Tab cycling is global to the dashboard. Even when the scan
 		// list filter is active, Tab moves focus away (filter buffer
@@ -351,11 +354,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, fetchProgressOnceCmd(a.cli)
 
 	case client.ErrorMsg:
+		// The banner stays until the user dismisses it with esc (handled
+		// in the KeyMsg block) — never on a timer.
 		a.banner = fmt.Sprintf("%s: %v", m.Op, m.Err)
-		return a, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return bannerExpiredMsg{} })
-
-	case bannerExpiredMsg:
-		a.banner = ""
 		return a, nil
 	}
 	// Anything App didn't claim — forward to the active overlay so

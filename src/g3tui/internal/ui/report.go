@@ -242,19 +242,19 @@ func (p ReportPane) Update(msg tea.Msg) (ReportPane, tea.Cmd) {
 
 	case client.ReportSaved:
 		p.state = reportLoaded
-		p.setBanner(BannerSuccess, fmt.Sprintf("Saved to %s", m.Path))
+		p.setTransientBanner(BannerSuccess, fmt.Sprintf("Saved to %s", m.Path))
 		return p, p.expireBannerCmd()
 
 	case client.ReportSaveError:
 		p.state = reportLoaded
 		p.setBanner(BannerError, fmt.Sprintf("Save failed: %v", m.Err))
-		return p, p.expireBannerCmd()
+		return p, nil
 
 	case client.ExportDone:
 		p.state = reportLoaded
 		p.exportCancel = nil
 		p.exportCtx = nil
-		p.setBanner(BannerSuccess, fmt.Sprintf("Exported %d objects to %s", m.Count, m.Path))
+		p.setTransientBanner(BannerSuccess, fmt.Sprintf("Exported %d objects to %s", m.Count, m.Path))
 		return p, p.expireBannerCmd()
 
 	case client.ExportError:
@@ -262,7 +262,7 @@ func (p ReportPane) Update(msg tea.Msg) (ReportPane, tea.Cmd) {
 		p.exportCancel = nil
 		p.exportCtx = nil
 		p.setBanner(BannerError, fmt.Sprintf("Export failed: %v", m.Err))
-		return p, p.expireBannerCmd()
+		return p, nil
 
 	case bannerExpireMsg:
 		if !p.bannerExpires.IsZero() && time.Now().After(p.bannerExpires) {
@@ -493,9 +493,20 @@ func (p ReportPane) startExport(path string) (ReportPane, tea.Cmd) {
 	)
 }
 
+// setBanner shows a sticky banner (used for errors): it stays until the
+// user acts — a later banner replaces it, or closing the pane clears it.
+// Never a timer.
 func (p *ReportPane) setBanner(style lipgloss.Style, text string) {
 	p.banner = text
 	p.bannerStyle = style
+	p.bannerExpires = time.Time{}
+}
+
+// setTransientBanner shows a banner that auto-clears after 5s. Only for
+// non-error feedback (e.g. "Saved to …") — errors must use setBanner so
+// the user isn't forced to race the clock to read them.
+func (p *ReportPane) setTransientBanner(style lipgloss.Style, text string) {
+	p.setBanner(style, text)
 	p.bannerExpires = time.Now().Add(5 * time.Second)
 }
 

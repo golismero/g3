@@ -6,7 +6,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -26,13 +25,12 @@ type wizardSubmittedMsg struct {
 }
 
 // wizardSubmitErrorMsg fires on any local-validation, upload, or
-// /scan/start error. Wizard sets a banner and stays open.
+// /scan/start error. Wizard sets a banner and stays open. The banner
+// persists until the user acts (a corrected re-submit clears it, or
+// they close the wizard) — never on a timer.
 type wizardSubmitErrorMsg struct {
 	Err error
 }
-
-// wizardBannerExpiredMsg clears the wizard's banner ~5s after it appeared.
-type wizardBannerExpiredMsg struct{}
 
 // ImportEntry is one row in the wizard's imports list. Tool comes from
 // the plugin dropdown; Path is an absolute local path until submit time,
@@ -180,10 +178,6 @@ func (w Wizard) Update(msg tea.Msg) (Wizard, tea.Cmd) {
 	case wizardSubmitErrorMsg:
 		w.banner = m.Err.Error()
 		w.submitting = false
-		return w, expireWizardBanner()
-
-	case wizardBannerExpiredMsg:
-		w.banner = ""
 		return w, nil
 
 	case tea.KeyMsg:
@@ -330,32 +324,28 @@ func (w Wizard) updateToolDropdown(m tea.KeyMsg) (Wizard, tea.Cmd) {
 	return w, nil
 }
 
-func expireWizardBanner() tea.Cmd {
-	return tea.Tick(5*time.Second, func(time.Time) tea.Msg { return wizardBannerExpiredMsg{} })
-}
-
 // submit runs local validation, then (if valid) hands off to the
 // upload+start goroutine via a tea.Cmd.
 func (w Wizard) submit() (Wizard, tea.Cmd) {
 	targets := parseTargets(w.targetsArea.Value())
 	if len(targets) == 0 && len(w.imports) == 0 {
 		w.banner = "validation: at least one target or import is required"
-		return w, expireWizardBanner()
+		return w, nil
 	}
 	types := w.scanTypeNames()
 	if len(types) == 0 || w.scanTypeIdx >= len(types) {
 		w.banner = "validation: select a scan type"
-		return w, expireWizardBanner()
+		return w, nil
 	}
 	var pipelineContent string
 	if types[w.scanTypeIdx] == customScanTypeLabel {
 		if strings.TrimSpace(w.customContent) == "" {
 			w.banner = "validation: custom scan type is empty — open it and add a pipeline"
-			return w, expireWizardBanner()
+			return w, nil
 		}
 		if err := validateCustomContent(w.customContent); err != nil {
 			w.banner = "validation: custom scan type: " + err.Error()
-			return w, expireWizardBanner()
+			return w, nil
 		}
 		pipelineContent = w.customContent
 	} else {

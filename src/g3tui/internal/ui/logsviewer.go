@@ -201,12 +201,12 @@ func (v LogsViewer) Update(msg tea.Msg) (LogsViewer, tea.Cmd) {
 		return v, nil
 
 	case logsViewerSavedMsg:
-		v.setBanner(BannerSuccess, fmt.Sprintf("Saved to %s", m.Path))
+		v.setTransientBanner(BannerSuccess, fmt.Sprintf("Saved to %s", m.Path))
 		return v, v.expireBannerCmd()
 
 	case logsViewerSaveErrorMsg:
 		v.setBanner(BannerError, fmt.Sprintf("Save failed: %v", m.Err))
-		return v, v.expireBannerCmd()
+		return v, nil
 
 	case logsViewerBannerExpireMsg:
 		if !v.bannerExpires.IsZero() && time.Now().After(v.bannerExpires) {
@@ -476,9 +476,20 @@ func (v LogsViewer) writeLogs(path string) (LogsViewer, tea.Cmd) {
 	}
 }
 
+// setBanner shows a sticky banner (used for errors): it stays until the
+// user acts — a later banner replaces it, or closing the viewer clears
+// it. Never a timer.
 func (v *LogsViewer) setBanner(style lipgloss.Style, text string) {
 	v.banner = text
 	v.bannerStyle = style
+	v.bannerExpires = time.Time{}
+}
+
+// setTransientBanner shows a banner that auto-clears after 5s. Only for
+// non-error feedback (e.g. "Saved to …") — errors must use setBanner so
+// the user isn't forced to race the clock to read them.
+func (v *LogsViewer) setTransientBanner(style lipgloss.Style, text string) {
+	v.setBanner(style, text)
 	v.bannerExpires = time.Now().Add(5 * time.Second)
 }
 
