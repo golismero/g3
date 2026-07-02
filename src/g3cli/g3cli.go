@@ -130,7 +130,7 @@ func main() {
 		kong.Description("Golismero3 - The Pentesting Swiss Army Knife"),
 		kong.UsageOnError(),
 		kong.ConfigureHelp(kong.HelpOptions{Compact: true}),
-		kong.Vars{"version": g3lib.Version},
+		kong.Vars{"version": g3.Version},
 	)
 	// Short-circuits and exits when the shell invokes us with COMP_LINE set.
 	// No-op in normal invocation.

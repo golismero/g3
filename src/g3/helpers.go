@@ -13,6 +13,12 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+// Version is overwritten at link time by release builds via
+// -ldflags "-X github.com/golismero/g3/src/g3.Version=...". The -X path must
+// be the full module import path, not the short "g3lib" — the short form
+// silently no-ops. Stays "dev" for local builds.
+var Version = "dev"
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // JSON codec and validator.
 

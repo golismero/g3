@@ -53,13 +53,13 @@ The parent doc floats retiring `replace ../` in favor of `go.work`. We **keep `r
 
 ### 4. Version-stamp bug fix (surfaced by the rename)
 
-`Version` is defined in package `g3lib` (`src/g3lib/common.go:34`), but every build stamped it via `-X g3lib.Version=…`. Go's linker `-X importpath.name` requires the **full import path**; the real path was `golismero.com/g3lib`, so `g3lib.Version` matched nothing — **the version stamp was a silent no-op** (`g3 --version` always reported `dev`). The rename forces these ldflags to the correct full path, which incidentally fixes the stamp. Corrected at all four sites:
+`Version` is defined in package `g3lib` (`src/g3lib/common.go:34`), but every build stamped it via `-X g3.Version=…`. Go's linker `-X importpath.name` requires the **full import path**; the real path was `golismero.com/g3lib`, so `g3.Version` matched nothing — **the version stamp was a silent no-op** (`g3 --version` always reported `dev`). The rename forces these ldflags to the correct full path, which incidentally fixes the stamp. Corrected at all four sites:
 
 - `Dockerfile:15`
 - `misc/build-dist.sh:73`
 - `.github/workflows/release.yml` (×2)
 
-→ `-X github.com/golismero/g3/src/g3lib.Version=${VERSION}`
+→ `-X github.com/golismero/g3/src/g3.Version=${VERSION}`
 
 This was surfaced and fixed rather than quietly corrected, per "surface bugs, never hide them."
 
@@ -86,7 +86,7 @@ Done in this work (rename + Makefile + dep-collection prefix by the user; the it
 - `go work edit -json` — `go.work` valid; all nine modules registered.
 - `cd src/g3api && go build ./...` — cross-module compile through the workspace: **OK**.
 - `make -C src all` — full build via the `replace` path: all seven binaries built: **OK**.
-- `go tool nm bin/g3 | grep Version` → symbol is `github.com/golismero/g3/src/g3lib.Version` (authoritative confirmation the new `-X` path matches; the old short path could not).
+- `go tool nm bin/g3 | grep Version` → symbol is `github.com/golismero/g3/src/g3.Version` (authoritative confirmation the new `-X` path matches; the old short path could not).
 - `go version -m` confirms the `-ldflags` string is embedded in build metadata (explains why a naive `strings` grep is not a clean test of the stamp).
 - `misc/deps.txt` contains no internal modules (filter working).
 

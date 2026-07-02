@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golismero/g3/src/g3lib"
+	"github.com/golismero/g3/src/g3"
 	"github.com/golismero/g3/src/g3tui/internal/cmd"
 )
 
 func main() {
-	err := cmd.Execute(g3lib.Version)
+	err := cmd.Execute(g3.Version)
 	if err == nil {
 		return
 	}
