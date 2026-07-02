@@ -9,9 +9,10 @@ replace github.com/golismero/g3/src/g3 => ../g3
 require (
 	github.com/alecthomas/kong v1.15.0
 	github.com/alexeyco/simpletable v1.0.0
-	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3 v0.0.0-00010101000000-000000000000
+	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/gorilla/websocket v1.5.3
+	github.com/joho/godotenv v1.5.1
 	github.com/willabides/kongplete v0.4.0
 )
 
@@ -30,7 +31,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/klauspost/compress v1.19.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/alexeyco/simpletable"
 	"github.com/gorilla/websocket"
+	"github.com/joho/godotenv"
 	"github.com/willabides/kongplete"
 
 	"github.com/golismero/g3/src/g3"
@@ -145,7 +147,7 @@ func main() {
 	}
 
 	// Load the environment variables.
-	g3lib.LoadDotEnvFile()
+	godotenv.Load()	//nolint:errcheck
 
 	// Initialize the logger.
 	log.InitLogger()
@@ -1361,7 +1363,7 @@ func (cmd *RmCmd) Run(vars CmdContext) error {
 		} else {
 			msg = fmt.Sprintf("Do you really want to DELETE the selected %d scans? This is IRREVERSIBLE!", len(arguments))
 		}
-		confirm := g3lib.AskForConfirmation(msg)
+		confirm := AskForConfirmation(msg)
 		if !confirm {
 			log.Error("User cancelled the operation.")
 			return errors.New("user cancelled the operation")
@@ -1402,4 +1404,24 @@ func (cmd *RmCmd) Run(vars CmdContext) error {
 	}
 	log.Info("...done!")
 	return nil
+}
+
+// Asks the user for confirmation.
+// https://gist.github.com/r0l1/3dcbb0c8f6cfe9c66ab8008f55f8f28b
+func AskForConfirmation(s string) bool {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Printf("%s [y/N]: ", s)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			return false
+		}
+		response = strings.ToLower(strings.TrimSpace(response))
+		switch response {
+		case "y", "yes":
+			return true
+		case "", "n", "no":
+			return false
+		}
+	}
 }

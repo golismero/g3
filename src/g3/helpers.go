@@ -13,6 +13,9 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// JSON codec and validator.
+
 // Global validator cache.
 var Validate *validator.Validate = validator.New(validator.WithRequiredStructEnabled())
 
@@ -71,6 +74,9 @@ func DecodeJSON(data []byte, pointer any) error {
 	}
 	return ValidateValue(pointer)
 }
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Shell completion helpers.
 
 // shellCompletionSnippets are the registration lines a user adds to their
 // shell rc (or that the Makefile drops into a system completion directory)

@@ -8,6 +8,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/golismero/g3/src/g3"
@@ -124,7 +125,7 @@ func BuildManifestWork(outputArray []g3.Data) []g3.ManifestWork {
 			if !ok {
 				continue
 			}
-			if !ContainsStr(work[idx].Artifacts, name) {
+			if !slices.Contains(work[idx].Artifacts, name) {
 				work[idx].Artifacts = append(work[idx].Artifacts, name)
 			}
 		}

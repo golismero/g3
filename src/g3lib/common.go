@@ -1,9 +1,7 @@
 package g3lib
 
 import (
-	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 
-	"github.com/golismero/g3/src/g3"
 	log "github.com/golismero/g3/src/g3/log"
 )
 
@@ -165,107 +162,8 @@ func ResolveInstanceID(envKey string) (string, error) {
 	return prefix + hostname, nil
 }
 
-// Read an array of Data objects from a file.
-func LoadDataFromFile(filepath string) ([]g3.Data, error) {
-	var inputJson []g3.Data
-	var err error
-
-	// Open the file.
-	var fd *os.File
-	if filepath == "-" {
-		fd = os.Stdin
-	} else {
-		fd, err = os.Open(filepath)
-		if err != nil {
-			return inputJson, errors.New("Error reading file " + filepath + ": " + err.Error())
-		}
-		defer fd.Close()
-	}
-
-	// Parse the JSON data from the file.
-	err = json.NewDecoder(bufio.NewReader(fd)).Decode(&inputJson)
-	if err != nil {
-		return inputJson, errors.New("Error parsing input JSON data from file " + filepath + ": " + err.Error())
-	}
-
-	// Do some minimal validation.
-	for index, data := range inputJson {
-		if err := data.Validate(); err != nil {
-			return inputJson, fmt.Errorf("Malformed data received, file: %s, index %d: %s", filepath, index, err.Error())
-		}
-	}
-
-	// Return the input array.
-	return inputJson, nil
-}
-
-// Write an array of Data objects into a file.
-func SaveDataToFile(filepath string, outputArray []g3.Data, beautify bool) error {
-
-	// Save the combined output in JSON format.
-	var jsonOutput []byte
-	var err error
-	if beautify {
-		jsonOutput, err = json.MarshalIndent(outputArray, "", "  ")
-	} else {
-		jsonOutput, err = json.Marshal(outputArray)
-	}
-	if err != nil {
-		return errors.New("error parsing output data: " + err.Error())
-	}
-	if beautify {
-		jsonOutput = append(jsonOutput, []byte("\n")...)
-	}
-
-	// Save the output data where requested.
-	if filepath == "-" {
-		fmt.Print(string(jsonOutput))
-	} else {
-		err = os.WriteFile(filepath, jsonOutput, 0644)
-		if err != nil {
-			return errors.New("Error writing to file " + filepath + ": " + err.Error())
-		}
-	}
-	return nil
-}
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Miscellaneous helper functions.
-
-// Remove duplicates from a string slice.
-// https://stackoverflow.com/a/66751055/426293
-func RemoveDuplicateStr(strSlice []string) []string {
-	allKeys := make(map[string]bool)
-	list := []string{}
-	for _, item := range strSlice {
-		if _, value := allKeys[item]; !value {
-			allKeys[item] = true
-			list = append(list, item)
-		}
-	}
-	return list
-}
-
-// Removes a string from a string slice.
-// https://stackoverflow.com/a/34070691/426293
-func RemoveStr(s []string, r string) []string {
-	for i, v := range s {
-		if v == r {
-			return append(s[:i], s[i+1:]...)
-		}
-	}
-	return s
-}
-
-// Checks if a string exists in a string slice.
-func ContainsStr(s []string, r string) bool {
-	for _, v := range s {
-		if v == r {
-			return true
-		}
-	}
-	return false
-}
 
 // Remove ANSI escapes from a string.
 // https://github.com/acarl005/stripansi/blob/master/stripansi.go
@@ -283,24 +181,4 @@ func PrettyPrintJSON(data interface{}) string {
 		return string(jsonOutput)
 	}
 	return `{\n  "error": "Could not JSON encode the data!"\n}\n`
-}
-
-// Asks the user for confirmation.
-// https://gist.github.com/r0l1/3dcbb0c8f6cfe9c66ab8008f55f8f28b
-func AskForConfirmation(s string) bool {
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Printf("%s [y/N]: ", s)
-		response, err := reader.ReadString('\n')
-		if err != nil {
-			return false
-		}
-		response = strings.ToLower(strings.TrimSpace(response))
-		switch response {
-		case "y", "yes":
-			return true
-		case "", "n", "no":
-			return false
-		}
-	}
 }

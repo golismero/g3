@@ -13,8 +13,8 @@ require (
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/x/ansi v0.11.7
-	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3 v0.0.0-00010101000000-000000000000
+	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/gorilla/websocket v1.5.3
 	github.com/muesli/termenv v0.16.0
 	github.com/willabides/kongplete v0.4.0

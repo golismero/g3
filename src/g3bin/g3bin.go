@@ -151,6 +151,70 @@ func LoadTargetsFromFile(filepath string) ([]string, error) {
 	return targets, scanner.Err()
 }
 
+// Read an array of Data objects from a file.
+func LoadDataFromFile(filepath string) ([]g3.Data, error) {
+	var inputJson []g3.Data
+	var err error
+
+	// Open the file.
+	var fd *os.File
+	if filepath == "-" {
+		fd = os.Stdin
+	} else {
+		fd, err = os.Open(filepath)
+		if err != nil {
+			return inputJson, errors.New("Error reading file " + filepath + ": " + err.Error())
+		}
+		defer fd.Close()
+	}
+
+	// Parse the JSON data from the file.
+	err = json.NewDecoder(bufio.NewReader(fd)).Decode(&inputJson)
+	if err != nil {
+		return inputJson, errors.New("Error parsing input JSON data from file " + filepath + ": " + err.Error())
+	}
+
+	// Do some minimal validation.
+	for index, data := range inputJson {
+		if err := data.Validate(); err != nil {
+			return inputJson, fmt.Errorf("Malformed data received, file: %s, index %d: %s", filepath, index, err.Error())
+		}
+	}
+
+	// Return the input array.
+	return inputJson, nil
+}
+
+// Write an array of Data objects into a file.
+func SaveDataToFile(filepath string, outputArray []g3.Data, beautify bool) error {
+
+	// Save the combined output in JSON format.
+	var jsonOutput []byte
+	var err error
+	if beautify {
+		jsonOutput, err = json.MarshalIndent(outputArray, "", "  ")
+	} else {
+		jsonOutput, err = json.Marshal(outputArray)
+	}
+	if err != nil {
+		return errors.New("error parsing output data: " + err.Error())
+	}
+	if beautify {
+		jsonOutput = append(jsonOutput, []byte("\n")...)
+	}
+
+	// Save the output data where requested.
+	if filepath == "-" {
+		fmt.Print(string(jsonOutput))
+	} else {
+		err = os.WriteFile(filepath, jsonOutput, 0644)
+		if err != nil {
+			return errors.New("Error writing to file " + filepath + ": " + err.Error())
+		}
+	}
+	return nil
+}
+
 func main() {
 	var err error
 
@@ -555,7 +619,7 @@ func (cmd *ScanCmd) Run(cmdctx CmdContext) error {
 	}
 
 	// Write the output array.
-	err = g3lib.SaveDataToFile(cmd.Output, outputData, cmd.Beautify)
+	err = SaveDataToFile(cmd.Output, outputData, cmd.Beautify)
 	if err != nil {
 		return err
 	}
@@ -582,7 +646,7 @@ func (cmd *TargetCmd) Run(ctx CmdContext) error {
 	}
 
 	// Write the output array.
-	err = g3lib.SaveDataToFile(cmd.Output, jsonArray, cmd.Beautify)
+	err = SaveDataToFile(cmd.Output, jsonArray, cmd.Beautify)
 	if err != nil {
 		return err
 	}
@@ -654,7 +718,7 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 	}
 
 	// Parse the input JSON data.
-	inputJson, err := g3lib.LoadDataFromFile(cmd.Input)
+	inputJson, err := LoadDataFromFile(cmd.Input)
 	if err != nil {
 		log.Critical(err)
 		return err
@@ -782,7 +846,7 @@ func (cmd *RunCmd) Run(ctx CmdContext) error {
 	}
 
 	// Write the output array.
-	err = g3lib.SaveDataToFile(cmd.Output, totalOutput, cmd.Beautify)
+	err = SaveDataToFile(cmd.Output, totalOutput, cmd.Beautify)
 	if err != nil {
 		log.Critical(err)
 		return err
@@ -842,7 +906,7 @@ func (cmd *ImportCmd) Run(ctx CmdContext) error {
 	}
 
 	// Write the output array.
-	err = g3lib.SaveDataToFile(cmd.Output, outputArray, cmd.Beautify)
+	err = SaveDataToFile(cmd.Output, outputArray, cmd.Beautify)
 	if err != nil {
 		log.Critical(err)
 		return err
@@ -863,7 +927,7 @@ func (cmd *JoinCmd) Run(ctx CmdContext) error {
 			}
 			usedStdin = true
 		}
-		inputJson, err := g3lib.LoadDataFromFile(filepath)
+		inputJson, err := LoadDataFromFile(filepath)
 		if err != nil {
 			log.Critical(err)
 			return err
@@ -872,7 +936,7 @@ func (cmd *JoinCmd) Run(ctx CmdContext) error {
 	}
 
 	// Write the output array.
-	err := g3lib.SaveDataToFile(cmd.Output, totalOutput, cmd.Beautify)
+	err := SaveDataToFile(cmd.Output, totalOutput, cmd.Beautify)
 	if err != nil {
 		log.Critical(err)
 		return err
@@ -883,7 +947,7 @@ func (cmd *JoinCmd) Run(ctx CmdContext) error {
 func (cmd *FilterCmd) Run(ctx CmdContext) error {
 
 	// Parse the input JSON data.
-	inputJson, err := g3lib.LoadDataFromFile(cmd.Input)
+	inputJson, err := LoadDataFromFile(cmd.Input)
 	if err != nil {
 		log.Critical(err)
 		return err
@@ -903,7 +967,7 @@ func (cmd *FilterCmd) Run(ctx CmdContext) error {
 	}
 
 	// Write the output array.
-	err = g3lib.SaveDataToFile(cmd.Output, filteredOutput, cmd.Beautify)
+	err = SaveDataToFile(cmd.Output, filteredOutput, cmd.Beautify)
 	if err != nil {
 		log.Critical(err)
 		return err

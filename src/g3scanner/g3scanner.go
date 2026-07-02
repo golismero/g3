@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -1027,7 +1028,8 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 					}
 
 					// Move on to the next step in the pipeline.
-					currentData = g3lib.RemoveDuplicateStr(newData)
+					slices.Sort(newData)
+					currentData = slices.Compact(newData)
 				}
 			}
 		}

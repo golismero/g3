@@ -7,8 +7,8 @@ replace github.com/golismero/g3/src/g3lib => ../g3lib
 replace github.com/golismero/g3/src/g3 => ../g3
 
 require (
-	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/golismero/g3/src/g3 v0.0.0-00010101000000-000000000000
+	github.com/golismero/g3/src/g3lib v0.0.0-00010101000000-000000000000
 	github.com/google/go-containerregistry v0.21.7
 	github.com/google/go-jsonnet v0.22.0
 	github.com/spf13/pflag v1.0.10
