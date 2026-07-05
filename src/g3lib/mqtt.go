@@ -76,12 +76,12 @@ const NIL_TASKID = "00000000-0000-0000-0000-000000000000"
 type G3Message struct {
 	MessageType G3MESSAGETYPE   `json:"msgtype"     validate:"required"`
 	SenderID string             `json:"senderid"    validate:"required"`
-	ScanID string               `json:"scanid"      validate:"required,uuid4"`
+	ScanID string               `json:"scanid"      validate:"required,uuid"`
 }
 
 type G3TaskMessage struct {
 	G3Message
-	TaskID string               `json:"taskid"      validate:"required,uuid4"`
+	TaskID string               `json:"taskid"      validate:"required,uuid"`
 }
 
 type G3Task struct {            // MessageType: MSG_TASK
@@ -98,7 +98,7 @@ type G3ReportTask struct {      // MessageType: MSG_REPORT
 }
 
 type G3Dispatch struct {        // MessageType: MSG_DISPATCH
-	G3TaskMessage               // embeds ScanID + TaskID; TaskID is required,uuid4
+	G3TaskMessage               // embeds ScanID + TaskID; TaskID is required,uuid
 	Kind   string `json:"kind"   validate:"required,oneof=tool report"`
 	Tool   string `json:"tool"   validate:"required"`
 	// kind=tool fields:
@@ -153,7 +153,7 @@ type G3ScanStop struct {        // MessageType: MSG_STOP
 // lets subscribed clients drop the entry immediately rather than wait
 // for the next periodic /scan/progress snapshot to reveal the absence.
 type G3ScanRemoved struct {
-	ScanID string               `json:"scanid"      validate:"required,uuid4"`
+	ScanID string               `json:"scanid"      validate:"required,uuid"`
 }
 
 type MessageQueueClient mqtt.Client

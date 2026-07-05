@@ -7,7 +7,7 @@ const ManifestFilename = "manifest.json"
 // ManifestFile describes one file in the task's artifact slot.
 type ManifestFile struct {
 	Name     string `json:"name"     validate:"required"`
-	Size     int64  `json:"size"     validate:"ge=0"`
+	Size     int64  `json:"size"     validate:"gte=0"`
 	Modified int64  `json:"modified" validate:"gt=0"`
 }
 
@@ -31,8 +31,8 @@ type ManifestWork struct {
 // but absent from every Work.Artifacts are intentional orphans (debug, forensic
 // retention).
 type Manifest struct {
-	ScanID     string         `json:"scan_id"     validate:"required,uuid,ne=ne=00000000-0000-0000-0000-000000000000"`
-	TaskID     string         `json:"task_id"     validate:"required,uuid,ne=ne=00000000-0000-0000-0000-000000000000"`
+	ScanID     string         `json:"scan_id"     validate:"required,uuid"`
+	TaskID     string         `json:"task_id"     validate:"required,uuid"`
 	Plugin     string         `json:"plugin"      validate:"required"`
 	Tool       string         `json:"tool"        validate:"required"`
 	ExitStatus string         `json:"exit_status" validate:"required"`
