@@ -41,6 +41,14 @@ huma extracts and validates request fields from struct tags and maps handler ret
 
 huma's default error shape is RFC 7807 `problem+json`, not g3api's `{status, data}` envelope. Adopting huma means changing the response shape — folded into the same flag-day, but a genuine decision (see *Status-code contract* and *Open questions*). The permissive "any 2xx = success" client check becomes largely moot for *generated* clients, which key off the operation contract rather than a hand-written 2xx range.
 
+### huma output details to pin down (2026-07-05 spike)
+
+Two huma behaviors confirmed empirically that need explicit handling at implementation time:
+
+- **Named schema components vs. inline schemas.** When a schema is supplied through huma's `SchemaProvider` hook — the mechanism we'd use to drive request/response schemas from the existing govalidator `validate:` tags instead of duplicating them as huma tags — huma *inlines* the returned schema into the operation's `requestBody`/response rather than registering it as a named `components/schemas` entry. SDK generators then synthesize an anonymous model name (`PostProgressBody`) instead of the clean domain name (`ProgressUpdate`), cutting against the clean-SDK-surface goal. **Fix:** have the provider register the schema in the huma `Registry` under the type name and return a `{Ref: "#/components/schemas/<Name>"}` instead of the raw schema. The `Registry` is already passed into `SchemaProvider.Schema(r huma.Registry)`, so the hook is there. Do this for every shared type so each becomes a named, reusable component — and `$ref`-shareable with the WS/AsyncAPI side.
+
+- **Disable huma's response `$schema` field by default.** huma injects a `$schema` property into JSON response bodies (a link to the response's JSON Schema, added by its schema-link transformer). It's noise on the wire for our controlled clients. Build the huma config *without* that transformer by default; only enable it when `G3_DEBUG_API` is set — the same env var that already gates API debug output (`src/g3/legacy.go`).
+
 ### Client story
 
 Today there is no real client SDK: `g3cli` calls `g3lib.MakeApiRequest(...)` directly with hand-written endpoint strings (15+ sites), and `g3tui` wraps the same call in a thin `internal/client` package. So **`g3lib` is the de-facto client transport today** — `MakeApiRequest`/`DownloadFile`/`UploadFile` + the `Req*` structs all live in `src/g3lib/api.go`. That accidental role goes away:
