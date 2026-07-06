@@ -314,7 +314,7 @@ func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string
 
 		// Line 1: ScanMetadata.
 		var info g3.ScanMetadata
-		info.ScanID = msg.ScanID
+		info.ScanID = scanid
 		if err := enc.Encode(info); err != nil {
 			encodeErr = err
 			return
@@ -326,7 +326,7 @@ func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string
 		// LoadDataWithCallback iterates a cursor. Callback returning a non-nil
 		// error stops the iteration immediately — that's the EPIPE backpressure
 		// channel for "reader closed stdin, stop streaming".
-		err = LoadDataWithCallback(mdb, scanid, query, func(data g3.Data) error {
+		err := LoadDataWithCallback(mdb, scanid, query, func(data g3.Data) error {
 			return enc.Encode(data)
 		})
 		if err != nil && err != io.ErrClosedPipe {

@@ -2,15 +2,12 @@ package g3lib
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
 
 	"github.com/redis/go-redis/v9"
-
-	"github.com/golismero/g3/src/g3"
 )
 
 const REDIS_HOST = "REDIS_HOST"
