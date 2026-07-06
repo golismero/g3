@@ -23,8 +23,8 @@ type SQLDBClient struct {
 
 type LogEntry struct {
 	Timestamp int64  `json:"timestamp"   validate:"gte=0"`
-	ScanID    string `json:"scanid"      validate:"required,uuid4"`
-	TaskID    string `json:"taskid"      validate:"required,uuid4"`
+	ScanID    string `json:"scanid"      validate:"required,uuid"`
+	TaskID    string `json:"taskid"      validate:"required,uuid"`
 	Text      string `json:"text"`
 }
 
@@ -33,8 +33,8 @@ type TaskLogLine struct {
 	Text      string `json:"text"`
 }
 type G3TaskLog struct {
-	ScanID string        `json:"scanid"          validate:"required,uuid4"`
-	TaskID string        `json:"taskid"          validate:"required,uuid4"`
+	ScanID string        `json:"scanid"          validate:"required,uuid"`
+	TaskID string        `json:"taskid"          validate:"required,uuid"`
 	Start  int64         `json:"start,omitempty" validate:"gte=0"`
 	End    int64         `json:"end,omitempty"   validate:"gte=0"`
 	Lines  []TaskLogLine `json:"lines,omitempty" validate:"dive"`
@@ -49,14 +49,14 @@ func (log G3TaskLog) String() string {
 }
 
 type ScanStatusEntry struct {
-	ScanID   string       `json:"scanid"      validate:"required,uuid4"`
+	ScanID   string       `json:"scanid"      validate:"required,uuid"`
 	Status   G3SCANSTATUS `json:"status"      validate:"required"`
 	Progress int          `json:"progress"    validate:"gte=0,lte=100"`
 	Message  string       `json:"message"`
 }
 
 type TaskStatusEntry struct {
-	TaskID     string `json:"taskid"                   validate:"required,uuid4"`
+	TaskID     string `json:"taskid"                   validate:"required,uuid"`
 	Tool       string `json:"tool,omitempty"`
 	Worker     string `json:"worker,omitempty"`
 	State      string `json:"state,omitempty"` // RUNNING / DONE / ERROR / CANCELED (from Redis)

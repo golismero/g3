@@ -28,7 +28,7 @@ var Validate *validator.Validate = validator.New(validator.WithRequiredStructEna
 // Custom validators for Golismero stuff.
 func init() {
 	Validate.RegisterAlias("g3type", "alpha,lowercase,min=3")
-	re_g3name := regexp.MustCompile(`^[a-z][a-z0-9_\\-]*$`)
+	re_g3name := regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 	err := Validate.RegisterValidation("g3name", func(fl validator.FieldLevel) bool {
 			return re_g3name.Match([]byte(fl.Field().String()))
 		})

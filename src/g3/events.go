@@ -5,8 +5,6 @@ import (
 	"errors"
 )
 
-const NIL_UUID = "00000000-0000-0000-0000-000000000000"
-
 type LogLine struct {
 	Timestamp int64      `json:"ts"                  validate:"gte=0"`
 	Text      string     `json:"text"`
@@ -25,8 +23,8 @@ type ProgressUpdate struct {
 
 type SubscriptionKey struct {
 	Channel string       `json:"channel"             validate:"required,oneof=* created deleted status progress logs input output"`
-	ScanID string        `json:"scanid,omitempty"    validate:"omitempty,uuid|eq=*"`
-	TaskID string        `json:"taskid,omitempty"    validate:"omitempty,uuid|eq=*"`
+	ScanID string        `json:"scanid,omitempty"    validate:"omitempty,uuid"`
+	TaskID string        `json:"taskid,omitempty"    validate:"omitempty,uuid"`
 }
 
 type SubscriptionRequest struct {
@@ -40,22 +38,22 @@ type SubscriptionData struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-func (self SubscriptionData) Status() (StatusUpdate, error) {
+func (sd SubscriptionData) Status() (StatusUpdate, error) {
 	var update = StatusUpdate{
 		Seq: 0,
 		Status: "error",
 	}
-	if self.Channel != "status" {
+	if sd.Channel != "status" {
 		return update, errors.New("Not a status update event")
 	}
-	err := json.Unmarshal(self.Data, &update)
+	err := json.Unmarshal(sd.Data, &update)
 	if err == nil {
 		err = Validate.Struct(&update)
 	}
 	return update, err
 }
 
-func (self SubscriptionData) Progress() (ProgressUpdate, error) {
+func (sd SubscriptionData) Progress() (ProgressUpdate, error) {
 	var update = ProgressUpdate{
 		StatusUpdate: StatusUpdate{
 			Seq: 0,
@@ -64,48 +62,48 @@ func (self SubscriptionData) Progress() (ProgressUpdate, error) {
 		Progress: 100,
 		Message: "",
 	}
-	if self.Channel != "progress" {
+	if sd.Channel != "progress" {
 		return update, errors.New("Not a progress update event")
 	}
-	err := json.Unmarshal(self.Data, &update)
+	err := json.Unmarshal(sd.Data, &update)
 	if err == nil {
 		err = Validate.Struct(&update)
 	}
 	return update, err
 }
 
-func (self SubscriptionData) Logs() ([]LogLine, error) {
+func (sd SubscriptionData) Logs() ([]LogLine, error) {
 	var log_lines []LogLine
-	if self.Channel != "logs" {
+	if sd.Channel != "logs" {
 		return log_lines, errors.New("Not a logging event")
 	}
-	err := json.Unmarshal(self.Data, &log_lines)
+	err := json.Unmarshal(sd.Data, &log_lines)
 	if err == nil {
 		err = Validate.Var(log_lines, "dive")
 	}
 	return log_lines, err
 }
 
-func (self SubscriptionData) Input() (string, error) {
-	var data_id = NIL_UUID
-	if self.Channel != "input" {
+func (sd SubscriptionData) Input() (string, error) {
+	var data_id = "00000000-0000-0000-0000-000000000000"
+	if sd.Channel != "input" {
 		return data_id, errors.New("Not an input event")
 	}
-	err := json.Unmarshal(self.Data, &data_id)
+	err := json.Unmarshal(sd.Data, &data_id)
 	if err == nil {
-		err = Validate.Var(data_id, "required,uuid,ne="+NIL_UUID)
-	} 
+		err = Validate.Var(data_id, "required,uuid")
+	}
 	return data_id, err
 }
 
-func (self SubscriptionData) Output() ([]string, error) {
+func (sd SubscriptionData) Output() ([]string, error) {
 	var output_data_ids []string
-	if self.Channel != "output" {
+	if sd.Channel != "output" {
 		return output_data_ids, errors.New("Not an output event")
 	}
-	err := json.Unmarshal(self.Data, &output_data_ids)
+	err := json.Unmarshal(sd.Data, &output_data_ids)
 	if err == nil {
-		err = Validate.Var(&output_data_ids, "dive,required,uuid,ne="+NIL_UUID)
+		err = Validate.Var(&output_data_ids, "dive,required,uuid")
 	}
 	return output_data_ids, err
 }
