@@ -144,18 +144,6 @@ If you want to stop a scan, just use the cancel command:
 $ g3cli cancel $scanid
 ```
 
-And you can produce a Markdown report as well, even if the scan did not finish, using the report command:
-
-```
-$ g3cli report $scanid -o report.md
-Errors were encountered when generating the report:
----------------------------------------------------
-Could not find a finished report object in Redis, this could mean the scan has not finished yet.
-
-$ ls -l report.md
--rw-r--r-- 1 ubuntu ubuntu 21815 jun 11 17:59 report.md
-```
-
 ## Local install
 If you just want to try out the tool in your laptop, here's the tutorial you need to follow. This assumes you have Debian, Ubuntu, Kali, or similar.
 

@@ -62,7 +62,6 @@ User (CLI / HTTP)
            → MQTT → g3scanner (workflow orchestration)
                       → g3worker (runs tool in Docker container)
                            → MariaDB (execution logs)
-                           → Redis (report cache)
 ```
 
 ### Shared Libraries
@@ -90,5 +89,5 @@ Plugin Docker images default to `ghcr.io/golismero/<plugin-name>` when a `.g3p` 
 
 - **Go 1.25**, Kong (CLI), gorilla/websocket, golang-jwt, go-playground/validator, go-chart
 - **Python 3** for plugin importer/reporter scripts
-- **MongoDB** — scan data; **MariaDB** — execution logs; **Redis** — report cache; **MQTT (Mosquitto)** — task queue
+- **MongoDB** — scan data; **MariaDB** — execution logs; **MQTT (Mosquitto)** — task queue
 - **Docker** — plugin isolation (worker mounts Docker socket to launch containers)

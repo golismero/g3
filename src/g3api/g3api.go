@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"database/sql"
@@ -36,9 +35,6 @@ const G3_FILE_UPLOAD_MAX = "G3_FILE_UPLOAD_MAX" // Maximum file size for uploads
 const G3_UPLOAD_TTL = "G3_UPLOAD_TTL"           // time.ParseDuration string. 0 (default) disables the _uploads/ orphan sweep.
 const G3_HTTP_BUFFER = "G3_HTTP_BUFFER"         // Buffer size for the websocket.
 
-// requireToken wraps an http.HandlerFunc with a bearer-token check.
-// The check runs before upgrader.Upgrade() on the WebSocket path, so a
-// failed token returns 401 and the socket never opens.
 func requireToken(expected string, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		hdr := r.Header.Get("Authorization")
@@ -51,12 +47,8 @@ func requireToken(expected string, h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// requireManagedScan looks up the scan's progress row and returns nil when its
-// status is STATUS_MANAGED. On any other state — including missing scan or
-// non-managed scan — it writes the appropriate API error to w and returns a
-// non-nil error so the caller can return early.
 func requireManagedScan(w http.ResponseWriter, db g3lib.SQLDBClient, scanid string) error {
-	entry, err := g3lib.GetScanStatus(db, scanid)
+	status, err := db.GetScanStatus(scanid)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			sendApiError(w, http.StatusNotFound, "Scan does not exist.")
@@ -66,7 +58,7 @@ func requireManagedScan(w http.ResponseWriter, db g3lib.SQLDBClient, scanid stri
 		sendApiError(w, http.StatusInternalServerError, "Internal error.")
 		return err
 	}
-	if entry.Status != g3lib.STATUS_MANAGED {
+	if status != "managed" {
 		sendApiError(w, http.StatusConflict, "Operation requires a managed scan.")
 		return errors.New("scan is not managed: " + scanid)
 	}
@@ -354,10 +346,7 @@ func Main() int {
 		return 1
 	}
 
-	// Resolve the shared artifacts root and verify it is writable. g3api writes
-	// uploaded files into <root>/_uploads/, relocates them into <root>/<scanid>/imports/
-	// when a scan is created, and removes <root>/<scanid>/ on scan delete. A
-	// missing/unwritable root is infrastructure misconfiguration — fail fast.
+	// Resolve the shared artifacts root and verify it is writable.
 	artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
 	if artifactsRoot == "" {
 		artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
@@ -375,7 +364,7 @@ func Main() int {
 	log.Debug("Artifacts root: " + artifactsRoot)
 
 	// Parse G3_UPLOAD_TTL: empty or "0" disables the orphan sweep; anything else
-	// must parse as a non-negative time.Duration. Invalid → fail fast (no fake fallbacks).
+	// must parse as a non-negative time.Duration.
 	uploadTTL := time.Duration(0)
 	if s := os.Getenv(G3_UPLOAD_TTL); s != "" {
 		d, err := time.ParseDuration(s)
@@ -397,10 +386,7 @@ func Main() int {
 		return 1
 	}
 
-	// Initialize the notification trackers. Each WS msgtype has its own
-	// tracker so a subscriber to "scan.removed" never receives a
-	// "scan.status" payload (which would otherwise be wrapped with the
-	// wrong msgtype on the wire by the per-subscription writer goroutine).
+	// Initialize the notification trackers.
 	progressNotify := NewNotifyTracker()
 	removeNotify := NewNotifyTracker()
 
@@ -441,8 +427,6 @@ func Main() int {
 	}()
 
 	// Launch the _uploads/ orphan-sweep goroutine when enabled (G3_UPLOAD_TTL > 0).
-	// Sweeps once on startup, then every TTL/2 (with a 1m floor so very short TTLs
-	// don't busy-loop). The goroutine exits cleanly when ctx is cancelled.
 	if uploadTTL > 0 {
 		uploadsDir := filepath.Join(artifactsRoot, "_uploads")
 		sweepInterval := uploadTTL / 2
@@ -499,35 +483,46 @@ func Main() int {
 		return 1
 	}
 	defer func() {
-		g3lib.DisconnectFromSQL(sql_db)
+		sql_db.Close()
 		log.Debug("Disconnected from SQL database.")
 	}()
 	log.Debug("Connected to SQL database.")
 
-	// Connect to the Redis database.
-	rdb_client, err := g3lib.ConnectToRedis()
-	if err != nil {
-		log.Critical(err)
-		return 1
-	}
-	defer func() {
-		g3lib.DisconnectFromRedis(rdb_client)
-		log.Debug("Disconnected from Redis.")
-	}()
-	log.Debug("Connected to Redis.")
-
 	// Subscribe to the scan status topic.
 	topic := g3lib.SubscribeAsAPI(mq_client, func(client g3lib.MessageQueueClient, msg g3lib.G3ScanStatus) {
 		log.Debug("Received scan status: " + g3lib.PrettyPrintJSON(msg))
-
-		// Update the scan progress in the database. msg.Progress is
-		// already nullable (*int) — UpdateScanProgress nil-skips the
-		// progress column, so we pass it through verbatim. The sender
-		// is the authority on whether the value is meaningful; the
-		// subscriber doesn't second-guess.
-		g3lib.UpdateScanProgressSeq(sql_db, msg.ScanID, msg.Status, msg.Progress, msg.Message, msg.Seq) //nolint:errcheck
-
-		// Notify the event if anyone wants it.
+		var status *string
+		switch msg.Status {
+		case g3lib.STATUS_WAITING:
+			status = g3.STATUS_WAITING
+		case g3lib.STATUS_RUNNING:
+			status = g3.STATUS_RUNNING
+		case g3lib.STATUS_ERROR:
+			status = g3.STATUS_ERROR
+		case g3lib.STATUS_CANCELED:
+			status = g3.STATUS_CANCELED
+		case g3lib.STATUS_FINISHED:
+			status = g3.STATUS_DONE
+		case g3lib.STATUS_UNKNOWN:
+			status = nil
+		case g3lib.STATUS_MANAGED:
+			status = g3.STATUS_MANAGED
+		default:
+			status = nil
+		}
+		var progress *uint64 = nil
+		if msg.Progress != nil && *msg.Progress >= 0 {
+			var value uint64 = uint64(*msg.Progress)
+			progress = &value
+		}
+		var message *string = nil
+		if msg.Message != "" {
+			message = &msg.Message
+		}
+		err := sql_db.UpdateScanStatus(msg.ScanID, status, progress, message, msg.Seq)
+		if err != nil {
+			log.Error("Internal error updating scan status! " + msg.ScanID)
+		}
 		progressNotify.SendNotification(msg)
 	})
 	defer g3lib.Unsubscribe(mq_client, topic)
@@ -588,6 +583,12 @@ func Main() int {
 
 			// Mint a new scan ID.
 			scanID := uuid.NewString()
+			err = sql_db.CreateScanStatus(scanID, false)
+			if err != nil {
+				log.Error(err)
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
+				return
+			}
 
 			// Log the parsed script.
 			log.Debug(
@@ -603,12 +604,15 @@ func Main() int {
 				targetData, err := g3.BuildTargets(parsed.Targets)
 				if err != nil {
 					log.Error(err)
+					_ = sql_db.DeleteScanStatus(scanID)
 					sendApiError(w, http.StatusBadRequest, "Runtime error in script: "+err.Error())
 					return
 				}
 				_, err = g3lib.SaveData(mdb_client, scanID, "", targetData)
 				if err != nil {
 					log.Error(err)
+					_ = sql_db.DeleteScanStatus(scanID)
+					_ = g3lib.DropScanData(mdb_client, scanID)
 					sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 					return
 				}
@@ -617,6 +621,7 @@ func Main() int {
 			// Import the files into the database. Each import runs in its own
 			// closure so the `defer stdin.Close()` fires per-iteration rather
 			// than accumulating open file descriptors until the handler returns.
+			// TODO refactor this monstrosity for the love of $DEITY
 			importOne := func(parsedImport g3.ImportStatement) bool {
 				_, status, err := runImport(plugins, mdb_client, artifactsRoot, scanID, parsedImport.Tool, parsedImport.Path)
 				if err != nil {
@@ -632,26 +637,18 @@ func Main() int {
 			}
 			for _, parsedImport := range parsed.Imports {
 				if !importOne(parsedImport) {
+					_ = sql_db.DeleteScanStatus(scanID)
+					_ = g3lib.DropScanData(mdb_client, scanID)
 					return	// SendApiError already called at this point
 				}
 			}
 
-			// Insert the new scan ID into the SQL database before dispatching the MQTT message.
-			if err := g3lib.InsertScanProgress(sql_db, scanID); err != nil {
-				log.Error(err)
-				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
-				return
-			}
-
-			// Send the new scan message. parsed.Report is nil when the script
-			// has no report directive, non-nil with empty Tool for the built-in,
-			// non-nil with a Tool for a plugin reporter.
+			// Send the new scan message.
 			err = g3lib.SendNewScan(mq_client, scanID, parsed.Mode, parsed.Pipelines, parsed.Report)
 			if err != nil {
 				log.Error(err)
-				if err = g3lib.UpdateScanProgress(sql_db, scanID, g3lib.STATUS_ERROR, nil, "Internal server error."); err != nil {
-					log.Error(err)
-				}
+				_ = sql_db.DeleteScanStatus(scanID)
+				_ = g3lib.DropScanData(mdb_client, scanID)
 				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
 			}
@@ -662,10 +659,8 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Create a new externally-managed scan. The scan exists in the progress
-		// table with STATUS_MANAGED so the orchestrator never claims it; no
-		// G3Scan is published, no pipelines run. Used by external clients (e.g.
-		// the Python g3client) to host on-demand task dispatch.
+		// Create a new externally-managed scan.
+		//
 		http.HandleFunc(apiPath+"/scan/create", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/create")
 			var request g3.ReqCreateScan
@@ -676,15 +671,7 @@ func Main() int {
 			}
 
 			scanid := uuid.NewString()
-
-			// Write the progress row first so subsequent managed-only calls find
-			// the scan via GetScanStatus, then mark it MANAGED.
-			if err := g3lib.InsertScanProgress(sql_db, scanid); err != nil {
-				log.Error(err)
-				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
-				return
-			}
-			if err := g3lib.UpdateScanProgress(sql_db, scanid, g3lib.STATUS_MANAGED, nil, "Externally managed."); err != nil {
+			if err := sql_db.CreateScanStatus(scanid, true); err != nil {
 				log.Error(err)
 				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 				return
@@ -703,10 +690,8 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Add targets to a managed scan. Reuses BuildTargets so canonicalization
-		// (URL parsing, loopback rejection, _type/_fp synthesis) stays identical
-		// to the existing `target X` script directive. Returns the inserted
-		// Mongo IDs so the caller can immediately dispatch tasks against them.
+		// Add targets to a managed scan.
+		//
 		http.HandleFunc(apiPath+"/scan/target/add", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/target/add")
 			var request g3.ReqAddTargets
@@ -738,9 +723,8 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Insert raw Data objects into a managed scan. Each object is validated
-		// server-side; malformed objects are rejected with 400 before any write occurs.
-		// Returns the inserted Mongo IDs.
+		// Insert raw Data objects into a managed scan.
+		//
 		http.HandleFunc(apiPath+"/scan/data/insert", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/data/insert")
 			var request g3.ReqInsertData
@@ -775,7 +759,7 @@ func Main() int {
 		///////////////////////////////////////////////////////////////////////////////////////////
 		// Import an uploaded file into a managed scan. The file must already
 		// have been uploaded via /file/upload; the caller supplies its UUID.
-		// Reuses the same runImport helper that drives /scan/start's imports.
+		//
 		http.HandleFunc(apiPath+"/scan/import", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/import")
 			var request g3.ReqImport
@@ -816,18 +800,50 @@ func Main() int {
 				return
 			}
 
-			// Get the scan progress table.
-			progressList, err := g3lib.GetProgressList(sql_db)
+			// Build a legacy scan progress list.
+			var progressList []g3.ScanStatusEntry
+			status, err := sql_db.GetAllScansStatus()
 			if err != nil {
 				log.Error(err.Error())
-				sendApiError(w, http.StatusInternalServerError, "Internal error.")
-			} else {
-				sendApiResponse(w, progressList)
+				sendApiError(w, http.StatusInternalServerError, "Internal server error.")
 			}
+			for _, entry := range(status.Scans) {
+				var sse g3.ScanStatusEntry
+				sse.ScanID = entry.ScanID
+				sse.Progress = int(entry.Progress)
+				if entry.Message == nil {
+					sse.Message = ""
+				} else {
+					sse.Message = *entry.Message
+				}
+				switch entry.Status {
+				case "managed":
+					sse.Status = g3.G3_STATUS_MANAGED
+				case "waiting":
+					sse.Status = g3.G3_STATUS_WAITING
+				case "dispatched":
+					sse.Status = g3.G3_STATUS_WAITING
+				case "running":
+					sse.Status = g3.G3_STATUS_RUNNING
+				case "canceled":
+					sse.Status = g3.G3_STATUS_CANCELED
+				case "done":
+					sse.Status = g3.G3_STATUS_FINISHED
+				case "warning":
+					sse.Status = g3.G3_STATUS_FINISHED
+				case "error":
+					sse.Status = g3.G3_STATUS_ERROR
+				default:
+					sse.Status = g3.G3_STATUS_UNKNOWN
+				}
+				progressList = append(progressList, sse)
+			}
+			sendApiResponse(w, progressList)
+			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Get the list of tasks for a scan
+		// Get the list of tasks for a scan.
 		//
 		http.HandleFunc(apiPath+"/scan/tasks", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/tasks")
@@ -839,18 +855,14 @@ func Main() int {
 				return
 			}
 
-			// Get the logs for this task
-			tasklist, err := g3lib.QueryTaskIDsFromLog(sql_db, request.ScanID)
-			if err != nil {
-				log.Error(err.Error())
-				sendApiError(w, http.StatusInternalServerError, "Internal error.")
-			} else {
-				sendApiResponse(w, tasklist)
-			}
+			// Get the logs for this task.
+			// TODO
+			sendApiError(w, http.StatusNotFound, "Feature not yet implemented.")
+			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Show the logs of a scan or task
+		// Show the logs of a scan or task.
 		//
 		http.HandleFunc(apiPath+"/scan/logs", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/logs")
@@ -862,32 +874,9 @@ func Main() int {
 				return
 			}
 
-			if request.TaskID == "" {
-				// Scan-level: stream all log rows for the scan, return []LogEntry.
-				// Order is timestamp ASC then row id ASC (set by QueryLog), so the
-				// client receives a chronologically interleaved stream across tasks.
-				entries := make([]g3lib.LogEntry, 0)
-				cb := func(e g3lib.LogEntry) error {
-					entries = append(entries, e)
-					return nil
-				}
-				if err := g3lib.QueryLog(sql_db, cb, request.ScanID); err != nil {
-					log.Error(err.Error())
-					sendApiError(w, http.StatusInternalServerError, "Internal error.")
-					return
-				}
-				sendApiResponse(w, entries)
-				return
-			}
-
-			// Task-scoped: single G3TaskLog (existing behavior, unchanged).
-			tasklog, err := g3lib.QueryLogForTask(sql_db, request.ScanID, request.TaskID)
-			if err != nil {
-				log.Error(err.Error())
-				sendApiError(w, http.StatusInternalServerError, "Internal error.")
-			} else {
-				sendApiResponse(w, tasklog)
-			}
+			// TODO
+			sendApiError(w, http.StatusNotFound, "Feature not yet implemented.")
+			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -903,94 +892,9 @@ func Main() int {
 				return
 			}
 
-			// Redis is authoritative for per-task state and is retained for the
-			// scan's whole lifetime (cleared only by /scan/delete). When Redis
-			// has genuinely lost the data (eviction/restart, or a scan old enough
-			// to predate retained state), we fall back to reconstructing from
-			// structured log markers — see the fallback further down. The SQL
-			// logs table supplies timestamps and line counts as augmentation.
-			taskStates, err := g3lib.GetTaskStates(rdb_client, request.ScanID)
-			if err != nil {
-				log.Error(err.Error())
-				sendApiError(w, http.StatusInternalServerError, "Internal error.")
-				return
-			}
-			logEntries, err := g3lib.QueryTaskStatus(sql_db, request.ScanID)
-			if err != nil {
-				log.Error(err.Error())
-				sendApiError(w, http.StatusInternalServerError, "Internal error.")
-				return
-			}
-			logByTask := make(map[string]g3lib.TaskStatusEntry, len(logEntries))
-			for _, e := range logEntries {
-				logByTask[e.TaskID] = e
-			}
-
-			entries := make([]g3lib.TaskStatusEntry, 0, len(taskStates))
-			for _, ts := range taskStates {
-				entry := g3lib.TaskStatusEntry{
-					TaskID:     ts.TaskID,
-					Tool:       ts.Tool,
-					Worker:     ts.Worker,
-					State:      ts.State,
-					DispatchTS: ts.DispatchTS,
-					StartTS:    ts.StartTS,
-					CompleteTS: ts.CompleteTS,
-					ErrorMsg:   ts.ErrorMsg,
-				}
-				if le, ok := logByTask[ts.TaskID]; ok {
-					entry.FirstLogTS = le.FirstLogTS
-					entry.LastLogTS = le.LastLogTS
-					entry.LineCount = le.LineCount
-					entry.AgeSeconds = le.AgeSeconds
-				}
-				entries = append(entries, entry)
-			}
-			// Sort: oldest dispatch first (stuckest-candidate tasks rise to the top).
-			sort.Slice(entries, func(i, j int) bool {
-				return entries[i].DispatchTS < entries[j].DispatchTS
-			})
-
-			// If Redis has no per-task state at all, fall back to reconstructing
-			// from structured log markers. SQL `logs` is durable, so this works
-			// for scans whose Redis keys were lost (eviction/restart) or deleted.
-			//
-			// TODO: this fallback is all-or-nothing — it assumes Redis is either
-			// complete or empty. If Redis is ever *partially* populated for a scan
-			// (some keys evicted, or a task added to a scan whose other keys are
-			// gone), the non-empty branch hides the missing tasks instead of
-			// merging in the SQL-reconstructed ones. Retaining task-state keys
-			// until /scan/delete (see g3scanner) keeps this from firing in normal
-			// operation; a fully robust fix would merge Redis over SQL by taskid.
-			if len(entries) == 0 {
-				reconstructed, rerr := g3lib.ReconstructTaskStatesFromLogs(sql_db, request.ScanID)
-				if rerr != nil {
-					log.Error("ReconstructTaskStatesFromLogs failed: " + rerr.Error())
-					// Soft-fail: respond with an empty list rather than 500.
-					// The TUI handles empty gracefully.
-				} else {
-					for _, entry := range reconstructed {
-						if le, ok := logByTask[entry.TaskID]; ok {
-							entry.FirstLogTS = le.FirstLogTS
-							entry.LastLogTS = le.LastLogTS
-							entry.LineCount = le.LineCount
-							entry.AgeSeconds = le.AgeSeconds
-						}
-						entries = append(entries, entry)
-					}
-				}
-			}
-
-			scanStatus, err := g3lib.GetScanStatus(sql_db, request.ScanID)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				log.Error(err.Error())
-				sendApiError(w, http.StatusInternalServerError, "Internal error.")
-				return
-			}
-			sendApiResponse(w, g3lib.ScanTaskStatusResponse{
-				ScanStatus: scanStatus.Status,
-				Tasks:      entries,
-			})
+			// TODO
+			sendApiError(w, http.StatusNotFound, "Feature not yet implemented.")
+			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1031,13 +935,9 @@ func Main() int {
 			}
 
 			// Get the list of scan IDs.
-			scanidlist, err := g3lib.GetAllScanIDs(sql_db)
-			if err != nil {
-				log.Error(err.Error())
-				sendApiError(w, http.StatusInternalServerError, "Internal error.")
-			} else {
-				sendApiResponse(w, scanidlist)
-			}
+			// TODO
+			sendApiError(w, http.StatusNotFound, "Feature not yet implemented.")
+			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1052,49 +952,39 @@ func Main() int {
 				sendApiError(w, http.StatusBadRequest, "Bad request.")
 				return
 			}
+			scanid := request.ScanID
+
+			// Notify WS subscribers.
+			removeNotify.SendNotification(g3lib.G3ScanRemoved{ScanID: scanid})
 
 			// The following statements will print errors to the log but will not stop.
 			// This is on purpose.
 			var reterr string
 
 			// Delete the scan data.
-			scanid := request.ScanID
+			// TODO there is maybe a race condition here???? look into it later
 			if g3.DoDebugAPI() {
 				log.Infof("Scan with ID %s protected from deletion due to server debug mode.", scanid)
 			} else {
 				log.Infof("Deleting scan with ID: %s", scanid)
-				err = g3lib.DeleteTaskStates(rdb_client, scanid)
-				if err != nil {
-					log.Critical("Error deleting task states: " + err.Error())
-					reterr = reterr + "Error deleting task states: " + err.Error() + "\n"
-				} else {
-					log.Debug("Deleted task states.")
-				}
-				err = g3lib.ClearLogs(sql_db, scanid)
+				err = sql_db.DeleteScanStatus(scanid)
 				if err != nil {
 					log.Critical("Error clearing logs: " + err.Error())
-					reterr = reterr + "Error clearing logs: " + err.Error() + "\n"
+					reterr = reterr + "Error clearing logs.\n"
 				} else {
-					log.Debug("Deleted report logs.")
+					log.Debug("Cleared scan status and logs.")
 				}
 				err = g3lib.DropScanData(mdb_client, scanid)
 				if err != nil {
 					log.Critical("Error dropping database: " + err.Error())
-					reterr = reterr + "Error dropping database: " + err.Error() + "\n"
+					reterr = reterr + "Error dropping database.\n"
 				} else {
-					log.Debug("Dropping Mongo database.")
-				}
-				err = g3lib.DeleteScanProgress(sql_db, scanid)
-				if err != nil {
-					log.Critical("Error clearing scan progress: " + err.Error())
-					reterr = reterr + "Error clearing scan progress: " + err.Error() + "\n"
-				} else {
-					log.Debug("Cleared scan progress.")
+					log.Debug("Dropped scan data objects.")
 				}
 				err = os.RemoveAll(filepath.Join(artifactsRoot, scanid))
 				if err != nil {
 					log.Critical("Error removing scan artifacts: " + err.Error())
-					reterr = reterr + "Error removing scan artifacts: " + err.Error() + "\n"
+					reterr = reterr + "Error removing scan artifacts.\n"
 				} else {
 					log.Debug("Removed scan artifacts.")
 				}
@@ -1105,24 +995,12 @@ func Main() int {
 			if reterr != "" {
 				sendApiError(w, http.StatusInternalServerError, reterr)
 			} else {
-				// Notify WS subscribers so they can drop the row
-				// immediately rather than wait for the next periodic
-				// snapshot to reveal the absence. Fire only on full
-				// success; partial failures leave the row in some tables
-				// and the next snapshot will reconcile.
-				removeNotify.SendNotification(g3lib.G3ScanRemoved{ScanID: scanid})
 				sendApiResponse(w, nil)
 			}
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Generic task-artifacts download. Lifecycle-first: task state is read from Redis
-		// (fast path) or reconstructed from SQL log markers (durable fallback). Filesystem
-		// participates only in the bundling step. Redis absence is NEVER a failure signal;
-		// the endpoint falls through to SQL when Redis is silent. Tool name for the bundle
-		// filename comes from the SQL [g3:dispatch] marker — uniform across task kinds.
-		//
-		// See docs/superpowers/specs/2026-05-18-reporter-tier3-design.md (Component 3).
+		// Task artifacts download.
 		//
 		http.HandleFunc(apiPath+"/scan/task/artifacts", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/artifacts")
@@ -1134,106 +1012,55 @@ func Main() int {
 				return
 			}
 
-			// Lifecycle lookup — Redis fast path, SQL log fallback. Filesystem
-			// state never participates in the lifecycle decision. See
-			// docs/superpowers/specs/2026-05-18-reporter-tier3-design.md Component 3.
-			state, _ := g3lib.GetTaskState(rdb_client, request.ScanID, request.TaskID)
-			toolName := ""
-
-			switch state {
-			case "DISPATCHED", "RUNNING":
-				w.Header().Set("Retry-After", "2")
-				sendApiError(w, http.StatusTooEarly, "task is still "+state)
+			// Do not allow downloads from tasks that are not finished.
+			status, err := sql_db.GetTaskStatus(request.TaskID)
+			if err != nil {
+				sendApiError(w, http.StatusNotFound, "task not found")
 				return
-			case "DONE", "WARNING", "ERROR", "CANCELED":
-				// Terminal via Redis. Tool name lives in the same per-task hash
-				// (populated by SetTaskDispatched). For simplicity we always
-				// re-derive via SQL below so both paths share the same code —
-				// SQL call is cheap relative to bundling and avoids a special
-				// branch for the Redis-warm case.
-				fallthrough
-			default:
-				// Either terminal via Redis (fallthrough) or Redis silent (state=="").
-				// Consult SQL log markers for authoritative lifecycle and tool name.
-				sqlState, sqlTool, qerr := g3lib.ReconstructTaskStateFromLogs(sql_db, request.ScanID, request.TaskID)
-				if qerr != nil {
-					log.Error("ReconstructTaskStateFromLogs failed: " + qerr.Error())
-					sendApiError(w, http.StatusInternalServerError, "Internal error.")
-					return
-				}
-				if sqlState == "" && state == "" {
-					// No record anywhere: task never existed in this scan.
-					sendApiError(w, http.StatusNotFound, "task not found")
-					return
-				}
-				// If Redis was terminal, use that; if SQL is more authoritative
-				// (Redis silent), use that.
-				effectiveState := state
-				if effectiveState == "" {
-					effectiveState = sqlState
-				}
-				switch effectiveState {
-				case "DONE", "WARNING", "ERROR", "CANCELED", "FINISHED":
-					toolName = sqlTool
-					// Proceed to bundling.
-				case "WAITING", "RUNNING", "UNKNOWN":
-					w.Header().Set("Retry-After", "2")
-					sendApiError(w, http.StatusTooEarly, "task is not yet complete")
-					return
-				default:
-					log.Error("Unexpected effective task state: " + effectiveState)
-					sendApiError(w, http.StatusInternalServerError, "Internal error.")
-					return
-				}
+			}
+			if !g3.IsStatusTerminal(status) {
+				w.Header().Set("Retry-After", "2")
+				sendApiError(w, http.StatusTooEarly, "task is not yet complete")
+				return
 			}
 
 			// Terminal — bundle and stream.
-			artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
-			if artifactsRoot == "" {
-				artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
-			}
-			slotDir := filepath.Join(artifactsRoot, request.ScanID, request.TaskID)
-			if _, err := os.Stat(slotDir); err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					sendApiError(w, http.StatusNotFound, "task produced no output")
-					return
-				}
-				log.Error("stat slot dir failed: " + err.Error())
-				sendApiError(w, http.StatusInternalServerError, "Internal error.")
-				return
-			}
-			// Fallback tool name if SQL didn't have it (e.g. brand-new task that
-			// somehow lost its dispatch marker — pathological but defended).
-			if toolName == "" {
-				toolName = request.TaskID
-			}
-			var buf bytes.Buffer
-			filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, toolName, request.TaskID, &buf)
-			if bundleErr != nil {
-				if errors.Is(bundleErr, os.ErrNotExist) {
-					sendApiError(w, http.StatusNotFound, "task produced no output")
-					return
-				}
-				log.Error("BundleTaskSlot failed: " + bundleErr.Error())
-				sendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
-				return
-			}
-			w.Header().Set("Content-Type", contentType)
-			w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-			w.Header().Set("X-G3-Task-ID", request.TaskID)
-			w.WriteHeader(http.StatusOK)
-			if _, err := w.Write(buf.Bytes()); err != nil {
-				log.Error("response write failed: " + err.Error())
-			}
+			// artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
+			// if artifactsRoot == "" {
+			// 	artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
+			// }
+			// slotDir := filepath.Join(artifactsRoot, request.ScanID, request.TaskID)
+			// if _, err := os.Stat(slotDir); err != nil {
+			// 	if errors.Is(err, os.ErrNotExist) {
+			// 		sendApiError(w, http.StatusNotFound, "task produced no output")
+			// 		return
+			// 	}
+			// 	log.Error("stat slot dir failed: " + err.Error())
+			// 	sendApiError(w, http.StatusInternalServerError, "Internal error.")
+			// 	return
+			// }
+			// var buf bytes.Buffer
+			// filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, toolName, request.TaskID, &buf)
+			// if bundleErr != nil {
+			// 	if errors.Is(bundleErr, os.ErrNotExist) {
+			// 		sendApiError(w, http.StatusNotFound, "task produced no output")
+			// 		return
+			// 	}
+			// 	log.Error("BundleTaskSlot failed: " + bundleErr.Error())
+			// 	sendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
+			// 	return
+			// }
+			// w.Header().Set("Content-Type", contentType)
+			// w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+			// w.Header().Set("X-G3-Task-ID", request.TaskID)
+			// w.WriteHeader(http.StatusOK)
+			// if _, err := w.Write(buf.Bytes()); err != nil {
+			// 	log.Error("response write failed: " + err.Error())
+			// }
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Batch task cancellation. Publishes a single G3CancelTask MQTT message covering
-		// all task IDs in one publish. Fire-and-forget: the API doesn't wait for workers
-		// to acknowledge — task state transitions to CANCELED flow through the existing
-		// SetTaskTerminal / /scan/tasks/status / WebSocket task channel pipeline.
-		//
-		// See docs/superpowers/specs/2026-05-18-reporter-tier2-design.md (Component 3).
+		// Batch task cancellation.
 		//
 		http.HandleFunc(apiPath+"/scan/task/cancel", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/cancel")
@@ -1256,16 +1083,7 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Dispatch a task on demand. Generic across kinds (currently tool + report).
-		// Replaces the Tier 1 /scan/reporter direct-dispatch path with a scanner-mediated
-		// flow: g3api validates, generates the task_id, publishes to the scanner's
-		// dispatch topic. Scanner re-validates kind-specific fields, sets Redis state,
-		// writes log markers, and publishes to the worker topic.
-		//
-		// Async-only — returns 202 + {task_id} immediately. Clients poll
-		// /scan/tasks/status for state and use /scan/task/artifacts to download
-		// outputs (for reporter tasks). See
-		// docs/superpowers/specs/2026-05-18-scanner-as-dispatcher-design.md.
+		// Dispatch a task on demand.
 		//
 		http.HandleFunc(apiPath+"/scan/task/dispatch", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: scan/task/dispatch")
@@ -1491,10 +1309,8 @@ func Main() int {
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
-		// Read-only deployment-wide capability flags: the subset of environment
-		// variables prefixed G3_ENV_*, which g3worker injects into every plugin
-		// container. The operator owns the values; this endpoint just surfaces
-		// them so consumers can reason about capabilities (e.g. IPv6 support).
+		// Get the environment variables shared with the plugins.
+		//
 		http.HandleFunc(apiPath+"/config/env", requireToken(apiToken, func(w http.ResponseWriter, r *http.Request) {
 			log.Debug("Handling: config/env")
 			var request g3.ReqGetEnv

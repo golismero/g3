@@ -1,4 +1,4 @@
-.PHONY: all update lint g3lib g3
+.PHONY: all update lint g3lib g3 server
 
 GO_FLAGS   ?=
 GO_LDFLAGS ?=
@@ -48,6 +48,8 @@ g3lib: g3
 
 ../bin/g3worker: g3lib
 	cd g3worker && go build $(GO_FLAGS) -ldflags="$(GO_LDFLAGS)" -o ../../bin/g3worker
+
+server: ../bin/g3 ../bin/g3api ../bin/g3config ../bin/g3scanner ../bin/g3worker
 
 # Code maintenance tasks.
 

@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
+	"time"
 
 	log "github.com/golismero/g3/src/g3/log"
 )
@@ -108,6 +111,94 @@ type ReqGetEnv struct {
 type ReqCheckScriptSyntax struct {
 	Script string    `json:"script"              validate:"required"`
 }
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+type LogEntry struct {
+	Timestamp int64  `json:"timestamp"   validate:"gte=0"`
+	ScanID    string `json:"scanid"      validate:"required,uuid"`
+	TaskID    string `json:"taskid"      validate:"required,uuid"`
+	Text      string `json:"text"`
+}
+
+type TaskLogLine struct {
+	Timestamp int64  `json:"timestamp"       validate:"gte=0"`
+	Text      string `json:"text"`
+}
+type G3TaskLog struct {
+	ScanID string        `json:"scanid"          validate:"required,uuid"`
+	TaskID string        `json:"taskid"          validate:"required,uuid"`
+	Start  int64         `json:"start,omitempty" validate:"gte=0"`
+	End    int64         `json:"end,omitempty"   validate:"gte=0"`
+	Lines  []TaskLogLine `json:"lines,omitempty" validate:"dive"`
+}
+
+// Remove ANSI escapes from a string.
+// https://github.com/acarl005/stripansi/blob/master/stripansi.go
+var RE_ANSI = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))")
+func StripAnsi(s string) string {
+	return RE_ANSI.ReplaceAllString(s, "")
+}
+
+func (log G3TaskLog) String() string {
+	var text string
+	for _, line := range log.Lines {
+		text = text + fmt.Sprintf("[%s]\t%s\n", time.Unix(line.Timestamp, 0), StripAnsi(line.Text))
+	}
+	return text
+}
+
+type ScanStatusEntry struct {
+	ScanID   string       `json:"scanid"      validate:"required,uuid"`
+	Status   G3SCANSTATUS `json:"status"      validate:"required"`
+	Progress int          `json:"progress"    validate:"gte=0,lte=100"`
+	Message  string       `json:"message"`
+}
+
+type TaskStatusEntry struct {
+	TaskID     string `json:"taskid"                   validate:"required,uuid"`
+	Tool       string `json:"tool,omitempty"`
+	Worker     string `json:"worker,omitempty"`
+	State      string `json:"state,omitempty"`
+	DispatchTS int64  `json:"dispatch_ts,omitempty"`
+	StartTS    int64  `json:"start_ts,omitempty"`
+	CompleteTS int64  `json:"complete_ts,omitempty"`
+	ErrorMsg   string `json:"error_msg,omitempty"`
+	FirstLogTS int64  `json:"first_log_ts"             validate:"gte=0"`
+	LastLogTS  int64  `json:"last_log_ts"              validate:"gte=0"`
+	LineCount  int    `json:"line_count"               validate:"gte=0"`
+	AgeSeconds int64  `json:"age_seconds"              validate:"gte=0"`
+}
+
+type ScanTaskStatusResponse struct {
+	ScanStatus G3SCANSTATUS      `json:"scan_status"`
+	Tasks      []TaskStatusEntry `json:"tasks"`
+}
+
+type TaskState struct {
+	TaskID     string `json:"taskid"`
+	Tool       string `json:"tool,omitempty"`
+	DispatchTS int64  `json:"dispatch_ts,omitempty"`
+	Worker     string `json:"worker,omitempty"`
+	StartTS    int64  `json:"start_ts,omitempty"`
+	State      string `json:"state,omitempty"`
+	CompleteTS int64  `json:"complete_ts,omitempty"`
+	ErrorMsg   string `json:"error_msg,omitempty"`
+}
+
+type G3SCANSTATUS string
+const (
+	G3_STATUS_WAITING  G3SCANSTATUS = "WAITING"
+	G3_STATUS_RUNNING  G3SCANSTATUS = "RUNNING"
+	G3_STATUS_ERROR    G3SCANSTATUS = "ERROR"
+	G3_STATUS_CANCELED G3SCANSTATUS = "CANCELED"
+	G3_STATUS_FINISHED G3SCANSTATUS = "FINISHED"
+	G3_STATUS_UNKNOWN  G3SCANSTATUS = "UNKNOWN"
+	G3_STATUS_MANAGED  G3SCANSTATUS = "MANAGED"
+)
+var G3_VALID_STATUS = [...]G3SCANSTATUS{G3_STATUS_WAITING, G3_STATUS_RUNNING, G3_STATUS_ERROR, G3_STATUS_CANCELED, G3_STATUS_FINISHED, G3_STATUS_UNKNOWN, G3_STATUS_MANAGED}
+
+const NIL_TASKID = "00000000-0000-0000-0000-000000000000"
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

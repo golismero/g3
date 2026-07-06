@@ -10,7 +10,7 @@ COPY src/ /app/
 # mirror release.yml: strip symbols (-s -w), trim build paths (-trimpath),
 # and stamp g3.Version.
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux make all \
+RUN CGO_ENABLED=0 GOOS=linux make server \
       GO_FLAGS=-trimpath \
       GO_LDFLAGS="-s -w -X github.com/golismero/g3/src/g3.Version=${VERSION}"
 COPY plugins/ /app/plugins/
@@ -30,7 +30,7 @@ RUN apt-get update -y && \
     apt-get install -y --no-install-recommends docker-ce-cli && \
     apt-get clean -y && \
     rm -rf /var/lib/apt/lists/*
-COPY --from=builder /bin/g3 /bin/g3api /bin/g3cli /bin/g3config /bin/g3scanner /bin/g3tui /bin/g3worker /bin/
+COPY --from=builder /bin/g3 /bin/g3api /bin/g3scanner /bin/g3worker /bin/
 COPY --from=builder /app/config/g3plugins.json /etc/g3/
 ENV G3_PLUGINS_CACHE_FILE=/etc/g3/g3plugins.json
 CMD [ "/bin/g3" ]

@@ -364,8 +364,8 @@ func SendScanCompleted(client MessageQueueClient, scanid string) error {
 // SendTask publishes a tool task to a worker via the tool/<name> topic.
 // The caller is responsible for generating taskid (e.g. via uuid.NewString())
 // and supplying dataid (the MongoDB id of the Data the worker will operate on).
-// Generating the task ID outside this function lets out-of-band state (Redis,
-// SQL logs) be set up before the message is published — otherwise a worker
+// Generating the task ID outside this function lets out-of-band state
+// be set up before the message is published — otherwise a worker
 // might pick up the task and race ahead of the scanner's own bookkeeping.
 func SendTask(client MessageQueueClient, scanid, taskid, tool string, index int, dataid string) error {
 	msg := G3Task{}
@@ -401,8 +401,7 @@ func SendDispatch(client MessageQueueClient, msg G3Dispatch) error {
 // Send a report task to the MQTT broker. Mirrors SendTask but uses the
 // report/<tool> topic family and a G3ReportTask payload (no DataID/Index).
 // The caller is responsible for generating the task ID and setting up
-// out-of-band state (Redis, SQL logs) before publishing — same race
-// concern as SendTask.
+// out-of-band state before publishing — same race concern as SendTask.
 func SendReportTask(client MessageQueueClient, scanid, taskid, tool, preset string) error {
 	msg := G3ReportTask{}
 	msg.MessageType = MSG_REPORT
@@ -679,8 +678,8 @@ func SubscribeAsDispatcher(client MessageQueueClient, callback DispatchHandler) 
 			return
 		}
 
-		// Run the dispatch handler synchronously. The work is light (one
-		// Redis write, one SQL write, one MQTT publish) so spawning a
+		// Run the dispatch handler synchronously. The work is light
+		// (one SQL write, one MQTT publish) so spawning a
 		// goroutine per message would be premature.
 		callback(client, dispatch)
 	})

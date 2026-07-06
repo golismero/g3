@@ -139,20 +139,6 @@ services:
   #     - PMA_PORT=3306
   #     - PMA_ARBITRARY=1
 
-  # Redis is used as a key/value store only.
-  # We are currently storing only the data needed to produce reports,
-  # but it is likely to be used for more things in the future.
-  redis:
-    image: redis:latest
-    command: redis-server --port ${REDIS_PORT} --requirepass ${REDIS_PASSWORD} --save 60 100 --appendonly no
-    restart: unless-stopped
-    networks:
-      - g3net
-    volumes:
-      - ./volumes/redis:/data
-  #  ports:
-  #    - "127.0.0.1:${REDIS_PORT}:${REDIS_PORT}"
-
   # This is the web server that will serve the app.
   nginx:
     image: nginx:latest
@@ -180,8 +166,6 @@ services:
         condition: service_started
       mosquitto:
         condition: service_started
-      redis:
-        condition: service_started
     networks:
       - g3net
     volumes:
@@ -194,9 +178,6 @@ services:
       - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
       - G3_API_ID=g3api
       - G3_API_TOKEN
       - G3_HTTP_ADDR=0.0.0.0
@@ -232,8 +213,6 @@ services:
         condition: service_started
       mosquitto:
         condition: service_started
-      redis:
-        condition: service_started
     networks:
       - g3net
     volumes:
@@ -245,9 +224,6 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
       - G3_INSTANCE_PREFIX=g3scanner-
       - G3_INSTANCE_TRANSIENT=false
       - G3_SCANNER_PARALLEL_MODE
@@ -276,8 +252,6 @@ services:
         condition: service_started
       mosquitto:
         condition: service_started
-      redis:
-        condition: service_started
     networks:
       - g3net
     volumes:
@@ -291,9 +265,6 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker-nmap
       - G3_INSTANCE_TRANSIENT=false
       - G3_WORKER_PLUGINS=nmap,nmap-fast,nmap-full
@@ -316,8 +287,6 @@ services:
         condition: service_started
       mosquitto:
         condition: service_started
-      redis:
-        condition: service_started
     networks:
       - g3net
     volumes:
@@ -331,9 +300,6 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
       - G3_WORKER_ID=g3worker-hydra
       - G3_INSTANCE_TRANSIENT=false
       - G3_WORKER_PLUGINS=hydra
@@ -357,8 +323,6 @@ services:
         condition: service_started
       mosquitto:
         condition: service_started
-      redis:
-        condition: service_started
     networks:
       - g3net
     volumes:
@@ -372,9 +336,6 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
       - G3_INSTANCE_PREFIX=g3worker-testssl-
       - G3_INSTANCE_TRANSIENT=false
       - G3_WORKER_PLUGINS=testssl
@@ -400,8 +361,6 @@ services:
         condition: service_started
       mosquitto:
         condition: service_started
-      redis:
-        condition: service_started
     networks:
       - g3net
     volumes:
@@ -415,9 +374,6 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
-      - REDIS_HOST=redis
-      - REDIS_PORT
-      - REDIS_PASSWORD
       - G3_INSTANCE_PREFIX=g3worker-
       - G3_INSTANCE_TRANSIENT=false
       - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full,testssl,hydra

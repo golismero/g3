@@ -30,4 +30,3 @@ linters:
         - fmt.Fprintln
         - fmt.Fprintf
         - github.com/golismero/g3/src/g3lib.LoadDotEnvFile
-        - github.com/golismero/g3/src/g3lib.DisconnectFromRedis

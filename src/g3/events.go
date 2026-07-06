@@ -6,18 +6,18 @@ import (
 )
 
 type LogLine struct {
-	Timestamp int64      `json:"ts"                  validate:"gte=0"`
+	Timestamp uint64     `json:"ts"                  validate:"gt=0"`
 	Text      string     `json:"text"`
 }
 
 type StatusUpdate struct {
-	Seq int              `json:"seq"                 validate:"gt=0"`
+	Seq uint64           `json:"seq"                 validate:"gt=0"`
 	Status string        `json:"status"              validate:"required,oneof=waiting dispatched running canceled warning error done managed"`
 }
 
 type ProgressUpdate struct {
 	StatusUpdate
-	Progress int         `json:"progress,omitempty"  validate:"omitempty,gte=0,lte=100"`
+	Progress uint        `json:"progress,omitempty"  validate:"omitempty,gte=0,lte=100"`
 	Message string       `json:"msg,omitempty"`
 }
 

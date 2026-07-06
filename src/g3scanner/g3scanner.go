@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -172,18 +171,6 @@ func main() {
 	log.Debug("Connected to Mosquitto.")
 	log.Info("Scanner ID: " + g3lib.GetClientID(mq_client))
 
-	// Process-level Redis connection for the dispatch handler. ScanRunner
-	// goroutines still establish their own per-goroutine Redis connections.
-	rdb_client, err := g3lib.ConnectToRedis()
-	if err != nil {
-		log.Critical("Cannot connect to Redis: " + err.Error())
-		os.Exit(1)
-	}
-	defer func() {
-		_ = g3lib.DisconnectFromRedis(rdb_client)
-	}()
-	log.Debug("Process connected to Redis (dispatch handler).")
-
 	// Connect to the SQL database.
 	sql_db, err := g3lib.ConnectToSQL()
 	if err != nil {
@@ -191,7 +178,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
-		g3lib.DisconnectFromSQL(sql_db)
+		sql_db.Close()
 		log.Debug("Disconnected from SQL database.")
 	}()
 	log.Debug("Connected to SQL database.")
@@ -224,15 +211,9 @@ func main() {
 		// Remove the scan ID to let the scanner goroutine know it must quit.
 		currentScanID = ""
 
-		// Emit the [g3:cancel] audit line for each running task before broadcasting
-		// the cancel, so the user's intent is captured in the durable log even if
-		// the MQTT publish fails. No Redis write here — per-task state stays
-		// RUNNING (or DISPATCHED) until the worker transitions it to the terminal
-		// state on plugin exit. The UI signals "winding down" from the combination
-		// (scan.Status == CANCELED, task.state == RUNNING|DISPATCHED).
 		runningTasksSnapshot := runningTasks.ToArray()
 		for _, taskid := range runningTasksSnapshot {
-			if err := g3lib.SaveLogLine(sql_db, msg.ScanID, taskid, "[g3:cancel] task="+taskid); err != nil {
+			if err := sql_db.SaveLogLine(msg.ScanID, taskid, "[g3:cancel requested] task="+taskid); err != nil {
 				log.Error("SaveLogLine (cancel) failed: " + err.Error())
 			}
 		}
@@ -297,11 +278,75 @@ func main() {
 	})
 	defer g3lib.Unsubscribe(mq_client, topic)
 
-	// Subscribe to dispatch messages from g3api. Runs at scanner-process
-	// level — handles dispatches for any scan, including terminated scans
-	// with no active ScanRunner.
+	// Subscribe to dispatch messages from g3api.
 	dispatchTopic := g3lib.SubscribeAsDispatcher(mq_client, func(_ g3lib.MessageQueueClient, msg g3lib.G3Dispatch) {
-		dispatchHandler(mq_client, rdb_client, sql_db, plugins, msg)
+		if err := sql_db.SaveLogLine(msg.ScanID, msg.TaskID, "[g3:dispatch] task="+msg.TaskID+" tool="+msg.Tool); err != nil {
+			log.Error("SaveLogLine (dispatch) failed: " + err.Error())
+		}
+
+		markErr := func(reason string) {
+			if err := sql_db.SaveLogLine(msg.ScanID, msg.TaskID, "[g3:done] task="+msg.TaskID+" state=ERROR reason="+reason); err != nil {
+				log.Error("SaveLogLine (done/error) failed: " + err.Error())
+			}
+		}
+
+		plugin, ok := plugins[msg.Tool]
+		if !ok {
+			markErr("unknown tool: " + msg.Tool)
+			return
+		}
+
+		switch msg.Kind {
+		case "tool":
+			if len(plugin.Commands) == 0 {
+				markErr("tool " + msg.Tool + " does not implement the tool phase")
+				return
+			}
+			if msg.Index >= len(plugin.Commands) {
+				markErr(fmt.Sprintf("index %d out of range for tool %s", msg.Index, msg.Tool))
+				return
+			}
+			if msg.DataID == "" {
+				markErr("kind=tool requires dataid")
+				return
+			}
+			if err := DispatchTask(mq_client, sql_db, msg.ScanID, msg.TaskID, msg.Tool, msg.Index, msg.DataID); err != nil {
+				log.Error(err.Error())
+				markErr("dispatch failed")
+				return
+			}
+
+		case "report":
+			if plugin.Reporter == nil {
+				markErr("tool " + msg.Tool + " does not implement a reporter")
+				return
+			}
+			if msg.Preset != "" {
+				if len(plugin.Reporter.Commands) == 0 {
+					markErr("tool " + msg.Tool + " declares no reporter presets")
+					return
+				}
+				found := false
+				for _, c := range plugin.Reporter.Commands {
+					if c.Name == msg.Preset {
+						found = true
+						break
+					}
+				}
+				if !found {
+					markErr("unknown preset for tool " + msg.Tool + ": " + msg.Preset)
+					return
+				}
+			}
+			if err := DispatchReportTask(mq_client, sql_db, msg.ScanID, msg.TaskID, msg.Tool, msg.Preset); err != nil {
+				log.Error(err.Error())
+				markErr("dispatch failed")
+				return
+			}
+
+		default:
+			markErr("unknown kind: " + msg.Kind)
+		}
 	})
 	_ = dispatchTopic // dispatch subscription lives for the process lifetime; no deferred Unsubscribe needed
 
@@ -351,21 +396,6 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}()
 	log.Debug("Goroutine connected to MongoDB.")
 
-	// Connect to the Redis database.
-	rdb_client, err := g3lib.ConnectToRedis()
-	if err != nil {
-		log.Error(err.Error())
-		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
-			log.Error(err.Error())
-		}
-		return
-	}
-	defer func() {
-		g3lib.DisconnectFromRedis(rdb_client) //nolint:errcheck
-		log.Debug("Goroutine disconnected from Redis.")
-	}()
-	log.Debug("Goroutine connected to Redis.")
-
 	// Connect to the SQL database for structured audit log lines.
 	scan_sql_db, err := g3lib.ConnectToSQL()
 	if err != nil {
@@ -376,22 +406,10 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		return
 	}
 	defer func() {
-		g3lib.DisconnectFromSQL(scan_sql_db)
+		scan_sql_db.Close()
 		log.Debug("Goroutine disconnected from SQL database.")
 	}()
 	log.Debug("Goroutine connected to SQL database.")
-
-	// NB: we intentionally do NOT purge Redis task-state keys when the scan
-	// ends. They now live until the scan is deleted (the /scan/delete handler
-	// calls DeleteTaskStates). Clearing them on terminal used to corrupt the
-	// task-status view: once a scan finished and its keys were wiped, a reporter
-	// task later dispatched against it (e.g. "view report" in g3tui) would
-	// repopulate Redis with just that one task, and the status endpoint's
-	// "Redis non-empty wins, else fall back to SQL" rule would then hide all the
-	// original tasks. Retaining the keys for the scan's whole lifetime keeps
-	// Redis complete, so that rule holds. The SQL log lines remain the durable
-	// audit trail and the fallback source if Redis ever loses data
-	// (eviction/restart).
 
 	// Calculate the total number of steps in the script.
 	// This will be used later to determine the scan progress.
@@ -641,16 +659,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							}
 
 							// Run the plugin command in one of the workers.
-							// Generate the taskid up-front so the per-task Redis state and
-							// the audit log entry are in place *before* the MQTT publish.
-							// Without this ordering, a fast worker can write its RUNNING
-							// state before the scanner's DISPATCHED write lands, and the
-							// scanner's write then stomps RUNNING back to DISPATCHED.
 							taskid := uuid.NewString()
-							// Extract the MongoDB id of the input Data. SendTask (via dispatchTask)
-							// now takes dataid as a string rather than the full Data — the caller
-							// owns the extraction, which makes the worker-bound message shape
-							// uniform between script-driven and API-driven dispatch.
 							dataid, ok := data["_id"].(string)
 							if !ok {
 								dispErr := fmt.Errorf("data missing _id, save to database first")
@@ -660,13 +669,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 								}
 								return
 							}
-							if err := dispatchTask(mq_client, rdb_client, scan_sql_db, msg.ScanID, taskid, "tool", plugin.Name, dataid, index, ""); err != nil {
+							if err := DispatchTask(mq_client, scan_sql_db, msg.ScanID, taskid, plugin.Name, index, dataid); err != nil {
 								log.Error(err.Error())
-								// Mark the task as errored since it was never dispatched.
-								if e := g3lib.SetTaskTerminal(rdb_client, msg.ScanID, taskid, "ERROR", time.Now().Unix(), "dispatch failed: "+err.Error()); e != nil {
-									log.Error("Redis SetTaskTerminal (dispatch-fail) failed: " + e.Error())
-								}
-								if e := g3lib.SaveLogLine(scan_sql_db, msg.ScanID, taskid, "[g3:done] task="+taskid+" state=ERROR"); e != nil {
+								if e := scan_sql_db.SaveLogLine(msg.ScanID, taskid, "[g3:done] task="+taskid+" state=ERROR"); e != nil {
 									log.Error("SaveLogLine (dispatch-fail) failed: " + e.Error())
 								}
 								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
@@ -952,8 +957,6 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							}
 
 							// Run the plugin command in one of the workers.
-							// Redis state + audit log written *before* the MQTT publish so
-							// a fast worker can't race ahead of our bookkeeping.
 							taskid := uuid.NewString()
 							dataid, ok := data["_id"].(string)
 							if !ok {
@@ -964,12 +967,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 								}
 								return
 							}
-							if err := dispatchTask(mq_client, rdb_client, scan_sql_db, msg.ScanID, taskid, "tool", plugin.Name, dataid, index, ""); err != nil {
+							if err := DispatchTask(mq_client, scan_sql_db, msg.ScanID, taskid, plugin.Name, index, dataid); err != nil {
 								log.Error(err.Error())
-								if e := g3lib.SetTaskTerminal(rdb_client, msg.ScanID, taskid, "ERROR", time.Now().Unix(), "dispatch failed: "+err.Error()); e != nil {
-									log.Error("Redis SetTaskTerminal (dispatch-fail) failed: " + e.Error())
-								}
-								if e := g3lib.SaveLogLine(scan_sql_db, msg.ScanID, taskid, "[g3:done] task="+taskid+" state=ERROR"); e != nil {
+								if e := scan_sql_db.SaveLogLine(msg.ScanID, taskid, "[g3:done] task="+taskid+" state=ERROR"); e != nil {
 									log.Error("SaveLogLine (dispatch-fail) failed: " + e.Error())
 								}
 								if err := g3lib.SendScanFailed(mq_client, msg.ScanID, err.Error()); err != nil {
@@ -1050,24 +1050,12 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	// directive would simply be absent. So the reporter is treated as a final,
 	// blocking step: the scan stays RUNNING (at 100% progress) while the report
 	// generates, and a reporter failure fails the whole scan.
-	//
-	// Reporting is always delegated to a reporter plugin (magenta by default;
-	// script.go resolves a bare `report` directive to the magenta tool), so
-	// there is no in-process reporter — every report is a worker dispatch via
-	// the canonical dispatchTask helper.
-	//
-	// Tracking the reporter in runningTasks (like any tool task) makes its
-	// lifecycle observable live via /scan/tasks/status (DISPATCHED → RUNNING →
-	// DONE) and lets a mid-report scan cancel propagate to the reporter worker
-	// for free — the stop handler cancels everything in runningTasks. Because we
-	// wait for the terminal response before returning, the worker's Redis writes
-	// land before the defer DeleteTaskStates wipe, so there is no orphan hash.
 	if msg.Report != nil {
 		reporterTaskID := uuid.NewString()
-		if err := dispatchTask(
-			mq_client, rdb_client, scan_sql_db,
-			msg.ScanID, reporterTaskID, "report", msg.Report.Tool,
-			"", 0, msg.Report.Preset,
+		if err := DispatchReportTask(
+			mq_client, scan_sql_db,
+			msg.ScanID, reporterTaskID,
+			msg.Report.Tool, msg.Report.Preset,
 		); err != nil {
 			// The report was requested but we couldn't even dispatch it. Since
 			// the directive makes the report mandatory, this fails the scan.
@@ -1127,131 +1115,34 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 }
 
-// dispatchTask is the canonical "publish a task to its worker" function.
-// Called by both ScanRunner (script-driven dispatches inside the pipeline
-// execution loop) and the on-demand dispatch handler (API-driven dispatches).
-// Writes the [g3:dispatch] log marker, sets Redis DISPATCHED state, then
-// publishes to the appropriate worker topic. Returns the worker-publish
-// error (or nil) — the SQL/Redis writes are best-effort logged but don't
-// fail the dispatch (intentional: a transient SQL hiccup shouldn't block a
-// task from running).
-//
-// Callers are responsible for upstream validation (plugin exists, kind/fields
-// are valid). This helper assumes well-formed inputs.
-func dispatchTask(
+// Dispatch a task to a worker.
+func DispatchTask(
 	mq g3lib.MessageQueueClient,
-	rdb g3lib.RedisConnection,
 	sql g3lib.SQLDBClient,
-	scanID, taskID, kind, tool string,
-	dataID string, // tool kind only
-	index int, // tool kind only
-	preset string, // report kind only
+	scanid, taskid, tool string,
+	index int,
+	dataid string,
 ) error {
-	dispatchTS := time.Now().Unix()
-	if err := g3lib.SetTaskDispatched(rdb, scanID, taskID, tool, dispatchTS); err != nil {
-		log.Error("Redis SetTaskDispatched failed: " + err.Error())
-	}
-	if err := g3lib.SaveLogLine(sql, scanID, taskID, "[g3:dispatch] task="+taskID+" tool="+tool); err != nil {
+	if err := sql.SaveLogLine(scanid, taskid, "[g3:dispatch] task="+taskid+" tool="+tool); err != nil {
 		log.Error("SaveLogLine (dispatch) failed: " + err.Error())
 	}
-	switch kind {
-	case "tool":
-		return g3lib.SendTask(mq, scanID, taskID, tool, index, dataID)
-	case "report":
-		return g3lib.SendReportTask(mq, scanID, taskID, tool, preset)
-	default:
-		return fmt.Errorf("unknown dispatch kind: %s", kind)
+	if err := sql.UpdateTaskStatus(taskid, g3.STATUS_DISPATCHED, &tool, nil); err != nil {
+		log.Error("UpdateTaskStatus (dispatch) failed: " + err.Error())
 	}
+	return g3lib.SendTask(mq, scanid, taskid, tool, index, dataid)
 }
 
-// dispatchHandler is registered via SubscribeAsDispatcher. Runs at the
-// scanner-process level — handles dispatches for any scan, regardless of
-// whether it's actively running its script.
-//
-// Validation: the validator on G3Dispatch already enforced common required
-// fields (TaskID format, Kind oneof, Tool non-empty, DataID format if set).
-// Kind-specific required fields (DataID + Index in range for tool; preset
-// existence for report) are validated here against plugin metadata.
-//
-// Bookkeeping order matters: SetTaskDispatched + [g3:dispatch] marker are
-// written FIRST so SetTaskTerminal on validation failure has a Redis hash
-// to update (SetTaskTerminal is a no-op if the hash is absent — see
-// kvstore.go).
-func dispatchHandler(
+// Dispatch a reporting task to a worker.
+func DispatchReportTask(
 	mq g3lib.MessageQueueClient,
-	rdb g3lib.RedisConnection,
 	sql g3lib.SQLDBClient,
-	plugins g3lib.G3PluginMetadata,
-	msg g3lib.G3Dispatch,
-) {
-	dispatchTS := time.Now().Unix()
-	if err := g3lib.SetTaskDispatched(rdb, msg.ScanID, msg.TaskID, msg.Tool, dispatchTS); err != nil {
-		log.Error("Redis SetTaskDispatched failed: " + err.Error())
-	}
-	if err := g3lib.SaveLogLine(sql, msg.ScanID, msg.TaskID, "[g3:dispatch] task="+msg.TaskID+" tool="+msg.Tool); err != nil {
+	scanid, taskid, tool, preset string,
+) error {
+	if err := sql.SaveLogLine(scanid, taskid, "[g3:dispatch] task="+taskid+" tool="+tool); err != nil {
 		log.Error("SaveLogLine (dispatch) failed: " + err.Error())
 	}
-
-	markErr := func(reason string) {
-		if err := g3lib.SetTaskTerminal(rdb, msg.ScanID, msg.TaskID, "ERROR", time.Now().Unix(), reason); err != nil {
-			log.Error("Redis SetTaskTerminal failed: " + err.Error())
-		}
-		if err := g3lib.SaveLogLine(sql, msg.ScanID, msg.TaskID, "[g3:done] task="+msg.TaskID+" state=ERROR"); err != nil {
-			log.Error("SaveLogLine (done/error) failed: " + err.Error())
-		}
+	if err := sql.UpdateTaskStatus(taskid, g3.STATUS_DISPATCHED, &tool, nil); err != nil {
+		log.Error("UpdateTaskStatus (dispatch) failed: " + err.Error())
 	}
-
-	plugin, ok := plugins[msg.Tool]
-	if !ok {
-		markErr("unknown tool: " + msg.Tool)
-		return
-	}
-
-	switch msg.Kind {
-	case "tool":
-		if len(plugin.Commands) == 0 {
-			markErr("tool " + msg.Tool + " does not implement the tool phase")
-			return
-		}
-		if msg.Index >= len(plugin.Commands) {
-			markErr(fmt.Sprintf("index %d out of range for tool %s", msg.Index, msg.Tool))
-			return
-		}
-		if msg.DataID == "" {
-			markErr("kind=tool requires dataid")
-			return
-		}
-		if err := g3lib.SendTask(mq, msg.ScanID, msg.TaskID, msg.Tool, msg.Index, msg.DataID); err != nil {
-			markErr("MQTT publish failed: " + err.Error())
-		}
-
-	case "report":
-		if plugin.Reporter == nil {
-			markErr("tool " + msg.Tool + " does not implement a reporter")
-			return
-		}
-		if msg.Preset != "" {
-			if len(plugin.Reporter.Commands) == 0 {
-				markErr("tool " + msg.Tool + " declares no reporter presets")
-				return
-			}
-			found := false
-			for _, c := range plugin.Reporter.Commands {
-				if c.Name == msg.Preset {
-					found = true
-					break
-				}
-			}
-			if !found {
-				markErr("unknown preset for tool " + msg.Tool + ": " + msg.Preset)
-				return
-			}
-		}
-		if err := g3lib.SendReportTask(mq, msg.ScanID, msg.TaskID, msg.Tool, msg.Preset); err != nil {
-			markErr("MQTT publish failed: " + err.Error())
-		}
-
-	default:
-		markErr("unknown kind: " + msg.Kind)
-	}
+	return g3lib.SendReportTask(mq, scanid, taskid, tool, preset)
 }

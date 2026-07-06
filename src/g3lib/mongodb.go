@@ -292,7 +292,7 @@ func DropScanData(dbclient DatastoreClient, scanid string) error {
 // The returned ReadCloser MUST be closed by the caller to release the pipe
 // and unblock the goroutine in the case where the goroutine has already
 // exited via an early return.
-func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string) io.ReadCloser {
+func ReporterStdinStream(mdb DatastoreClient, scanid string) io.ReadCloser {
 	pr, pw := io.Pipe()
 	go func() {
 		// Closing the writer half delivers EOF to the reader (the container's stdin).
