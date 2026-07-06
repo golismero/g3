@@ -1063,13 +1063,6 @@ func Main() int {
 				log.Infof("Scan with ID %s protected from deletion due to server debug mode.", scanid)
 			} else {
 				log.Infof("Deleting scan with ID: %s", scanid)
-				err = g3lib.DeleteScanMetadata(rdb_client, scanid)
-				if err != nil {
-					log.Critical("Error deleting report info: " + err.Error())
-					reterr = reterr + "Error deleting report info: " + err.Error() + "\n"
-				} else {
-					log.Debug("Deleted report info.")
-				}
 				err = g3lib.DeleteTaskStates(rdb_client, scanid)
 				if err != nil {
 					log.Critical("Error deleting task states: " + err.Error())

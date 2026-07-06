@@ -313,12 +313,9 @@ func ReporterStdinStream(mdb DatastoreClient, rdb RedisConnection, scanid string
 		enc := json.NewEncoder(pw)
 
 		// Line 1: ScanMetadata.
-		report, err := LoadScanMetadata(rdb, scanid)
-		if err != nil {
-			encodeErr = fmt.Errorf("ReporterStdinStream: load ScanMetadata for %s: %w", scanid, err)
-			return
-		}
-		if err := enc.Encode(report); err != nil {
+		var info g3.ScanMetadata
+		info.ScanID = msg.ScanID
+		if err := enc.Encode(info); err != nil {
 			encodeErr = err
 			return
 		}

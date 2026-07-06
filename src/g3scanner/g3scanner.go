@@ -1044,18 +1044,6 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		}
 	}
 
-	// Save the scan metadata in the database.
-	var info g3.ScanMetadata
-	info.ScanID = msg.ScanID
-	err = g3lib.SaveScanMetadata(rdb_client, info)
-	if err != nil {
-		log.Error("Error saving scan metadata: " + err.Error())
-		if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Error saving scan metadata: "+err.Error()); err != nil {
-			log.Error(err.Error())
-		}
-		return
-	}
-
 	// If the scan script declared a reporter, dispatch it and wait for it to
 	// finish before completing the scan. The `report` directive is the user's
 	// explicit signal that a report is mandatory — had it been optional, the

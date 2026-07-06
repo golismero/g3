@@ -71,32 +71,6 @@ func (rdb RedisConnection) TaskKey(scanid string, taskid string, key string) str
 	return "g3:" + scanid + ":" + taskid + ":" + key
 }
 
-// Load the scan metadata object from Redis.
-func LoadScanMetadata(rdb RedisConnection, scanid string) (g3.ScanMetadata, error) {
-	var report g3.ScanMetadata
-	jsonStr, err := rdb.c.Get(context.Background(), rdb.ScanKey(scanid, "metadata")).Result()
-	if err != nil {
-		return report, err
-	}
-	jsonBytes := []byte(jsonStr)
-	err = json.Unmarshal(jsonBytes, &report)
-	return report, err
-}
-
-// Save the scan metadata object into Redis.
-func SaveScanMetadata(rdb RedisConnection, info g3.ScanMetadata) error {
-	jsonBytes, err := json.Marshal(info)
-	if err != nil {
-		return err
-	}
-	return rdb.c.Set(context.Background(), rdb.ScanKey(info.ScanID, "metadata"), string(jsonBytes), 0).Err()
-}
-
-// Delete the scan metadata object from Redis.
-func DeleteScanMetadata(rdb RedisConnection, scanid string) error {
-	return rdb.c.Del(context.Background(), rdb.ScanKey(scanid, "metadata")).Err()
-}
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Live task state — ephemeral per-scan tracking of dispatched/running/completed tasks.
 //
