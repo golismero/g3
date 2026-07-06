@@ -59,7 +59,7 @@ services:
   # the same source the clients (g3api/g3scanner/g3worker) read MQTT_URL from. Note this
   # rewrites volumes/mosquitto/config/password.txt on each `up`.
   mosquitto:
-    image: eclipse-mosquitto
+    image: eclipse-mosquitto:latest
     restart: unless-stopped
     networks:
       - g3net
@@ -109,7 +109,7 @@ services:
   # In this example we use MariaDB as a SQL database.
   # The SQL database is used to store execution logs from tools.
   mariadb:
-    image: mariadb
+    image: mariadb:latest
     restart: unless-stopped
     networks:
       - g3net
