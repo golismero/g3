@@ -11,7 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/golismero/g3/src/g3lib"
+
+	"github.com/golismero/g3/src/g3"
 	"github.com/golismero/g3/src/g3tui/internal/client"
 )
 
@@ -22,7 +23,7 @@ import (
 type logsBindingChangedMsg struct {
 	ScanID     string
 	TaskID     string
-	ScanStatus g3lib.G3SCANSTATUS
+	ScanStatus g3.G3SCANSTATUS
 }
 
 // logsDebounceFiredMsg fires 250 ms after a binding change and triggers
@@ -66,10 +67,10 @@ type LogsPanel struct {
 
 	scanID     string
 	taskID     string
-	scanStatus g3lib.G3SCANSTATUS
+	scanStatus g3.G3SCANSTATUS
 	generation int // invalidates pending debounce/tick callbacks on rebind
 
-	lines    []g3lib.TaskLogLine
+	lines    []g3.TaskLogLine
 	viewport viewport.Model
 	wrap     bool // off by default: preview pane prioritizes density
 
@@ -264,7 +265,7 @@ func (l *LogsPanel) applyContent() {
 		when := time.Unix(ln.Timestamp, 0).Format("15:04:05")
 		prefix := LogTimestamp.Render(when) + "  "
 		const prefixWidth = 10 // "HH:MM:SS" (8) + "  " (2)
-		body := g3lib.StripAnsi(ln.Text)
+		body := g3.StripAnsi(ln.Text)
 		b.WriteString(wrapLogLine(prefix, prefixWidth, body, l.viewport.Width, l.wrap))
 	}
 	l.viewport.SetContent(b.String())

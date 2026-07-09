@@ -10,7 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/golismero/g3/src/g3lib"
+
+	"github.com/golismero/g3/src/g3"
 	"github.com/golismero/g3/src/g3tui/internal/client"
 )
 
@@ -29,8 +30,8 @@ type ScanDetail struct {
 	pollInterval time.Duration
 
 	scanID     string
-	scanStatus g3lib.G3SCANSTATUS
-	tasks      []g3lib.TaskStatusEntry
+	scanStatus g3.G3SCANSTATUS
+	tasks      []g3.TaskStatusEntry
 	cursor     int
 	viewport   viewport.Model
 
@@ -196,15 +197,15 @@ func (sd ScanDetail) fetchLaterCmd(after time.Duration) tea.Cmd {
 	})
 }
 
-func isTerminal(s g3lib.G3SCANSTATUS) bool {
+func isTerminal(s g3.G3SCANSTATUS) bool {
 	switch s {
-	case g3lib.STATUS_FINISHED, g3lib.STATUS_CANCELED, g3lib.STATUS_ERROR:
+	case g3.G3_STATUS_FINISHED, g3.G3_STATUS_CANCELED, g3.G3_STATUS_ERROR:
 		return true
 	}
 	return false
 }
 
-func emptyTaskMessage(s g3lib.G3SCANSTATUS) string {
+func emptyTaskMessage(s g3.G3SCANSTATUS) string {
 	if s == "" {
 		return "Loading tasks…"
 	}
@@ -455,7 +456,7 @@ func taskTableHeader(layout taskLayout) string {
 	return TableHeader.Render(strings.Join(parts, " "))
 }
 
-func taskTableRow(t g3lib.TaskStatusEntry, selected bool, layout taskLayout) string {
+func taskTableRow(t g3.TaskStatusEntry, selected bool, layout taskLayout) string {
 	timeStr, lastSeenStr := taskTimeFields(t)
 
 	idCell := collapseID(t.TaskID, layout.idWidth)
@@ -528,7 +529,7 @@ func collapseEnd(s string, width int) string {
 //	terminal:   TIME = StartTS → CompleteTS duration; LAST SEEN = "-"
 //	DISPATCHED: TIME = "-"; LAST SEEN = "-"
 //	UNKNOWN:    TIME = StartTS → now (best-effort); LAST SEEN = since last log
-func taskTimeFields(t g3lib.TaskStatusEntry) (timeStr, lastSeenStr string) {
+func taskTimeFields(t g3.TaskStatusEntry) (timeStr, lastSeenStr string) {
 	state := strings.ToUpper(t.State)
 	switch state {
 	case "RUNNING":

@@ -512,7 +512,10 @@ func main() {
 			log.Error(errMsg)
 		}
 		if err := sql_db.SaveLogLine(scanid, taskid, msg); err != nil {
-			log.Error("SaveLogLine (report done) failed: " + err.Error())
+			log.Error("SaveLogLine (markTerminal) failed: " + err.Error())
+		}
+		if err := sql_db.UpdateTaskStatus(taskid, &status, nil, nil); err != nil {
+			log.Error("UpdateTaskStatus (markTerminal) failed: " + err.Error())
 		}
 	}
 
@@ -523,7 +526,7 @@ func main() {
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "CANCELED", "")
+			markTerminal(task.ScanID, task.TaskID, "canceled", "")
 			return
 		}
 
@@ -548,7 +551,7 @@ func main() {
 			if err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "CANCELED", "")
+			markTerminal(task.ScanID, task.TaskID, "canceled", "")
 			return
 
 		// The task has been accepted. We can continue.
@@ -567,7 +570,7 @@ func main() {
 			if err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "INTERNAL ERROR")
+			markTerminal(task.ScanID, task.TaskID, "error", "INTERNAL ERROR")
 			return
 		}
 
@@ -578,7 +581,7 @@ func main() {
 			if err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "Tool is not supported by this worker: " + task.Tool)
+			markTerminal(task.ScanID, task.TaskID, "error", "Tool is not supported by this worker: " + task.Tool)
 			return
 		}
 
@@ -590,14 +593,14 @@ func main() {
 			if err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "Tool is not supported by this worker: " + task.Tool)
+			markTerminal(task.ScanID, task.TaskID, "error", "Tool is not supported by this worker: " + task.Tool)
 			return
 		}
 		if len(plugin.Commands) <= task.Index {
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", fmt.Sprintf("Tool does not have command #%d", task.Index))
+			markTerminal(task.ScanID, task.TaskID, "error", fmt.Sprintf("Tool does not have command #%d", task.Index))
 			return
 		}
 
@@ -608,7 +611,7 @@ func main() {
 			if err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "Error fetching data object: " + task.DataID)
+			markTerminal(task.ScanID, task.TaskID, "error", "Error fetching data object: " + task.DataID)
 			return
 		}
 
@@ -623,7 +626,7 @@ func main() {
 			if err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "Tool " + plugin.Name + " failed to run.")
+			markTerminal(task.ScanID, task.TaskID, "error", "Tool " + plugin.Name + " failed to run.")
 			return
 		}
 
@@ -666,7 +669,7 @@ func main() {
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "Cannot create artifact slot for task")
+			markTerminal(task.ScanID, task.TaskID, "error", "Cannot create artifact slot for task")
 			return
 		}
 		hostSlotDir := filepath.Join(artifactsHostRoot, task.ScanID, task.TaskID)
@@ -676,9 +679,9 @@ func main() {
 		outputArray, err := g3lib.RunPluginCommand(ctx, plugin, parsed, data, hostSlotDir, w)
 		pluginEndTS := time.Now().Unix()
 		if err != nil {
-			log.Info("Plugin finished running.")
+			log.Errorf("Plugin failed to run, reason: %v", err)
 		} else {
-			log.Infof("Plugin failed to run, reason: %v", err)
+			log.Info("Plugin finished running.")
 		}
 
 		// Remove the cancel context and acknowledge any pending cancel.
@@ -696,7 +699,7 @@ func main() {
 		manifestFiles, enumErr := g3lib.EnumerateSlot(slotDir)
 		if enumErr != nil {
 			log.Error("Cannot enumerate artifact slot " + slotDir + ": " + enumErr.Error())
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "Cannot enumerate artifact slot")
+			markTerminal(task.ScanID, task.TaskID, "error", "Cannot enumerate artifact slot")
 			return
 		}
 
@@ -749,13 +752,6 @@ func main() {
 		var toPersist []g3.Data
 		switch {
 		case len(actionable) > 0:
-			if len(nils) > 0 {
-				// Real data mixed with nils is a bug smell, not a normal empty result.
-				if e := sql_db.SaveLogLine(task.ScanID, task.TaskID,
-					"[g3:warn] tool="+task.Tool+" emitted nil alongside actionable data"); e != nil {
-					log.Error(e.Error())
-				}
-			}
 			toPersist = actionable
 		case len(nils) > 0:
 			toPersist = nils[:1] // collapse 0/1/many nils → one cache seed
@@ -774,15 +770,15 @@ func main() {
 		var state string
 		switch {
 		case canceled:
-			state = "CANCELED"
+			state = "canceled"
 		case claimErr != nil:
-			state = "ERROR" // hard contract breach
+			state = "error" // hard contract breach
 		case softSignal && len(actionable) == 0:
-			state = "ERROR" // signal, no fuel
+			state = "error" // signal, no fuel
 		case softSignal:
-			state = "WARNING" // signal, fuel present
+			state = "warning" // signal, fuel present
 		default:
-			state = "DONE"
+			state = "done"
 		}
 
 		// Write the manifest; exit_status mirrors the verdict.
@@ -799,7 +795,7 @@ func main() {
 		})
 		if manifestWriteErr != nil {
 			log.Error("Cannot write task manifest for " + task.TaskID + ": " + manifestWriteErr.Error())
-			state = "ERROR" // a task without a written manifest is incomplete
+			state = "error" // a task without a written manifest is incomplete
 		}
 
 		// FUEL (state-independent): persist + send for every non-canceled task.
@@ -837,7 +833,7 @@ func main() {
 
 		// One summary [g3:warn] line for WARNING/ERROR (the authoritative verdict
 		// is the [g3:done] state=... marker written by markTerminal below).
-		if state == "WARNING" || state == "ERROR" {
+		if state == "warning" || state == "error" {
 			if summary := warnSummary(err, droppedCount, claimErr); summary != "" {
 				if e := sql_db.SaveLogLine(task.ScanID, task.TaskID,
 					"[g3:warn] tool="+task.Tool+" "+summary); e != nil {
@@ -865,7 +861,7 @@ func main() {
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "CANCELED", "")
+			markTerminal(task.ScanID, task.TaskID, "canceled", "")
 			return
 		}
 
@@ -882,7 +878,7 @@ func main() {
 			if err := g3lib.SendTaskCancelHandled(mq_client, task.ScanID, []string{task.TaskID}); err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "CANCELED", "")
+			markTerminal(task.ScanID, task.TaskID, "canceled", "")
 			return
 		case 2:
 			log.Debug("Received new report task:\n" + g3lib.PrettyPrintJSON(task))
@@ -897,7 +893,7 @@ func main() {
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "internal error")
+			markTerminal(task.ScanID, task.TaskID, "error", "internal error")
 			return
 		}
 
@@ -908,7 +904,7 @@ func main() {
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
 				log.Error(err.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "plugin not found or not a reporter")
+			markTerminal(task.ScanID, task.TaskID, "error", "plugin not found or not a reporter")
 			return
 		}
 
@@ -921,7 +917,7 @@ func main() {
 			if e := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); e != nil {
 				log.Error(e.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "cannot create reporter slot")
+			markTerminal(task.ScanID, task.TaskID, "error", "cannot create reporter slot")
 			return
 		}
 
@@ -937,7 +933,7 @@ func main() {
 			if e := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); e != nil {
 				log.Error(e.Error())
 			}
-			markTerminal(task.ScanID, task.TaskID, "ERROR", "reporter command build failed")
+			markTerminal(task.ScanID, task.TaskID, "error", "reporter command build failed")
 			return
 		}
 
@@ -954,13 +950,13 @@ func main() {
 		}
 
 		// Decide terminal state and notify.
-		terminal := "DONE"
+		terminal := "done"
 		terminalMsg := ""
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) {
-				terminal = "CANCELED"
+				terminal = "canceled"
 			} else {
-				terminal = "ERROR"
+				terminal = "error"
 				terminalMsg = runErr.Error()
 			}
 		}

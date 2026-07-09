@@ -8,7 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/gorilla/websocket"
-	"github.com/golismero/g3/src/g3lib"
+
+	"github.com/golismero/g3/src/g3"
 )
 
 type StreamState int
@@ -142,7 +143,7 @@ func readLoop(ctx context.Context, conn *websocket.Conn, send func(tea.Msg)) {
 		}
 		switch env.MsgType {
 		case "scan.status":
-			var status g3lib.G3ScanStatus
+			var status g3.G3ScanStatus
 			if err := json.Unmarshal(env.Data, &status); err != nil {
 				send(ErrorMsg{Op: "ws-decode", Err: err})
 				continue
@@ -154,7 +155,7 @@ func readLoop(ctx context.Context, conn *websocket.Conn, send func(tea.Msg)) {
 				Message:  status.Message,
 			})
 		case "scan.removed":
-			var removed g3lib.G3ScanRemoved
+			var removed g3.G3ScanRemoved
 			if err := json.Unmarshal(env.Data, &removed); err != nil {
 				send(ErrorMsg{Op: "ws-decode", Err: err})
 				continue

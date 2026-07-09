@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/golismero/g3/src/g3lib"
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -29,7 +29,7 @@ type Config struct {
 
 	// *Source fields record provenance for doctor's resolved-config table.
 	// Values: "flag", "env" (covers both real env vars and .env since we
-	// cannot distinguish after LoadDotEnvFile), or "default".
+	// cannot distinguish after godotenv.Load()), or "default".
 	BaseURLSource      string
 	WSURLSource        string
 	TokenSource        string
@@ -37,15 +37,13 @@ type Config struct {
 	LogLevelSource     string
 }
 
-// loadConfig merges CLI flags, environment, and built-in defaults. It calls
-// g3lib.LoadDotEnvFile so any .env settings populate os.Environ before we
-// resolve env-var values.
+// loadConfig merges CLI flags, environment, and built-in defaults.
 //
 // requireServer == true means BaseURL, WSURL, and Token must all be set (by
 // some level of the precedence chain); a missing one is a hard error. This
 // is true for run and doctor; false for pipelines and completions.
 func loadConfig(requireServer bool) (Config, error) {
-	_ = g3lib.LoadDotEnvFile() // best-effort; missing .env is fine
+	_ = godotenv.Load() // best-effort; missing .env is fine
 
 	cfg := Config{}
 

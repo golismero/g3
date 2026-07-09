@@ -63,14 +63,14 @@ type AllScansFullResponse struct {
 	Scans     []ScanFullResponse `json:"scans,omitempty"        validate:"omitempty,dive"`
 }
 
-func IsStatusTerminal(state string) bool {
-	switch state {
+func IsStatusTerminal(status string) bool {
+	switch status {
 	case "waiting", "dispatched", "running", "managed":
 		return false
 	case "canceled", "done", "warning", "error":
 		return true
 	default:
-		panic("internal error")
+		panic("internal error: unsupported status: " + status)
 	}
 }
 

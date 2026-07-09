@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/golismero/g3/src/g3"
-	"github.com/golismero/g3/src/g3lib"
 )
 
 type Client struct {
@@ -64,8 +63,8 @@ func (c *Client) ListScans(ctx context.Context) ([]string, error) {
 }
 
 // GetProgress → /scan/progress. Returns the full progress table.
-func (c *Client) GetProgress(ctx context.Context) ([]g3lib.ScanStatusEntry, error) {
-	var out []g3lib.ScanStatusEntry
+func (c *Client) GetProgress(ctx context.Context) ([]g3.ScanStatusEntry, error) {
+	var out []g3.ScanStatusEntry
 	if err := c.call(ctx, "/scan/progress", g3.ReqGetScanProgressTable{}, &out); err != nil {
 		return nil, err
 	}
@@ -73,16 +72,16 @@ func (c *Client) GetProgress(ctx context.Context) ([]g3lib.ScanStatusEntry, erro
 }
 
 // GetTaskStatus → /scan/tasks/status for one scan.
-func (c *Client) GetTaskStatus(ctx context.Context, scanID string) (g3lib.ScanTaskStatusResponse, error) {
-	var out g3lib.ScanTaskStatusResponse
+func (c *Client) GetTaskStatus(ctx context.Context, scanID string) (g3.ScanTaskStatusResponse, error) {
+	var out g3.ScanTaskStatusResponse
 	err := c.call(ctx, "/scan/tasks/status", g3.ReqQueryScanTaskStatus{ScanID: scanID}, &out)
 	return out, err
 }
 
 // GetTaskLogs → /scan/logs for one (scan, task). Returns the existing
 // G3TaskLog response (top-level taskid, lines:[{timestamp,text}]).
-func (c *Client) GetTaskLogs(ctx context.Context, scanID, taskID string) (g3lib.G3TaskLog, error) {
-	var out g3lib.G3TaskLog
+func (c *Client) GetTaskLogs(ctx context.Context, scanID, taskID string) (g3.G3TaskLog, error) {
+	var out g3.G3TaskLog
 	err := c.call(ctx, "/scan/logs", g3.ReqQueryLog{ScanID: scanID, TaskID: taskID}, &out)
 	return out, err
 }
@@ -90,8 +89,8 @@ func (c *Client) GetTaskLogs(ctx context.Context, scanID, taskID string) (g3lib.
 // GetScanLogs → /scan/logs with empty TaskID, returning all rows for
 // the scan as []LogEntry (chronologically interleaved per the server's
 // ORDER BY timestamp,id ASC). Used by the full-screen logs viewer.
-func (c *Client) GetScanLogs(ctx context.Context, scanID string) ([]g3lib.LogEntry, error) {
-	var out []g3lib.LogEntry
+func (c *Client) GetScanLogs(ctx context.Context, scanID string) ([]g3.LogEntry, error) {
+	var out []g3.LogEntry
 	err := c.call(ctx, "/scan/logs", g3.ReqQueryLog{ScanID: scanID}, &out)
 	return out, err
 }

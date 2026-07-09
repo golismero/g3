@@ -1,17 +1,15 @@
 // Package client wraps every g3api endpoint and the WS scan.status
 // subscription used by g3tui. All inputs/outputs are domain types from
-// g3lib; tea.Msg carriers below are just thin envelopes so the UI layer
+// g3; tea.Msg carriers below are just thin envelopes so the UI layer
 // can route updates without depending on the underlying transport.
 package client
 
-import (
-	"github.com/golismero/g3/src/g3lib"
-)
+import "github.com/golismero/g3/src/g3"
 
 // Snapshot of the scan list (id + status + progress + message) returned
 // by /scan/list+/scan/progress, or by the polling fallback when WS is down.
 type ScanListSnapshot struct {
-	Entries []g3lib.ScanStatusEntry
+	Entries []g3.ScanStatusEntry
 }
 
 // Single scan-status update pushed via the WS scan.status channel.
@@ -21,7 +19,7 @@ type ScanListSnapshot struct {
 // nil as zero.
 type ScanProgressUpdate struct {
 	ScanID   string
-	Status   g3lib.G3SCANSTATUS
+	Status   g3.G3SCANSTATUS
 	Progress *int
 	Message  string
 }
@@ -32,7 +30,7 @@ type ScanProgressUpdate struct {
 // the receiver re-arms regardless of Err.
 type TaskStatusUpdate struct {
 	ScanID   string
-	Response g3lib.ScanTaskStatusResponse
+	Response g3.ScanTaskStatusResponse
 	Err      error
 }
 
@@ -43,7 +41,7 @@ type TaskStatusUpdate struct {
 type LogChunk struct {
 	ScanID string
 	TaskID string
-	Log    g3lib.G3TaskLog
+	Log    g3.G3TaskLog
 	Err    error
 }
 
@@ -52,7 +50,7 @@ type LogChunk struct {
 // render and to build its taskID→tool map from [g3:dispatch] markers.
 type ScanLogChunk struct {
 	ScanID  string
-	Entries []g3lib.LogEntry
+	Entries []g3.LogEntry
 	Err     error
 }
 

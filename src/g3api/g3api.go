@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"database/sql"
@@ -12,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -855,9 +858,14 @@ func Main() int {
 				return
 			}
 
-			// Get the logs for this task.
-			// TODO
-			sendApiError(w, http.StatusNotFound, "Feature not yet implemented.")
+			// Get the list of task IDs for this scan.
+			taskidlist, err := sql_db.GetScanTaskIDs(request.ScanID)
+			if err != nil {
+				log.Error(err.Error())
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
+			} else {
+				sendApiResponse(w, taskidlist)
+			}
 			return
 		}))
 
@@ -874,8 +882,56 @@ func Main() int {
 				return
 			}
 
-			// TODO
-			sendApiError(w, http.StatusNotFound, "Feature not yet implemented.")
+			// Scan-level: stream all log rows for the scan, return []LogEntry.
+			if request.TaskID == "" {
+				var entries []g3.LogEntry
+				scanlog, err := sql_db.GetLogsForScan(request.ScanID)
+				if err != nil {
+					log.Error("GetLogsForScan failed: " + err.Error())
+					sendApiError(w, http.StatusInternalServerError, "Internal error.")
+					return
+				}
+				for _, tasklog := range(scanlog.Logs) {
+					for _, line := range(tasklog.Logs) {
+						var entry g3.LogEntry
+						entry.ScanID = scanlog.ScanID
+						entry.TaskID = tasklog.TaskID
+						entry.Timestamp = int64(line.Timestamp)
+						entry.Text = line.Text
+						entries = append(entries, entry)
+					}
+				}
+				slices.SortStableFunc(entries, func(a, b g3.LogEntry) int {
+					return cmp.Compare(a.Timestamp, b.Timestamp)
+				})
+				sendApiResponse(w, entries)
+				return
+			}
+
+			// Task-scoped: single G3TaskLog.
+			tasklog, err := sql_db.GetLogsForTask(request.TaskID)
+			if err != nil {
+				log.Error("GetLogsForTask failed: " + err.Error())
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
+			} else {
+				var tl g3.G3TaskLog
+				tl.ScanID = request.ScanID
+				tl.TaskID = request.TaskID
+				for _, logline := range(tasklog.Logs) {
+					var ll g3.TaskLogLine
+					ts := int64(logline.Timestamp)
+					ll.Timestamp = ts
+					if tl.Start == 0 || tl.Start > ts {
+						tl.Start = ts
+					}
+					if tl.End == 0 || tl.End < ts {
+						tl.End = ts
+					}
+					ll.Text = logline.Text
+					tl.Lines = append(tl.Lines, ll)
+				}
+				sendApiResponse(w, tl)
+			}
 			return
 		}))
 
@@ -892,8 +948,88 @@ func Main() int {
 				return
 			}
 
-			// TODO
-			sendApiError(w, http.StatusNotFound, "Feature not yet implemented.")
+			var response g3.ScanTaskStatusResponse
+			status, err := sql_db.GetScanStatus(request.ScanID)
+			if err != nil {
+				log.Error(err.Error())
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
+				return
+			}
+			switch status {
+			case "managed":
+				response.ScanStatus = g3.G3_STATUS_MANAGED
+			case "waiting", "dispatched":
+				response.ScanStatus = g3.G3_STATUS_WAITING
+			case "running":
+				response.ScanStatus = g3.G3_STATUS_RUNNING
+			case "canceled":
+				response.ScanStatus = g3.G3_STATUS_CANCELED				
+			case "done", "warning":
+				response.ScanStatus = g3.G3_STATUS_FINISHED
+			case "error":
+				response.ScanStatus = g3.G3_STATUS_ERROR
+			default:
+				response.ScanStatus = g3.G3_STATUS_UNKNOWN
+			}
+			tasks, err := sql_db.GetScanTasksStatus(request.ScanID)
+			if err != nil {
+				log.Error(err.Error())
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
+				return
+			}
+			for _, task := range(tasks.Tasks) {
+				var tse g3.TaskStatusEntry
+				tse.TaskID = task.TaskID
+				if task.Tool != nil {
+					tse.Tool = *task.Tool
+				} else {
+					tse.Tool = ""
+				}
+				if task.Worker != nil {
+					tse.Worker = *task.Worker
+				} else {
+					tse.Worker = ""
+				}
+				switch task.Status {
+				case "waiting":
+					tse.State = "DISPATCHED"
+				case "dispatched":
+					tse.State = "DISPATCHED"
+				case "running":
+					tse.State = "RUNNING"
+				case "done":
+					tse.State = "DONE"
+				case "warning":
+					tse.State = "WARNING"
+				case "error":
+					tse.State = "ERROR"
+				case "canceled":
+					tse.State = "CANCELED"
+				default:
+					tse.State = "UNKNOWN"
+				}
+				tse.DispatchTS = int64(task.CreatedAt)
+				if task.StartedAt != nil {
+					tse.StartTS = int64(*task.StartedAt)
+				}
+				if task.EndedAt != nil {
+					tse.CompleteTS = int64(*task.EndedAt)
+				}
+				tse.FirstLogTS = int64(task.CreatedAt)
+				tse.LastLogTS = int64(task.LastUpdatedAt)
+				tse.AgeSeconds = time.Now().Unix() - int64(task.LastUpdatedAt)
+				count, err := sql_db.GetLineCountForTask(task.TaskID)
+				if err != nil {
+					log.Error(err.Error())
+				} else {
+					tse.LineCount = int(count)
+				}
+				response.Tasks = append(response.Tasks, tse)
+			}
+			sort.Slice(response.Tasks, func(i, j int) bool {
+				return response.Tasks[i].DispatchTS < response.Tasks[j].DispatchTS
+			})
+			sendApiResponse(w, response)
 			return
 		}))
 
@@ -935,8 +1071,13 @@ func Main() int {
 			}
 
 			// Get the list of scan IDs.
-			// TODO
-			sendApiError(w, http.StatusNotFound, "Feature not yet implemented.")
+			scanidlist, err := sql_db.GetAllScanIDs()
+			if err != nil {
+				log.Error(err.Error())
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
+			} else {
+				sendApiResponse(w, scanidlist)
+			}
 			return
 		}))
 
@@ -1013,50 +1154,54 @@ func Main() int {
 			}
 
 			// Do not allow downloads from tasks that are not finished.
-			status, err := sql_db.GetTaskStatus(request.TaskID)
+			task, err := sql_db.GetSingleTaskStatus(request.TaskID)
 			if err != nil {
 				sendApiError(w, http.StatusNotFound, "task not found")
 				return
 			}
-			if !g3.IsStatusTerminal(status) {
+			if !g3.IsStatusTerminal(task.Status) {
 				w.Header().Set("Retry-After", "2")
 				sendApiError(w, http.StatusTooEarly, "task is not yet complete")
 				return
 			}
 
 			// Terminal — bundle and stream.
-			// artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
-			// if artifactsRoot == "" {
-			// 	artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
-			// }
-			// slotDir := filepath.Join(artifactsRoot, request.ScanID, request.TaskID)
-			// if _, err := os.Stat(slotDir); err != nil {
-			// 	if errors.Is(err, os.ErrNotExist) {
-			// 		sendApiError(w, http.StatusNotFound, "task produced no output")
-			// 		return
-			// 	}
-			// 	log.Error("stat slot dir failed: " + err.Error())
-			// 	sendApiError(w, http.StatusInternalServerError, "Internal error.")
-			// 	return
-			// }
-			// var buf bytes.Buffer
-			// filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, toolName, request.TaskID, &buf)
-			// if bundleErr != nil {
-			// 	if errors.Is(bundleErr, os.ErrNotExist) {
-			// 		sendApiError(w, http.StatusNotFound, "task produced no output")
-			// 		return
-			// 	}
-			// 	log.Error("BundleTaskSlot failed: " + bundleErr.Error())
-			// 	sendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
-			// 	return
-			// }
-			// w.Header().Set("Content-Type", contentType)
-			// w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-			// w.Header().Set("X-G3-Task-ID", request.TaskID)
-			// w.WriteHeader(http.StatusOK)
-			// if _, err := w.Write(buf.Bytes()); err != nil {
-			// 	log.Error("response write failed: " + err.Error())
-			// }
+			toolName := request.TaskID
+			if task.Tool != nil {
+				toolName = *task.Tool
+			}
+			artifactsRoot := os.Getenv(g3lib.G3_ARTIFACTS_ROOT)
+			if artifactsRoot == "" {
+				artifactsRoot = g3lib.G3_ARTIFACTS_ROOT_DEFAULT
+			}
+			slotDir := filepath.Join(artifactsRoot, request.ScanID, request.TaskID)
+			if _, err := os.Stat(slotDir); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					sendApiError(w, http.StatusNotFound, "task produced no output")
+					return
+				}
+				log.Error("stat slot dir failed: " + err.Error())
+				sendApiError(w, http.StatusInternalServerError, "Internal error.")
+				return
+			}
+			var buf bytes.Buffer
+			filename, contentType, bundleErr := g3lib.BundleTaskSlot(slotDir, toolName, request.TaskID, &buf)
+			if bundleErr != nil {
+				if errors.Is(bundleErr, os.ErrNotExist) {
+					sendApiError(w, http.StatusNotFound, "task produced no output")
+					return
+				}
+				log.Error("BundleTaskSlot failed: " + bundleErr.Error())
+				sendApiError(w, http.StatusInternalServerError, "failed to bundle task artifacts")
+				return
+			}
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+			w.Header().Set("X-G3-Task-ID", request.TaskID)
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(buf.Bytes()); err != nil {
+				log.Error("response write failed: " + err.Error())
+			}
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1173,11 +1318,15 @@ func Main() int {
 			}
 
 			// Publish a dispatch per matched index; collect the task_ids.
-			// TODO: better error handling if one of many tasks fails.
-			taskIds := make([]string, 0, len(indices))
+			successIds := make([]string, 0, len(indices))
+			failedIds := make([]string, 0, len(indices))
 			for _, idx := range indices {
 				taskid := uuid.NewString()
 				log.Info("Dispatching manual task with ID: " + taskid)
+				if err := sql_db.CreateTaskStatus(request.ScanID, taskid); err != nil {
+					log.Error("CreateTaskStatus (dispatch) failed: " + err.Error())
+					failedIds = append(failedIds, taskid)
+				}
 				dispatch := g3lib.G3Dispatch{
 					G3TaskMessage: g3lib.G3TaskMessage{
 						G3Message: g3lib.G3Message{
@@ -1193,13 +1342,17 @@ func Main() int {
 				}
 				if err := g3lib.SendDispatch(mq_client, dispatch); err != nil {
 					log.Error("SendDispatch failed: " + err.Error())
-					sendApiError(w, http.StatusInternalServerError, "failed to publish dispatch")
-					return
+					failedIds = append(failedIds, taskid)
 				}
-				taskIds = append(taskIds, taskid)
+				successIds = append(successIds, taskid)
 			}
 
-			internalSendApiResponse(w, http.StatusAccepted, "success", map[string][]string{"task_ids": taskIds})
+			if len(failedIds) > 0 && len(successIds) == 0 {
+				sendApiError(w, http.StatusInternalServerError, "failed to create new task(s)")
+				return
+			}
+
+			internalSendApiResponse(w, http.StatusAccepted, "success", map[string][]string{"task_ids": successIds, "failed": failedIds})
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////

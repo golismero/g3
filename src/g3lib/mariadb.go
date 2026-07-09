@@ -144,6 +144,46 @@ func (c SQLDBClient) Close() {
 	}
 }
 
+// Get the scan IDs of every scan known to the engine.
+func (c SQLDBClient) GetAllScanIDs() ([]string, error) {
+	var response []string
+	query := "SELECT scanid FROM scans ORDER BY created_at"
+	rows, err := c.db.QueryContext(c.ctx, query)
+	if err != nil {
+		return response, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var scanid string
+		err = rows.Scan(&scanid)
+		if err != nil {
+			return response, err
+		}
+		response = append(response, scanid)
+	}
+	return response, rows.Err()
+}
+
+// Get the task IDs for a given scan ID.
+func (c SQLDBClient) GetScanTaskIDs(scanid string) ([]string, error) {
+	var response []string
+	query := "SELECT taskid FROM tasks WHERE scanid=? ORDER BY created_at"
+	rows, err := c.db.QueryContext(c.ctx, query, scanid)
+	if err != nil {
+		return response, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var taskid string
+		err = rows.Scan(&taskid)
+		if err != nil {
+			return response, err
+		}
+		response = append(response, taskid)
+	}
+	return response, rows.Err()
+}
+
 // Add a log line to the database.
 func (c SQLDBClient) SaveLogLine(scanid, taskid, text string) error {
 	query := "INSERT INTO logs (scanid, taskid, text) VALUES (?, ?, ?)"
@@ -152,9 +192,9 @@ func (c SQLDBClient) SaveLogLine(scanid, taskid, text string) error {
 }
 
 // Get the log lines for a specific task execution.
-func (c SQLDBClient) GetLogsForTask(scanid string, taskid string) (g3.TaskLogsResponse, error) {
+func (c SQLDBClient) GetLogsForTask(taskid string) (g3.TaskLogsResponse, error) {
 	var response = g3.TaskLogsResponse{TaskID: taskid}
-	query := "SELECT timestamp, text FROM logs WHERE taskid=? ORDER BY (taskid, timestamp, id)"
+	query := "SELECT timestamp, text FROM logs WHERE taskid=? ORDER BY timestamp, id"
 	rows, err := c.db.QueryContext(c.ctx, query, taskid)
 	if err != nil {
 		return response, err
@@ -174,7 +214,7 @@ func (c SQLDBClient) GetLogsForTask(scanid string, taskid string) (g3.TaskLogsRe
 // Get the log lines for an entire scan.
 func (c SQLDBClient) GetLogsForScan(scanid string) (g3.ScanLogsResponse, error) {
 	var response = g3.ScanLogsResponse{ScanID: scanid}
-	query := "SELECT taskid, timestamp, text FROM logs WHERE scanid=? ORDER BY (taskid, timestamp, id)"
+	query := "SELECT taskid, timestamp, text FROM logs WHERE scanid=? ORDER BY taskid, timestamp, id"
 	rows, err := c.db.QueryContext(c.ctx, query, scanid)
 	if err != nil {
 		return response, err
@@ -203,13 +243,27 @@ func (c SQLDBClient) GetLogsForScan(scanid string) (g3.ScanLogsResponse, error) 
 	return response, rows.Err()
 }
 
+// Legacy helper to get the line count from the logs.
+func (c SQLDBClient) GetLineCountForTask(taskid string) (uint, error) {
+	var count uint
+	err := c.db.QueryRowContext(c.ctx, "SELECT COUNT(*) FROM logs WHERE taskid=?", taskid).Scan(&count)
+	return count, err
+}
+
+// Legacy helper to get the line count from the logs.
+func (c SQLDBClient) GetLineCountForScan(scanid string) (uint, error) {
+	var count uint
+	err := c.db.QueryRowContext(c.ctx, "SELECT COUNT(*) FROM logs WHERE scanid=?", scanid).Scan(&count)
+	return count, err
+}
+
 // Create a new scan status row.
 func (c SQLDBClient) CreateScanStatus(scanid string, is_managed bool) error {
 	var err error
 	if is_managed {
-		_, err = c.db.ExecContext(c.ctx, "INSERT INTO scans (scanid, status) VALUES (?, ?)", scanid, "managed")
+		_, err = c.db.ExecContext(c.ctx, "INSERT IGNORE INTO scans (scanid, status) VALUES (?, ?)", scanid, "managed")
 	} else {
-		_, err = c.db.ExecContext(c.ctx, "INSERT INTO scans (scanid) VALUES (?)", scanid)
+		_, err = c.db.ExecContext(c.ctx, "INSERT IGNORE INTO scans (scanid) VALUES (?)", scanid)
 	}
 	return err
 }
@@ -247,7 +301,7 @@ func (c SQLDBClient) UpdateScanStatus(scanid string, status *string, progress *u
 
 // Create a new task status row.
 func (c SQLDBClient) CreateTaskStatus(scanid string, taskid string) error {
-	_, err := c.db.ExecContext(c.ctx, "INSERT INTO tasks (scanid, taskid) VALUES (?, ?)", scanid, taskid)
+	_, err := c.db.ExecContext(c.ctx, "INSERT IGNORE INTO tasks (scanid, taskid) VALUES (?, ?)", scanid, taskid)
 	return err
 }
 
@@ -299,7 +353,7 @@ func (c SQLDBClient) GetScanStatus(scanid string) (string, error) {
 func (c SQLDBClient) GetTaskStatus(taskid string) (string, error) {
 	var status string
 	err := c.db.QueryRowContext(c.ctx, "SELECT status FROM tasks WHERE taskid=?", taskid).Scan(&status)
-	return taskid, err
+	return status, err
 }
 
 // Gets the current status of a single scan.

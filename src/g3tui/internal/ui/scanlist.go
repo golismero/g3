@@ -9,7 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/golismero/g3/src/g3lib"
+
+	"github.com/golismero/g3/src/g3"
 	"github.com/golismero/g3/src/g3tui/internal/client"
 )
 
@@ -24,8 +25,8 @@ import (
 // lands. Selection is tracked by ScanID, not by index, so reshuffles
 // never move the cursor onto a different scan.
 type ScanList struct {
-	entries    []g3lib.ScanStatusEntry
-	filtered   []g3lib.ScanStatusEntry
+	entries    []g3.ScanStatusEntry
+	filtered   []g3.ScanStatusEntry
 	selectedID string // "" means no selection — a first-class state
 
 	filtering bool
@@ -58,14 +59,14 @@ func (s ScanList) SelectedID() string { return s.selectedID }
 // SelectedStatus returns the status of the currently-highlighted entry,
 // or "" when no entry is selected. Used by App to know whether the
 // Logs panel should keep polling the binding's task.
-func (s ScanList) SelectedStatus() g3lib.G3SCANSTATUS {
+func (s ScanList) SelectedStatus() g3.G3SCANSTATUS {
 	return s.StatusByID(s.selectedID)
 }
 
 // StatusByID returns the status of the entry with the given scan ID,
 // or "" if no such entry exists. Used by App to refresh the open
 // LogsViewer's cached scan status after a snapshot or WS push.
-func (s ScanList) StatusByID(id string) g3lib.G3SCANSTATUS {
+func (s ScanList) StatusByID(id string) g3.G3SCANSTATUS {
 	if id == "" {
 		return ""
 	}
@@ -322,7 +323,7 @@ func (s *ScanList) reconcileSelection(prevLen int) {
 
 // removeByScanID returns entries with any element matching id removed.
 // Preserves order. Returns the input unchanged if id is not found.
-func removeByScanID(entries []g3lib.ScanStatusEntry, id string) []g3lib.ScanStatusEntry {
+func removeByScanID(entries []g3.ScanStatusEntry, id string) []g3.ScanStatusEntry {
 	for i, e := range entries {
 		if e.ScanID == id {
 			return append(entries[:i], entries[i+1:]...)
@@ -349,7 +350,7 @@ func (s *ScanList) applyFilter() {
 		s.filtered = append(s.filtered[:0], s.entries...)
 		return
 	}
-	out := make([]g3lib.ScanStatusEntry, 0, len(s.entries))
+	out := make([]g3.ScanStatusEntry, 0, len(s.entries))
 	for _, e := range s.entries {
 		if strings.HasPrefix(strings.ToLower(e.ScanID), f) ||
 			strings.HasPrefix(strings.ToLower(string(e.Status)), f) {
@@ -402,7 +403,7 @@ func (s *ScanList) applyContent() {
 // progress underneath. Each scan therefore takes 2 rows of vertical
 // space; UUIDs that don't fit alongside the status on one row get the
 // vertical-space treatment instead of horizontal mangling.
-func formatScanRow(e g3lib.ScanStatusEntry, selected bool, idWidth int) (idLine, statusLine string) {
+func formatScanRow(e g3.ScanStatusEntry, selected bool, idWidth int) (idLine, statusLine string) {
 	pill := statusStyle(e.Status).Render(string(e.Status))
 	id := collapseID(e.ScanID, idWidth)
 	if selected {
@@ -412,7 +413,7 @@ func formatScanRow(e g3lib.ScanStatusEntry, selected bool, idWidth int) (idLine,
 	}
 	// Managed scans are driven externally; g3scanner never emits a
 	// progress value for them, so the percentage is meaningless noise.
-	if e.Status == g3lib.STATUS_MANAGED {
+	if e.Status == g3.G3_STATUS_MANAGED {
 		statusLine = "    " + pill
 	} else {
 		statusLine = fmt.Sprintf("    %s %3d%%", pill, e.Progress)
@@ -420,17 +421,17 @@ func formatScanRow(e g3lib.ScanStatusEntry, selected bool, idWidth int) (idLine,
 	return idLine, statusLine
 }
 
-func statusStyle(s g3lib.G3SCANSTATUS) lipgloss.Style {
+func statusStyle(s g3.G3SCANSTATUS) lipgloss.Style {
 	switch s {
-	case g3lib.STATUS_RUNNING:
+	case g3.G3_STATUS_RUNNING:
 		return StatusRunning
-	case g3lib.STATUS_WAITING:
+	case g3.G3_STATUS_WAITING:
 		return StatusWaiting
-	case g3lib.STATUS_FINISHED:
+	case g3.G3_STATUS_FINISHED:
 		return StatusFinished
-	case g3lib.STATUS_CANCELED:
+	case g3.G3_STATUS_CANCELED:
 		return StatusCanceled
-	case g3lib.STATUS_ERROR:
+	case g3.G3_STATUS_ERROR:
 		return StatusError
 	}
 	return ListItem

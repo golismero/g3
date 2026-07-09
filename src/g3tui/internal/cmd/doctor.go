@@ -89,8 +89,6 @@ func redactToken(t string) string {
 }
 
 func checkDotEnv() checkResult {
-	// g3lib.LoadDotEnvFile reads from the working directory by default. We
-	// report presence as informational; absence is not a failure.
 	if _, err := os.Stat(".env"); err == nil {
 		abs, _ := filepath.Abs(".env")
 		return checkResult{ok: true, detail: ".env file               found at " + abs}

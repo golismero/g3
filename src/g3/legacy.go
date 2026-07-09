@@ -186,6 +186,19 @@ type TaskState struct {
 	ErrorMsg   string `json:"error_msg,omitempty"`
 }
 
+type G3MESSAGETYPE string
+const (
+	G3_MSG_TASK     G3MESSAGETYPE = "task"
+	G3_MSG_SCAN     G3MESSAGETYPE = "scan"
+	G3_MSG_STATUS   G3MESSAGETYPE = "status"
+	G3_MSG_CANCEL   G3MESSAGETYPE = "cancel"
+	G3_MSG_STOP     G3MESSAGETYPE = "stop"
+	G3_MSG_RESPONSE G3MESSAGETYPE = "response"
+	G3_MSG_REPORT   G3MESSAGETYPE = "report"
+	G3_MSG_DISPATCH G3MESSAGETYPE = "dispatch"
+)
+var G3_VALID_MSG = [...]G3MESSAGETYPE{G3_MSG_TASK, G3_MSG_SCAN, G3_MSG_STATUS, G3_MSG_CANCEL, G3_MSG_RESPONSE, G3_MSG_REPORT, G3_MSG_DISPATCH}
+
 type G3SCANSTATUS string
 const (
 	G3_STATUS_WAITING  G3SCANSTATUS = "WAITING"
@@ -199,6 +212,75 @@ const (
 var G3_VALID_STATUS = [...]G3SCANSTATUS{G3_STATUS_WAITING, G3_STATUS_RUNNING, G3_STATUS_ERROR, G3_STATUS_CANCELED, G3_STATUS_FINISHED, G3_STATUS_UNKNOWN, G3_STATUS_MANAGED}
 
 const NIL_TASKID = "00000000-0000-0000-0000-000000000000"
+
+type G3Message struct {
+	MessageType G3MESSAGETYPE   `json:"msgtype"     validate:"required"`
+	SenderID string             `json:"senderid"    validate:"required"`
+	ScanID string               `json:"scanid"      validate:"required,uuid"`
+}
+
+type G3TaskMessage struct {
+	G3Message
+	TaskID string               `json:"taskid"      validate:"required,uuid"`
+}
+
+type G3Task struct {            // MessageType: MSG_TASK
+	G3TaskMessage
+	DataID string               `json:"dataid"      validate:"required,mongodb"`
+	Tool string                 `json:"tool"        validate:"required"`
+	Index int                   `json:"index"       validate:"gte=0"`
+}
+
+type G3ReportTask struct {      // MessageType: MSG_REPORT
+	G3TaskMessage
+	Tool   string `json:"tool"   validate:"required"`
+	Preset string `json:"preset"`
+}
+
+type G3Dispatch struct {        // MessageType: MSG_DISPATCH
+	G3TaskMessage
+	Kind   string `json:"kind"   validate:"required,oneof=tool report"`
+	Tool   string `json:"tool"   validate:"required"`
+	// kind=tool fields:
+	DataID string `json:"dataid,omitempty" validate:"omitempty,mongodb"`
+	Index  int    `json:"index,omitempty"  validate:"gte=0"`
+	// kind=report fields:
+	Preset string `json:"preset,omitempty"`
+}
+
+type G3Response struct {        // MessageType: MSG_RESPONSE
+	G3TaskMessage
+	Response []string           `json:"response"    validate:"dive,mongodb"`
+}
+
+type G3CancelTask struct {      // MessageType: MSG_CANCEL
+	G3Message
+	Tasks []string              `json:"tasks"       validate:"required"`
+	Handled bool                `json:"handled"`
+}
+
+type G3Scan struct {            // MessageType: MSG_SCAN
+	G3Message
+	Mode string                 `json:"mode"        validate:"required"`
+	Pipelines [][]string        `json:"pipelines"`  // can be empty
+	Report *ReportStatement     `json:"report,omitempty"`
+}
+
+type G3ScanStatus struct {      // MessageType: MSG_STATUS
+	G3Message
+	Status G3SCANSTATUS         `json:"status"`
+	Progress *int               `json:"progress,omitempty"`
+	Message string       	    `json:"message"`
+	Seq uint64                  `json:"seq"`
+}
+
+type G3ScanStop struct {        // MessageType: MSG_STOP
+	G3Message
+}
+
+type G3ScanRemoved struct {
+	ScanID string               `json:"scanid"      validate:"required,uuid"`
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

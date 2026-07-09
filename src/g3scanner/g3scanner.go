@@ -281,7 +281,7 @@ func main() {
 	// Subscribe to dispatch messages from g3api.
 	dispatchTopic := g3lib.SubscribeAsDispatcher(mq_client, func(_ g3lib.MessageQueueClient, msg g3lib.G3Dispatch) {
 		if err := sql_db.SaveLogLine(msg.ScanID, msg.TaskID, "[g3:dispatch] task="+msg.TaskID+" tool="+msg.Tool); err != nil {
-			log.Error("SaveLogLine (dispatch) failed: " + err.Error())
+			log.Error("SaveLogLine (dispatch-subscribe) failed: " + err.Error())
 		}
 
 		markErr := func(reason string) {
@@ -418,9 +418,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		totalScanSteps += len(pipe)
 	}
 
-	// Notify the scan has started. Pure-import scans (no pipelines)
-	// have nothing to track yet — the FINISHED message at the end
-	// covers them.
+	// Notify the scan has started.
 	if totalScanSteps > 0 {
 		if err := g3lib.SendScanProgress(mq_client, msg.ScanID, 0, totalScanSteps); err != nil {
 			log.Error(err.Error())
@@ -428,7 +426,6 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 	}
 
 	// Load the array of starting data.
-	// This would be the targets and any data imported previously.
 	startData, err := g3lib.GetScanDataIDs(mdb_client, msg.ScanID)
 	if err != nil {
 		log.Error(err.Error())
@@ -447,6 +444,20 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 		return
 	}
 
+	// Helper function to mark all running scans as canceled directly in the DB,
+	// because docker compose is shutting down all services at once, so the msgqueue
+	// may not be sending the cancelation notifications, etc. so just calling
+	// SendScanStopped is not enough.
+	markCanceled := func(scanid string) {
+		log.Infof("Canceled scan %s, dropping all the pipelines...", scanid)
+		if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
+			log.Error(err.Error())
+		}
+		if err := scan_sql_db.UpdateScanStatus(msg.ScanID, g3.STATUS_CANCELED, nil, nil, ^uint64(0)); err != nil {
+			log.Error(err.Error())
+		}
+	}
+
 	// Skip the pipeline execution part if we have no pipelines.
 	// This can happen if the scan script consisted entirely of imports.
 	if len(msg.Pipelines) == 0 {
@@ -455,7 +466,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 		// Use the requested mode of operation.
 		// We have two modes of operation, sequential and parallel.
-		// TODO the third mode would be full auto like g2
+		// TODO the third mode could be full auto like g2, fourth mode could be LLM driven?
 		parallelMode := false
 		if msg.Mode == "parallel" {
 			parallelMode = true
@@ -498,10 +509,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 				// Check for cancelation.
 				if currentScanID == "" {
-					log.Debugf("Canceled scan, dropping all the pipelines...")
-					if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-						log.Error(err.Error())
-					}
+					markCanceled(msg.ScanID)
 					return
 				}
 
@@ -517,10 +525,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 					// Check for cancelation.
 					if currentScanID == "" {
-						log.Debugf("Canceled scan, dropping all the pipelines...")
-						if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-							log.Error(err.Error())
-						}
+						markCanceled(msg.ScanID)
 						return
 					}
 
@@ -563,10 +568,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 						// Check for cancelation.
 						if currentScanID == "" {
-							log.Debugf("Canceled scan, dropping all the pipelines...")
-							if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-								log.Error(err.Error())
-							}
+							markCanceled(msg.ScanID)
 							return
 						}
 
@@ -595,10 +597,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 							// Check for cancelation.
 							if currentScanID == "" {
-								log.Debugf("Canceled scan, dropping all the pipelines...")
-								if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-									log.Error(err.Error())
-								}
+								markCanceled(msg.ScanID)
 								return
 							}
 
@@ -770,10 +769,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 						break
 					}
 					if currentScanID == "" {
-						log.Debugf("Canceled scan, dropping all the pipelines...")
-						if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-							log.Error(err.Error())
-						}
+						markCanceled(msg.ScanID)
 						return
 					}
 				}
@@ -786,9 +782,6 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 				if !runningTasks.Exists(taskid) {
 					log.Warning("Got a task end notification for a task that is not ours! ID: " + taskid)
 				} else {
-					// Terminal state (DONE/ERROR/CANCELED) + [g3:done] audit line are
-					// written by the worker before it sent this response — no Redis
-					// or log-line work for the scanner on this path.
 					runningTasks.Delete(taskid)
 					log.Debug("Cleaning up task: " + response.TaskID)
 					fpToTasks.Remove(taskid)
@@ -813,9 +806,9 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 				}
 			}
 
-			// Sequential mode just runs each command in each pipeline one by one.
-			// This is considerably slower since we need to wait for each command to finish.
-			// It is also a lot less error prone, so it can be useful in some circumstances.
+		// Sequential mode just runs each command in each pipeline one by one.
+		// This is considerably slower since we need to wait for each command to finish.
+		// It is also a lot less error prone, so it can be useful in some circumstances.
 		} else {
 
 			// Run the commands for each pipeline sequentially.
@@ -826,10 +819,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 				// Check for cancelation.
 				if currentScanID == "" {
-					log.Debugf("Canceled scan, dropping all the pipelines...")
-					if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-						log.Error(err.Error())
-					}
+					markCanceled(msg.ScanID)
 					return
 				}
 
@@ -844,10 +834,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 					// Check for cancelation.
 					if currentScanID == "" {
-						log.Debugf("Canceled scan, dropping all the pipelines...")
-						if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-							log.Error(err.Error())
-						}
+						markCanceled(msg.ScanID)
 						return
 					}
 
@@ -874,10 +861,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 						// Check for cancelation.
 						if currentScanID == "" {
-							log.Debugf("Canceled scan, dropping all the pipelines...")
-							if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-								log.Error(err.Error())
-							}
+							markCanceled(msg.ScanID)
 							return
 						}
 
@@ -905,10 +889,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 
 							// Check for cancelation.
 							if currentScanID == "" {
-								log.Debugf("Canceled scan, dropping all the pipelines...")
-								if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-									log.Error(err.Error())
-								}
+								markCanceled(msg.ScanID)
 								return
 							}
 
@@ -957,7 +938,6 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 							}
 
 							// Run the plugin command in one of the workers.
-							taskid := uuid.NewString()
 							dataid, ok := data["_id"].(string)
 							if !ok {
 								dispErr := fmt.Errorf("data missing _id, save to database first")
@@ -967,6 +947,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 								}
 								return
 							}
+							taskid := uuid.NewString()
 							if err := DispatchTask(mq_client, scan_sql_db, msg.ScanID, taskid, plugin.Name, index, dataid); err != nil {
 								log.Error(err.Error())
 								if e := scan_sql_db.SaveLogLine(msg.ScanID, taskid, "[g3:done] task="+taskid+" state=ERROR"); e != nil {
@@ -993,10 +974,7 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 									break
 								}
 								if currentScanID == "" {
-									log.Error("Canceled scan, dropping all the pipelines...")
-									if err := g3lib.SendScanStopped(mq_client, msg.ScanID); err != nil {
-										log.Error(err.Error())
-									}
+									markCanceled(msg.ScanID)
 									return
 								}
 							}
@@ -1095,17 +1073,6 @@ func ScanRunner(responseChannel chan g3lib.G3Response, plugins g3lib.G3PluginMet
 			}
 		}
 		runningTasks.Delete(reporterTaskID)
-
-		// An empty response means the reporter ended in an error condition (same
-		// convention as tool tasks, see the pipeline loop). The directive made
-		// the report mandatory, so a reporter failure fails the whole scan.
-		if len(response.Response) == 0 {
-			log.Error("Reporter task failed, marking scan as failed.")
-			if err := g3lib.SendScanFailed(mq_client, msg.ScanID, "Reporter task failed"); err != nil {
-				log.Error(err.Error())
-			}
-			return
-		}
 		log.Debug("Reporter task finished.")
 	}
 
@@ -1123,11 +1090,17 @@ func DispatchTask(
 	index int,
 	dataid string,
 ) error {
+	if err := sql.CreateTaskStatus(scanid, taskid); err != nil {
+		log.Error("CreateTaskStatus (dispatch) failed: " + err.Error())
+		return err
+	}
 	if err := sql.SaveLogLine(scanid, taskid, "[g3:dispatch] task="+taskid+" tool="+tool); err != nil {
 		log.Error("SaveLogLine (dispatch) failed: " + err.Error())
+		return err
 	}
 	if err := sql.UpdateTaskStatus(taskid, g3.STATUS_DISPATCHED, &tool, nil); err != nil {
 		log.Error("UpdateTaskStatus (dispatch) failed: " + err.Error())
+		return err
 	}
 	return g3lib.SendTask(mq, scanid, taskid, tool, index, dataid)
 }
@@ -1138,11 +1111,17 @@ func DispatchReportTask(
 	sql g3lib.SQLDBClient,
 	scanid, taskid, tool, preset string,
 ) error {
+	if err := sql.CreateTaskStatus(scanid, taskid); err != nil {
+		log.Error("CreateTaskStatus (dispatch-report) failed: " + err.Error())
+		return err
+	}
 	if err := sql.SaveLogLine(scanid, taskid, "[g3:dispatch] task="+taskid+" tool="+tool); err != nil {
-		log.Error("SaveLogLine (dispatch) failed: " + err.Error())
+		log.Error("SaveLogLine (dispatch-report) failed: " + err.Error())
+		return err
 	}
 	if err := sql.UpdateTaskStatus(taskid, g3.STATUS_DISPATCHED, &tool, nil); err != nil {
-		log.Error("UpdateTaskStatus (dispatch) failed: " + err.Error())
+		log.Error("UpdateTaskStatus (dispatch-report) failed: " + err.Error())
+		return err
 	}
 	return g3lib.SendReportTask(mq, scanid, taskid, tool, preset)
 }

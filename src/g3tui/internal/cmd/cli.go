@@ -143,7 +143,7 @@ func runOnlyFlagAtRoot(args []string) string {
 }
 
 // CompletionsCmd implements the `completions <shell>` subcommand. The actual
-// snippet templates live in g3lib so g3 and g3cli can share them.
+// snippet templates live in g3 so g3bin and g3cli can share them.
 type CompletionsCmd struct {
 	Shell string `arg:"" enum:"bash,zsh,fish" help:"Target shell (bash, zsh, or fish)."`
 }

@@ -14,7 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/golismero/g3/src/g3lib"
+
+	"github.com/golismero/g3/src/g3"
 	"github.com/golismero/g3/src/g3tui/internal/client"
 )
 
@@ -54,7 +55,7 @@ type ReportPane struct {
 	glamourStyle string // "dark" or "light"; resolved at startup, never re-probed
 
 	scanID     string
-	scanStatus g3lib.G3SCANSTATUS
+	scanStatus g3.G3SCANSTATUS
 	generation int
 
 	state    reportState
@@ -80,7 +81,7 @@ type ReportPane struct {
 	height int
 }
 
-func NewReportPane(cli *client.Client, scanID string, scanStatus g3lib.G3SCANSTATUS, glamourStyle string) ReportPane {
+func NewReportPane(cli *client.Client, scanID string, scanStatus g3.G3SCANSTATUS, glamourStyle string) ReportPane {
 	reportPaneGenCounter++
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -102,7 +103,7 @@ func NewReportPane(cli *client.Client, scanID string, scanStatus g3lib.G3SCANSTA
 
 // SetScanStatus keeps the pane's title in sync with the dashboard's
 // scan list. Mirrors LogsViewer.SetScanStatus.
-func (p *ReportPane) SetScanStatus(status g3lib.G3SCANSTATUS) {
+func (p *ReportPane) SetScanStatus(status g3.G3SCANSTATUS) {
 	p.scanStatus = status
 }
 

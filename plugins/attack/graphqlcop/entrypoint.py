@@ -61,7 +61,6 @@ def sanitize_url(s):
 
 
 def run():
-    os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 
     # Get the target URL and "canonicalize" it. Also keep around the original value.
     # If they differ, we'll use both as fingerprint to prevent reentry.

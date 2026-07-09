@@ -26,7 +26,7 @@ type ParsedScript struct {
 	Imports []ImportStatement `json:"imports,omitempty"   validate:"omitempty,dive"`
 	Mode string               `json:"mode,omitempty"      validate:"omitempty,oneof=sequential parallel"`
 	Pipelines [][]string      `json:"pipelines,omitempty" validate:"omitempty"`
-	Report *ReportStatement   `json:"report,omitempty"    validate:"omitempty,dive"`
+	Report *ReportStatement   `json:"report,omitempty"    validate:"omitempty"`
 }
 
 func (parsed ParsedScript) String() string {

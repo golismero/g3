@@ -13,7 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	//"time"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/alexeyco/simpletable"
@@ -23,7 +23,6 @@ import (
 
 	"github.com/golismero/g3/src/g3"
 	log "github.com/golismero/g3/src/g3/log"
-	//"github.com/golismero/g3/src/g3lib"
 )
 
 const G3_API_BASEURL = "G3_API_BASEURL"
@@ -431,7 +430,7 @@ func (cmd *ProgressCmd) Run(vars CmdContext) error {
 }
 
 func (cmd *LogsCmd) Run(vars CmdContext) error {
-	//output := cmd.Output
+	output := cmd.Output
 	ctx := vars.Ctx
 
 	// If no scan ID was given on the command line, get all of them.
@@ -520,8 +519,142 @@ func (cmd *LogsCmd) Run(vars CmdContext) error {
 	}
 
 	// Get the logs for each task.
-	// TODO
-	log.Critical("feature not implemented yet")
+	var allLogs []g3.G3TaskLog
+	for _, scanid := range scanidlist {
+		taskidlist, ok := taskidmap[scanid]
+		if ok {
+			for _, taskid := range taskidlist {
+				log.Debugf("Querying logs for scan %s, task %s...", scanid, taskid)
+				var req g3.ReqQueryLog
+				req.ScanID = scanid
+				req.TaskID = taskid
+				resp, err := g3.MakeApiRequest(ctx, vars.BaseURL, "/scan/logs", vars.Token, req)
+				if err != nil {
+					log.Critical("Error sending API request: " + err.Error())
+					return err
+				}
+				if resp.Status != "success" {
+					log.Critical(resp.Data)
+					return errors.New("malformed response from server")
+				}
+				data, ok := resp.Data.(map[string]interface{})
+				if !ok {
+					return errors.New("malformed response from server")
+				}
+				tmp1, ok := data["lines"]
+				if !ok {
+					log.Warning("No log lines for task: " + taskid)
+					continue
+				}
+				if tmp1 == nil {
+					log.Warning("No log lines for task: " + taskid)
+					continue
+				}
+				tmp2, ok := tmp1.([]interface{})
+				if !ok {
+					return errors.New("malformed response from server")
+				}
+				var lines []g3.TaskLogLine
+				for _, tmp3 := range tmp2 {
+					tmp4, ok := tmp3.(map[string]interface{})
+					if !ok {
+						return errors.New("malformed response from server")
+					}
+					tmp5, ok := tmp4["timestamp"]
+					if !ok {
+						return errors.New("malformed response from server")
+					}
+					tmp6, ok := tmp5.(float64)
+					if !ok {
+						return errors.New("malformed response from server")
+					}
+					tmp7 := int64(tmp6)
+					tmp8, ok := tmp4["text"]
+					if !ok {
+						return errors.New("malformed response from server")
+					}
+					tmp9, ok := tmp8.(string)
+					if !ok {
+						return errors.New("malformed response from server")
+					}
+					var line g3.TaskLogLine
+					line.Timestamp = tmp7
+					line.Text = tmp9
+					lines = append(lines, line)
+				}
+				tmp8, ok := data["start"]
+				if !ok {
+					return errors.New("malformed response from server")
+				}
+				tmp9, ok := tmp8.(float64)
+				if !ok {
+					return errors.New("malformed response from server")
+				}
+				start := int64(tmp9)
+				tmp10, ok := data["end"]
+				if !ok {
+					return errors.New("malformed response from server")
+				}
+				tmp11, ok := tmp10.(float64)
+				if !ok {
+					return errors.New("malformed response from server")
+				}
+				end := int64(tmp11)
+				tmp12, ok := data["scanid"]
+				if !ok {
+					return errors.New("malformed response from server")
+				}
+				tmp13, ok := tmp12.(string)
+				if !ok || tmp13 != scanid {
+					return errors.New("malformed response from server")
+				}
+				tmp14, ok := data["taskid"]
+				if !ok {
+					return errors.New("malformed response from server")
+				}
+				tmp15, ok := tmp14.(string)
+				if !ok || tmp15 != taskid {
+					return errors.New("malformed response from server")
+				}
+				var tasklog g3.G3TaskLog
+				tasklog.ScanID = scanid
+				tasklog.TaskID = taskid
+				tasklog.Start = start
+				tasklog.End = end
+				tasklog.Lines = lines
+				allLogs = append(allLogs, tasklog)
+			}
+		}
+	}
+	log.Debugf("Found %d logs in total.", len(allLogs))
+
+	// Open the output file.
+	var fd *os.File
+	var err error
+	if output == "-" {
+		fd = os.Stdout
+	} else {
+		fd, err = os.OpenFile(output, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+		if err != nil {
+			log.Critical("Error writing to file " + output + ": " + err.Error())
+			return err
+		}
+		defer fd.Close()
+	}
+
+	// Output the logs.
+	for _, tasklog := range allLogs {
+		fmt.Fprintln(fd, "\033[1m--------------------------------------------------------------------------------\033[0m")
+		fmt.Fprintln(fd, "\033[1m--- Scan ID: "+tasklog.ScanID+"\033[0m")
+		fmt.Fprintln(fd, "\033[1m--- Task ID: "+tasklog.TaskID+"\033[0m")
+		fmt.Fprintln(fd, "\033[1m--- Started: "+time.Unix(tasklog.Start, 0).Format(time.RFC850)+"\033[0m")
+		fmt.Fprintln(fd, "\033[1m--- Ended:   "+time.Unix(tasklog.End, 0).Format(time.RFC850)+"\033[0m")
+		fmt.Fprintln(fd, "\033[1m--------------------------------------------------------------------------------\033[0m")
+		for _, logline := range tasklog.Lines {
+			fmt.Fprintf(fd, "\033[1m%s:\033[0m %s\033[0m\n", time.Unix(logline.Timestamp, 0).String(), logline.Text)
+		}
+		fmt.Fprintln(fd, "")
+	}
 	return nil
 }
 
@@ -738,10 +871,10 @@ func formatAge(seconds int64) string {
 // timestamp per task from the scan's execution log and renders a table
 // sorted by staleness (most stale first).
 func (cmd *PsCmd) runTaskView(vars CmdContext) error {
-	//output := cmd.Output
+	output := cmd.Output
 	ctx := vars.Ctx
 	baseUrl := vars.BaseURL
-	//quiet := CLI.Quiet
+	quiet := CLI.Quiet
 
 	var req g3.ReqQueryScanTaskStatus
 	req.ScanID = cmd.ScanID
@@ -755,8 +888,103 @@ func (cmd *PsCmd) runTaskView(vars CmdContext) error {
 		return errors.New("malformed response from server")
 	}
 
-	// TODO
-	log.Critical("feature not implemented yet")
+	// Decode via marshal/unmarshal rather than manual map[string]interface{}
+	// assertions — cleaner and type-checked against the struct tags.
+	var payload g3.ScanTaskStatusResponse
+	rawData, err := json.Marshal(resp.Data)
+	if err != nil {
+		log.Criticalf("%v", resp.Data)
+		log.Critical("Malformed response from server.")
+		return errors.New("malformed response from server")
+	}
+	if err := json.Unmarshal(rawData, &payload); err != nil {
+		log.Criticalf("%v", resp.Data)
+		log.Critical("Malformed response from server.")
+		return errors.New("malformed response from server")
+	}
+
+	var outputText string
+	if quiet {
+		for _, entry := range payload.Tasks {
+			outputText = outputText + entry.TaskID + "\n"
+		}
+	} else if len(payload.Tasks) == 0 {
+		// Either the scan has never had tasks or its Redis state has been
+		// cleared (terminal scan). We don't reconstruct state from logs —
+		// that's a deliberate design decision for Tier 5.
+		scanLabel := string(payload.ScanStatus)
+		if scanLabel == "" {
+			scanLabel = "unknown"
+		}
+		outputText = fmt.Sprintf("\nScan [%s] — no live task data (either no tasks dispatched yet or state already cleared).\n\n", scanLabel)
+	} else {
+		table := simpletable.New()
+		table.Header = &simpletable.Header{
+			Cells: []*simpletable.Cell{
+				{Align: simpletable.AlignCenter, Text: "TASK ID"},
+				{Align: simpletable.AlignCenter, Text: "STATE"},
+				{Align: simpletable.AlignCenter, Text: "TOOL"},
+				{Align: simpletable.AlignCenter, Text: "WORKER"},
+				{Align: simpletable.AlignCenter, Text: "LAST SEEN"},
+				{Align: simpletable.AlignCenter, Text: "AGE"},
+				{Align: simpletable.AlignCenter, Text: "LINES"},
+			},
+		}
+		// If the scan itself is cancelled, tasks that haven't reached a terminal
+		// state yet are effectively "winding down" — derived signal shown to the
+		// user without storing a separate CANCELING state per task.
+		scanCancelled := payload.ScanStatus == g3.G3_STATUS_CANCELED
+		for _, entry := range payload.Tasks {
+			entry.State = strings.ToUpper(entry.State)
+			lastSeen := "-"
+			if entry.LastLogTS > 0 {
+				lastSeen = time.Unix(entry.LastLogTS, 0).Format("15:04:05")
+			}
+			// AGE is only meaningful for currently-running tasks; for terminal
+			// states it's just "time since completion" which isn't what the
+			// column is trying to communicate.
+			age := "-"
+			if entry.State == "RUNNING" {
+				age = formatAge(entry.AgeSeconds)
+			}
+			state := entry.State
+			if state == "" {
+				state = "?"
+			}
+			if scanCancelled && (state == "RUNNING" || state == "DISPATCHED") {
+				state = "CANCELING"
+			}
+			tool := entry.Tool
+			if tool == "" {
+				tool = "-"
+			}
+			worker := entry.Worker
+			if worker == "" {
+				worker = "-"
+			}
+			r := []*simpletable.Cell{
+				{Align: simpletable.AlignLeft, Text: entry.TaskID},
+				{Align: simpletable.AlignCenter, Text: state},
+				{Align: simpletable.AlignLeft, Text: tool},
+				{Align: simpletable.AlignLeft, Text: worker},
+				{Align: simpletable.AlignCenter, Text: lastSeen},
+				{Align: simpletable.AlignRight, Text: age},
+				{Align: simpletable.AlignRight, Text: fmt.Sprintf("%d", entry.LineCount)},
+			}
+			table.Body.Cells = append(table.Body.Cells, r)
+		}
+		table.SetStyle(simpletable.StyleCompactLite)
+		outputText = "\n" + table.String() + "\n\n"
+	}
+
+	if output == "-" {
+		fmt.Print(outputText)
+	} else {
+		if err := os.WriteFile(output, []byte(outputText), 0644); err != nil {
+			log.Critical("Error writing to file " + output + ": " + err.Error())
+			return err
+		}
+	}
 	return nil
 }
 
@@ -804,12 +1032,7 @@ func firstTaskID(data any) (string, error) {
 // produced artifact. Reporting is delegated entirely to the plugin; there is
 // no built-in reporter.
 func (cmd *ReportCmd) Run(vars CmdContext) error {
-
-	// TODO
-	log.Critical("feature not implemented yet")
-	return nil
-
-	/* output := cmd.Output
+	output := cmd.Output
 	ctx := vars.Ctx
 	baseUrl := vars.BaseURL
 
@@ -849,7 +1072,7 @@ func (cmd *ReportCmd) Run(vars CmdContext) error {
 			log.Critical(sresp.Data)
 			return errors.New("malformed response from server")
 		}
-		var payload g3lib.ScanTaskStatusResponse
+		var payload g3.ScanTaskStatusResponse
 		rawData, merr := json.Marshal(sresp.Data)
 		if merr == nil {
 			merr = json.Unmarshal(rawData, &payload)
@@ -897,7 +1120,7 @@ func (cmd *ReportCmd) Run(vars CmdContext) error {
 		log.Critical("Error downloading report: " + err.Error())
 		return err
 	}
-	return nil */
+	return nil
 }
 
 func (cmd *ExportCmd) Run(vars CmdContext) error {

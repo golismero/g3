@@ -11,7 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/golismero/g3/src/g3lib"
+
+	"github.com/golismero/g3/src/g3"
 	"github.com/golismero/g3/src/g3tui/internal/client"
 )
 
@@ -51,9 +52,9 @@ type LogsViewer struct {
 	cli *client.Client
 
 	scanID       string
-	scanStatus   g3lib.G3SCANSTATUS
+	scanStatus   g3.G3SCANSTATUS
 	generation   int
-	entries      []g3lib.LogEntry
+	entries      []g3.LogEntry
 	toolByTask   map[string]string
 	toolWidth    int          // cached visual width of the widest known [tool] prefix, capped at logsViewerToolCap
 	pollInterval time.Duration
@@ -72,7 +73,7 @@ type LogsViewer struct {
 
 const logsViewerToolCap = 12
 
-func NewLogsViewer(cli *client.Client, scanID string, scanStatus g3lib.G3SCANSTATUS, pollInterval time.Duration) LogsViewer {
+func NewLogsViewer(cli *client.Client, scanID string, scanStatus g3.G3SCANSTATUS, pollInterval time.Duration) LogsViewer {
 	logsViewerGenCounter++
 	v := LogsViewer{
 		cli:          cli,
@@ -106,7 +107,7 @@ func (v *LogsViewer) SetSize(w, h int) {
 // for the viewer's scan, so the next tick's isTerminal() check sees
 // the current state and the polling loop can wind down for finished
 // scans without waiting for the user to close the viewer.
-func (v *LogsViewer) SetScanStatus(status g3lib.G3SCANSTATUS) {
+func (v *LogsViewer) SetScanStatus(status g3.G3SCANSTATUS) {
 	v.scanStatus = status
 }
 
@@ -329,7 +330,7 @@ func (v *LogsViewer) applyContent() {
 			b.WriteByte('\n')
 		}
 		prefix, prefixWidth := viewerLinePrefix(e.Timestamp, v.toolFor(e.TaskID), shortTaskID(e.TaskID), v.toolWidth)
-		body := g3lib.StripAnsi(e.Text)
+		body := g3.StripAnsi(e.Text)
 		b.WriteString(wrapLogLine(prefix, prefixWidth, body, v.viewport.Width, v.wrap))
 	}
 	v.viewport.SetContent(b.String())
@@ -355,7 +356,7 @@ func (v LogsViewer) renderForSave() string {
 	const sep = "--------------------------------------------------------------------------------"
 
 	order := make([]string, 0)
-	byTask := make(map[string][]g3lib.LogEntry)
+	byTask := make(map[string][]g3.LogEntry)
 	for _, e := range v.entries {
 		if _, ok := byTask[e.TaskID]; !ok {
 			order = append(order, e.TaskID)
@@ -376,7 +377,7 @@ func (v LogsViewer) renderForSave() string {
 		for _, e := range byTask[taskID] {
 			b.WriteString(time.Unix(e.Timestamp, 0).String())
 			b.WriteString(": ")
-			b.WriteString(g3lib.StripAnsi(e.Text))
+			b.WriteString(g3.StripAnsi(e.Text))
 			b.WriteByte('\n')
 		}
 		b.WriteByte('\n')

@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/golismero/g3/src/g3tui/internal/client"
 	"github.com/golismero/g3/src/g3tui/internal/pipelines"
 )
