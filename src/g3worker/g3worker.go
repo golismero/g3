@@ -754,7 +754,7 @@ func main() {
 		case len(actionable) > 0:
 			toPersist = actionable
 		case len(nils) > 0:
-			toPersist = nils[:1] // collapse 0/1/many nils → one cache seed
+			toPersist = nils
 		}
 
 		// Artifact-claim validation runs over the claimants (actionable objects
