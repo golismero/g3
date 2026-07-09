@@ -100,7 +100,9 @@ func TaskStatusFromRow(row *sql.Row, status *g3.TaskStatusResponse, scanid *stri
 
 // Connect to the SQL database.
 func ConnectToSQL() (SQLDBClient, error) {
-	return ConnectToSQLWithContext(nil)
+	// Provide a background context if none is given.
+	// This is non-cancellable and has no timeout, so it kinda sucks.
+	return ConnectToSQLWithContext(context.Background())
 }
 
 // Connect to the SQL database.
@@ -124,12 +126,6 @@ func ConnectToSQLWithContext(ctx context.Context) (SQLDBClient, error) {
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(10)
 
-	// Provide a background context if none is given.
-	// This is non-cancellable and has no timeout, so it kinda sucks.
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
 	// Return the DB client object.
 	c.db = db
 	c.ctx = ctx
@@ -137,7 +133,7 @@ func ConnectToSQLWithContext(ctx context.Context) (SQLDBClient, error) {
 }
 
 // Defer this call after calling ConnectToSQL().
-func (c SQLDBClient) Close() {
+func (c *SQLDBClient) Close() {
 	if c.db != nil {
 		c.db.Close()
 		c.db = nil
@@ -145,7 +141,7 @@ func (c SQLDBClient) Close() {
 }
 
 // Get the scan IDs of every scan known to the engine.
-func (c SQLDBClient) GetAllScanIDs() ([]string, error) {
+func (c *SQLDBClient) GetAllScanIDs() ([]string, error) {
 	var response []string
 	query := "SELECT scanid FROM scans ORDER BY created_at"
 	rows, err := c.db.QueryContext(c.ctx, query)
@@ -165,7 +161,7 @@ func (c SQLDBClient) GetAllScanIDs() ([]string, error) {
 }
 
 // Get the task IDs for a given scan ID.
-func (c SQLDBClient) GetScanTaskIDs(scanid string) ([]string, error) {
+func (c *SQLDBClient) GetScanTaskIDs(scanid string) ([]string, error) {
 	var response []string
 	query := "SELECT taskid FROM tasks WHERE scanid=? ORDER BY created_at"
 	rows, err := c.db.QueryContext(c.ctx, query, scanid)
@@ -185,14 +181,14 @@ func (c SQLDBClient) GetScanTaskIDs(scanid string) ([]string, error) {
 }
 
 // Add a log line to the database.
-func (c SQLDBClient) SaveLogLine(scanid, taskid, text string) error {
+func (c *SQLDBClient) SaveLogLine(scanid, taskid, text string) error {
 	query := "INSERT INTO logs (scanid, taskid, text) VALUES (?, ?, ?)"
 	_, err := c.db.ExecContext(c.ctx, query, scanid, taskid, text)
 	return err
 }
 
 // Get the log lines for a specific task execution.
-func (c SQLDBClient) GetLogsForTask(taskid string) (g3.TaskLogsResponse, error) {
+func (c *SQLDBClient) GetLogsForTask(taskid string) (g3.TaskLogsResponse, error) {
 	var response = g3.TaskLogsResponse{TaskID: taskid}
 	query := "SELECT timestamp, text FROM logs WHERE taskid=? ORDER BY timestamp, id"
 	rows, err := c.db.QueryContext(c.ctx, query, taskid)
@@ -212,7 +208,7 @@ func (c SQLDBClient) GetLogsForTask(taskid string) (g3.TaskLogsResponse, error) 
 }
 
 // Get the log lines for an entire scan.
-func (c SQLDBClient) GetLogsForScan(scanid string) (g3.ScanLogsResponse, error) {
+func (c *SQLDBClient) GetLogsForScan(scanid string) (g3.ScanLogsResponse, error) {
 	var response = g3.ScanLogsResponse{ScanID: scanid}
 	query := "SELECT taskid, timestamp, text FROM logs WHERE scanid=? ORDER BY taskid, timestamp, id"
 	rows, err := c.db.QueryContext(c.ctx, query, scanid)
@@ -244,21 +240,21 @@ func (c SQLDBClient) GetLogsForScan(scanid string) (g3.ScanLogsResponse, error) 
 }
 
 // Legacy helper to get the line count from the logs.
-func (c SQLDBClient) GetLineCountForTask(taskid string) (uint, error) {
+func (c *SQLDBClient) GetLineCountForTask(taskid string) (uint, error) {
 	var count uint
 	err := c.db.QueryRowContext(c.ctx, "SELECT COUNT(*) FROM logs WHERE taskid=?", taskid).Scan(&count)
 	return count, err
 }
 
 // Legacy helper to get the line count from the logs.
-func (c SQLDBClient) GetLineCountForScan(scanid string) (uint, error) {
+func (c *SQLDBClient) GetLineCountForScan(scanid string) (uint, error) {
 	var count uint
 	err := c.db.QueryRowContext(c.ctx, "SELECT COUNT(*) FROM logs WHERE scanid=?", scanid).Scan(&count)
 	return count, err
 }
 
 // Create a new scan status row.
-func (c SQLDBClient) CreateScanStatus(scanid string, is_managed bool) error {
+func (c *SQLDBClient) CreateScanStatus(scanid string, is_managed bool) error {
 	var err error
 	if is_managed {
 		_, err = c.db.ExecContext(c.ctx, "INSERT IGNORE INTO scans (scanid, status) VALUES (?, ?)", scanid, "managed")
@@ -270,13 +266,13 @@ func (c SQLDBClient) CreateScanStatus(scanid string, is_managed bool) error {
 
 // Delete a scan status entry from the SQL database.
 // This will cascade delete all related information for this scan, including logs.
-func (c SQLDBClient) DeleteScanStatus(scanid string) error {
+func (c *SQLDBClient) DeleteScanStatus(scanid string) error {
 	_, err := c.db.ExecContext(c.ctx, "DELETE FROM scans WHERE scanid=?", scanid)
 	return err
 }
 
 // Saves a received status update message from the scanner, if the sequence number is newer.
-func (c SQLDBClient) UpdateScanStatus(scanid string, status *string, progress *uint64, message *string, seq uint64) error {
+func (c *SQLDBClient) UpdateScanStatus(scanid string, status *string, progress *uint64, message *string, seq uint64) error {
 	var query = "UPDATE scans SET "
 	var args = []any{}
 	if status != nil {
@@ -300,20 +296,20 @@ func (c SQLDBClient) UpdateScanStatus(scanid string, status *string, progress *u
 }
 
 // Create a new task status row.
-func (c SQLDBClient) CreateTaskStatus(scanid string, taskid string) error {
+func (c *SQLDBClient) CreateTaskStatus(scanid string, taskid string) error {
 	_, err := c.db.ExecContext(c.ctx, "INSERT IGNORE INTO tasks (scanid, taskid) VALUES (?, ?)", scanid, taskid)
 	return err
 }
 
 // Delete a task status entry from the SQL database.
 // This will cascade delete all related information for this task, including logs.
-func (c SQLDBClient) DeleteTaskStatus(taskid string) error {
+func (c *SQLDBClient) DeleteTaskStatus(taskid string) error {
 	_, err := c.db.ExecContext(c.ctx, "DELETE FROM tasks WHERE taskid=?", taskid)
 	return err
 }
 
 // Updates a task status entry, following the state machine logic.
-func (c SQLDBClient) UpdateTaskStatus(taskid string, status *string, tool *string, worker *string) error {
+func (c *SQLDBClient) UpdateTaskStatus(taskid string, status *string, tool *string, worker *string) error {
 	var query = "UPDATE tasks SET "
 	var args = []any{}
 	if status != nil {
@@ -336,35 +332,35 @@ func (c SQLDBClient) UpdateTaskStatus(taskid string, status *string, tool *strin
 }
 
 // Resolves a scan ID from a given task ID.
-func (c SQLDBClient) GetScanIdFromTaskId(taskid string) (string, error) {
+func (c *SQLDBClient) GetScanIdFromTaskId(taskid string) (string, error) {
 	var scanid string
 	err := c.db.QueryRowContext(c.ctx, "SELECT scanid FROM tasks WHERE taskid=?", taskid).Scan(&scanid)
 	return scanid, err
 }
 
 // Helper to get just the scan state.
-func (c SQLDBClient) GetScanStatus(scanid string) (string, error) {
+func (c *SQLDBClient) GetScanStatus(scanid string) (string, error) {
 	var status string
 	err := c.db.QueryRowContext(c.ctx, "SELECT status FROM scans WHERE scanid=?", scanid).Scan(&status)
 	return scanid, err
 }
 
 // Helper to get just the task state.
-func (c SQLDBClient) GetTaskStatus(taskid string) (string, error) {
+func (c *SQLDBClient) GetTaskStatus(taskid string) (string, error) {
 	var status string
 	err := c.db.QueryRowContext(c.ctx, "SELECT status FROM tasks WHERE taskid=?", taskid).Scan(&status)
 	return status, err
 }
 
 // Gets the current status of a single scan.
-func (c SQLDBClient) GetSingleScanStatus(scanid string) (g3.ScanStatusResponse, error) {
+func (c *SQLDBClient) GetSingleScanStatus(scanid string) (g3.ScanStatusResponse, error) {
 	var status g3.ScanStatusResponse
 	err := ScanStatusFromRow(c.db.QueryRowContext(c.ctx, "SELECT * FROM scans WHERE scanid=?", scanid), &status)
 	return status, err
 }
 
 // Gets the current status of a single task.
-func (c SQLDBClient) GetSingleTaskStatus(taskid string) (g3.TaskStatusResponse, error) {
+func (c *SQLDBClient) GetSingleTaskStatus(taskid string) (g3.TaskStatusResponse, error) {
 	var status g3.TaskStatusResponse
 	var unused string
 	err := TaskStatusFromRow(c.db.QueryRowContext(c.ctx, "SELECT * FROM tasks WHERE taskid=?", taskid), &status, &unused)
@@ -372,7 +368,7 @@ func (c SQLDBClient) GetSingleTaskStatus(taskid string) (g3.TaskStatusResponse, 
 }
 
 // Gets the status of all tasks in a scan.
-func (c SQLDBClient) GetScanTasksStatus(scanid string) (g3.ScanTasksResponse, error) {
+func (c *SQLDBClient) GetScanTasksStatus(scanid string) (g3.ScanTasksResponse, error) {
 	var response g3.ScanTasksResponse
 	rows, err := c.db.QueryContext(c.ctx, "SELECT * FROM tasks WHERE scanid=?", scanid)
 	if err != nil {
@@ -391,7 +387,7 @@ func (c SQLDBClient) GetScanTasksStatus(scanid string) (g3.ScanTasksResponse, er
 }
 
 // Gets a full status snapshot of a scan and all of its tasks.
-func (c SQLDBClient) GetScanFullStatus(scanid string) (g3.ScanFullResponse, error) {
+func (c *SQLDBClient) GetScanFullStatus(scanid string) (g3.ScanFullResponse, error) {
 	var response g3.ScanFullResponse
 	tx, err := c.db.BeginTx(c.ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -419,7 +415,7 @@ func (c SQLDBClient) GetScanFullStatus(scanid string) (g3.ScanFullResponse, erro
 }
 
 // Gets the status of all scans in the server.
-func (c SQLDBClient) GetAllScansStatus() (g3.AllScansStatusResponse, error) {
+func (c *SQLDBClient) GetAllScansStatus() (g3.AllScansStatusResponse, error) {
 	var response g3.AllScansStatusResponse
 	rows, err := c.db.QueryContext(c.ctx, "SELECT * FROM scans")
 	if err != nil {
@@ -438,7 +434,7 @@ func (c SQLDBClient) GetAllScansStatus() (g3.AllScansStatusResponse, error) {
 }
 
 // Gets a full status snapshot for the entire server.
-func (c SQLDBClient) GetAllScansAndTasksStatus() (g3.AllScansFullResponse, error) {
+func (c *SQLDBClient) GetAllScansAndTasksStatus() (g3.AllScansFullResponse, error) {
 	var response g3.AllScansFullResponse
 	tx, err := c.db.BeginTx(c.ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

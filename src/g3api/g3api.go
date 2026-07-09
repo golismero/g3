@@ -515,7 +515,7 @@ func Main() int {
 		}
 		var progress *uint64 = nil
 		if msg.Progress != nil && *msg.Progress >= 0 {
-			var value uint64 = uint64(*msg.Progress)
+			var value = uint64(*msg.Progress)
 			progress = &value
 		}
 		var message *string = nil
@@ -842,7 +842,6 @@ func Main() int {
 				progressList = append(progressList, sse)
 			}
 			sendApiResponse(w, progressList)
-			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -866,7 +865,6 @@ func Main() int {
 			} else {
 				sendApiResponse(w, taskidlist)
 			}
-			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -932,7 +930,6 @@ func Main() int {
 				}
 				sendApiResponse(w, tl)
 			}
-			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1030,7 +1027,6 @@ func Main() int {
 				return response.Tasks[i].DispatchTS < response.Tasks[j].DispatchTS
 			})
 			sendApiResponse(w, response)
-			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
@@ -1078,7 +1074,6 @@ func Main() int {
 			} else {
 				sendApiResponse(w, scanidlist)
 			}
-			return
 		}))
 
 		///////////////////////////////////////////////////////////////////////////////////////////
