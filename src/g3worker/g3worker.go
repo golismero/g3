@@ -847,9 +847,6 @@ func main() {
 		if manifestWriteErr != nil {
 			log.Error("Cannot write task manifest for " + task.TaskID + ": " + manifestWriteErr.Error())
 			status = "error"
-			if err == nil {
-				err = manifestWriteErr
-			}
 		}
 
 		// Send the response back. If an error occurs, mark the task as errored.
