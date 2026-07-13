@@ -198,6 +198,7 @@ func LoadDataWithCallback(dbclient DatastoreClient, scanid string, query bson.M,
 }
 
 // Save an array of G3 objects into the database.
+// Stores the IDs into the source objects as a side effect.
 func SaveData(dbclient DatastoreClient, scanid, taskid string, outputArray []g3.Data) ([]string, error) {
 	client := dbclient.c
 

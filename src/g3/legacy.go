@@ -175,17 +175,6 @@ type ScanTaskStatusResponse struct {
 	Tasks      []TaskStatusEntry `json:"tasks"`
 }
 
-type TaskState struct {
-	TaskID     string `json:"taskid"`
-	Tool       string `json:"tool,omitempty"`
-	DispatchTS int64  `json:"dispatch_ts,omitempty"`
-	Worker     string `json:"worker,omitempty"`
-	StartTS    int64  `json:"start_ts,omitempty"`
-	State      string `json:"state,omitempty"`
-	CompleteTS int64  `json:"complete_ts,omitempty"`
-	ErrorMsg   string `json:"error_msg,omitempty"`
-}
-
 type G3MESSAGETYPE string
 const (
 	G3_MSG_TASK     G3MESSAGETYPE = "task"

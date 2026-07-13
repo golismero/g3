@@ -31,13 +31,15 @@ type ManifestWork struct {
 // but absent from every Work.Artifacts are intentional orphans (debug, forensic
 // retention).
 type Manifest struct {
-	ScanID     string         `json:"scan_id"     validate:"required,uuid"`
-	TaskID     string         `json:"task_id"     validate:"required,uuid"`
-	Plugin     string         `json:"plugin"      validate:"required"`
-	Tool       string         `json:"tool"        validate:"required"`
-	ExitStatus string         `json:"exit_status" validate:"required"`
-	StartedAt  int64          `json:"started_at"  validate:"gt=0"`
-	EndedAt    int64          `json:"ended_at"    validate:"gt=0"`
-	Files      []ManifestFile `json:"files"       validate:"dive"`
-	Work       []ManifestWork `json:"work"        validate:"dive"`
+	ScanID     string         `json:"scan_id"               validate:"required,uuid"`
+	TaskID     string         `json:"task_id"               validate:"required,uuid"`
+	Plugin     string         `json:"plugin"                validate:"required"`
+	Tools      []string       `json:"tools"                 validate:"required"`
+	ExitStatus string         `json:"exit_status"           validate:"required"`
+	StartedAt  int64          `json:"started_at"            validate:"gt=0"`
+	EndedAt    int64          `json:"ended_at"              validate:"gt=0"`
+	Input      Data           `json:"input,omitempty"       validate:"omitempty"`
+	Output     []Data         `json:"output,omitempty"      validate:"omitempty,dive"`
+	Files      []ManifestFile `json:"files,omitempty"       validate:"omitempty,dive"`
+	Work       []ManifestWork `json:"work,omitempty"        validate:"omitempty,dive"`
 }

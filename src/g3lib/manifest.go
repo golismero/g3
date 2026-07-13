@@ -14,28 +14,27 @@ import (
 	"github.com/golismero/g3/src/g3"
 )
 
-// ManifestTool derives the canonical tool name for the manifest's root `tool`
-// field. It prefers the _tool the plugin stamped onto its first emitted Data
-// (g3lib's runPluginInternal injects this for every object, including the dummy
-// object it appends when the plugin emitted nothing) and falls back to the g3
-// plugin name when the output array is unexpectedly empty.
-func ManifestTool(outputArray []g3.Data, plugin G3Plugin) string {
+// Derives the canonical tool names for the manifest.
+func ManifestTools(outputArray []g3.Data, plugin G3Plugin) []string {
+	var tools []string
+	tools = append(tools, plugin.Name)
 	if len(outputArray) > 0 {
-		if t, ok := outputArray[0]["_tool"].(string); ok && t != "" {
-			return t
+		if t, ok := outputArray[0]["_tool"].(string); ok && t != "" && t != plugin.Name {
+			tools = append(tools, t)
 		}
 	}
-	return plugin.Name
+	slices.Sort(tools)
+	return slices.Compact(tools)
 }
 
-// EnumerateSlot lists every regular file in slotDir, returning a ManifestFile
+// Lists every regular file in slotDir, returning a ManifestFile
 // per entry. Subdirectories and the manifest file itself are excluded.
 func EnumerateSlot(slotDir string) ([]g3.ManifestFile, error) {
+	files := []g3.ManifestFile{}
 	entries, err := os.ReadDir(slotDir)
 	if err != nil {
-		return nil, err
+		return files, err
 	}
-	files := []g3.ManifestFile{}
 	for _, entry := range entries {
 		// Skip subdirectories (no recursion — see TODO), the manifest itself,
 		// and any non-regular entries. Filtering to regular files defends
@@ -47,26 +46,22 @@ func EnumerateSlot(slotDir string) ([]g3.ManifestFile, error) {
 		if !entry.Type().IsRegular() || entry.Name() == g3.ManifestFilename {
 			continue
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return nil, err
+		var m g3.ManifestFile
+		m.Name = entry.Name()
+		info, e := entry.Info()
+		if e != nil {
+			err = e
+		} else {
+			m.Size = info.Size()
+			m.Modified = info.ModTime().Unix()
 		}
-		files = append(files, g3.ManifestFile{
-			Name:     entry.Name(),
-			Size:     info.Size(),
-			Modified: info.ModTime().Unix(),
-		})
+		files = append(files, m)
 	}
-	return files, nil
+	return files, err
 }
 
-// ValidateArtifactClaims walks outputArray and verifies that every present
-// _artifacts field is shaped as a list of strings AND that every claimed
-// filename appears in files. Returns nil if every claim is well-formed and
-// present on disk; returns an error whose message is suitable for the
-// manifest's exit_status field otherwise. The first failure short-circuits the
-// scan — once a plugin has emitted one bad claim, the diagnostic value of
-// piling on more is limited.
+// Walks outputArray and verifies that every present _artifacts field is shaped
+// as a list of strings AND that every claimed filename appears in files.
 func ValidateArtifactClaims(outputArray []g3.Data, files []g3.ManifestFile) error {
 	present := make(map[string]struct{}, len(files))
 	for _, f := range files {
@@ -95,12 +90,8 @@ func ValidateArtifactClaims(outputArray []g3.Data, files []g3.ManifestFile) erro
 	return nil
 }
 
-// BuildManifestWork groups outputArray by _cmd and unions per-group _artifacts
-// into a single ManifestWork entry per unique command. Output order follows
-// first-occurrence of each unique _cmd in outputArray. Callers are expected to
-// have already run ValidateArtifactClaims (or otherwise accepted that malformed
-// _artifacts shapes will be silently ignored here — ValidateArtifactClaims is
-// the loud guard).
+// Groups outputArray by _cmd and unions per-group _artifacts into a single
+// ManifestWork entry per unique command.
 func BuildManifestWork(outputArray []g3.Data) []g3.ManifestWork {
 	work := []g3.ManifestWork{}
 	indexByCmd := map[string]int{}
@@ -144,20 +135,17 @@ func WriteManifest(slotDir string, m g3.Manifest) error {
 	return os.WriteFile(filepath.Join(slotDir, g3.ManifestFilename), data, 0o644)
 }
 
-// CreateEphemeralArtifactSlot creates an isolated, transient slot directory
-// suitable for a single CLI plugin invocation. The returned path is absolute
-// so it resolves correctly when passed to `docker run -v`; the caller is
-// responsible for removing the directory (e.g. with os.RemoveAll). Unlike the
-// worker's per-task slot under <G3_ARTIFACTS_ROOT>/<scanid>/<taskid>, these
-// ephemeral slots are not keyed by scan or task identity and are not expected
-// to be persisted past the invocation.
+// Creates an isolated, transient slot directory suitable for a single CLI
+// plugin invocation. The returned path is absolute so it resolves correctly
+// when passed to `docker run -v`; the caller is responsible for removing the
+// directory. Unlike the worker's slots these ephemeral slots are not keyed by
+// scan or task identity and are not expected to be persisted.
 func CreateEphemeralArtifactSlot() (string, error) {
 	return os.MkdirTemp("", "g3-cli-artifacts-")
 }
 
-// BundleTaskSlot enumerates slotDir (any task's artifact slot) and streams its
-// contents to w, applying the 0/1/many discovery rule from the reporter plugin
-// spec:
+// Enumerates slotDir (any task's artifact slot) and streams its contents to w,
+// applying the 0/1/many discovery rule from the reporter plugin spec:
 //
 //   - 0 regular files → returns ("", "", os.ErrNotExist) so callers can render
 //     a 404. (Impossible in practice: WriteManifest always lands manifest.json

@@ -184,6 +184,11 @@ func (c *SQLDBClient) GetScanTaskIDs(scanid string) ([]string, error) {
 func (c *SQLDBClient) SaveLogLine(scanid, taskid, text string) error {
 	query := "INSERT INTO logs (scanid, taskid, text) VALUES (?, ?, ?)"
 	_, err := c.db.ExecContext(c.ctx, query, scanid, taskid, text)
+	if err != nil {
+		return err
+	}
+	query = "UPDATE tasks SET last_updated_at=UNIX_TIMESTAMP() WHERE taskid=?"
+	_, err = c.db.ExecContext(c.ctx, query, taskid)
 	return err
 }
 

@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -520,7 +519,7 @@ func main() {
 	}
 
 	// Subscribe to the topics for the plugins we support.
-	topics := g3lib.SubscribeAsWorker(mq_client, selected, func(client g3lib.MessageQueueClient, task g3lib.G3Task) {
+	topics := g3lib.SubscribeAsWorker(mq_client, selected, func(mq_client g3lib.MessageQueueClient, task g3lib.G3Task) {
 
 		if cancelled {
 			if err := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); err != nil {
@@ -688,6 +687,9 @@ func main() {
 		cancelTracker.ForgetTask(task.TaskID)
 		if e := g3lib.SendTaskCancelHandled(mq_client, task.ScanID, []string{task.TaskID}); e != nil {
 			log.Error(e.Error())
+			if err == nil {
+				err = e
+			}
 		}
 
 		// CANCELED (per-task cancel via context, or worker SIGINT mid-run) is
@@ -698,14 +700,18 @@ func main() {
 		// Enumerate the slot for the manifest.
 		manifestFiles, enumErr := g3lib.EnumerateSlot(slotDir)
 		if enumErr != nil {
-			log.Error("Cannot enumerate artifact slot " + slotDir + ": " + enumErr.Error())
-			markTerminal(task.ScanID, task.TaskID, "error", "Cannot enumerate artifact slot")
-			return
+			if !canceled && err == nil {
+				err = enumErr
+			}
+			log.Error("Error enumerating artifact slot " + slotDir + ": " + enumErr.Error())
+			if len(manifestFiles) == 0 {
+				markTerminal(task.ScanID, task.TaskID, "error", "Cannot enumerate artifact slot")
+				return
+			}
 		}
 
-		// Validate plugin output; drop invalid objects, mirroring each reject
-		// into the user-visible task log as a [g3:warn] line (tagged by tool so
-		// a user can grep one tool's warnings across tasks).
+		// Validate plugin output; drop invalid objects.
+		// This gets logged as a warning but doesn't cause the whole task to fail.
 		sanitizedOutput := []g3.Data{}
 		for _, d := range outputArray {
 			verr := d.Validate()
@@ -722,8 +728,8 @@ func main() {
 		droppedCount := len(outputArray) - len(sanitizedOutput)
 
 		// Partition into actionable (non-nil) and nil placeholders. Nils never
-		// count as pipeline fuel; a non-canceled empty result keeps exactly one
-		// nil to seed the scanner's negative-result cache.
+		// count as pipeline fuel; a non-canceled empty result keeps the nils
+		// to seed the scanner's negative-result cache.
 		actionable := []g3.Data{}
 		nils := []g3.Data{}
 		for _, d := range sanitizedOutput {
@@ -760,42 +766,12 @@ func main() {
 		// Artifact-claim validation runs over the claimants (actionable objects
 		// plus artifact-bearing nils). A violation is a hard contract breach →
 		// ERROR, but the data still flows to the scanner below (state ≠ fuel).
-		var claimErr error
-		if !canceled {
-			claimErr = g3lib.ValidateArtifactClaims(claimants, manifestFiles)
-		}
-
-		// Compute the terminal verdict. State and fuel are decoupled (see spec).
-		softSignal := err != nil || droppedCount > 0
-		var state string
-		switch {
-		case canceled:
-			state = "canceled"
-		case claimErr != nil:
-			state = "error" // hard contract breach
-		case softSignal && len(actionable) == 0:
-			state = "error" // signal, no fuel
-		case softSignal:
-			state = "warning" // signal, fuel present
-		default:
-			state = "done"
-		}
-
-		// Write the manifest; exit_status mirrors the verdict.
-		manifestWriteErr := g3lib.WriteManifest(slotDir, g3.Manifest{
-			ScanID:     task.ScanID,
-			TaskID:     task.TaskID,
-			Plugin:     plugin.Name,
-			Tool:       g3lib.ManifestTool(actionable, plugin),
-			ExitStatus: manifestExitStatus(state, claimErr),
-			StartedAt:  pluginStartTS,
-			EndedAt:    pluginEndTS,
-			Files:      manifestFiles,
-			Work:       g3lib.BuildManifestWork(claimants),
-		})
-		if manifestWriteErr != nil {
-			log.Error("Cannot write task manifest for " + task.TaskID + ": " + manifestWriteErr.Error())
-			state = "error" // a task without a written manifest is incomplete
+		claimErr := g3lib.ValidateArtifactClaims(claimants, manifestFiles)
+		if claimErr != nil {
+			log.Error("Manifest claims validation error: " + claimErr.Error())
+			if !canceled && err == nil {
+				err = claimErr
+			}
 		}
 
 		// FUEL (state-independent): persist + send for every non-canceled task.
@@ -813,6 +789,10 @@ func main() {
 		// the task, so the list of object IDs is lost. This will be fixed soon. For
 		// now, the managed scan's response is partially reconstructed from db queries,
 		// so re-emitted objects are dropped - a known gap.
+		//
+		// Note that the SaveData call populates the new Data object's _id fields
+		// as a side effect automatically - this needs to be done BEFORE writing
+		// the manifest file for that reason.
 		newobjs := make([]g3.Data, 0, len(toPersist))
 		for _, d := range toPersist {
 			if _, ok := d["_id"]; !ok {
@@ -822,6 +802,9 @@ func main() {
 		if len(newobjs) > 0 {
 			if _, e := g3lib.SaveData(mdb_client, task.ScanID, task.TaskID, newobjs); e != nil {
 				log.Error("Error saving data to MongoDB: " + e.Error())
+				if !canceled && err == nil {
+					err = e
+				}
 			}
 		}
 		persistentOutput := []g3.Data{}
@@ -831,30 +814,66 @@ func main() {
 			}
 		}
 
-		// One summary [g3:warn] line for WARNING/ERROR (the authoritative verdict
-		// is the [g3:done] state=... marker written by markTerminal below).
-		if state == "warning" || state == "error" {
-			if summary := warnSummary(err, droppedCount, claimErr); summary != "" {
-				if e := sql_db.SaveLogLine(task.ScanID, task.TaskID,
-					"[g3:warn] tool="+task.Tool+" "+summary); e != nil {
-					log.Error(e.Error())
-				}
+		// Compute the terminal verdict.
+		var status string
+		if canceled {
+			status = "canceled"
+		} else if err != nil {
+			status = "error"
+		} else if droppedCount > 0 {
+			if len(actionable) == 0 {
+				status = "error" // no fuel
+			} else {
+				status = "warning" // lost some fuel
+			}
+		} else {
+			status = "done"
+		}
+
+		// Write the manifest.
+		manifestWriteErr := g3lib.WriteManifest(slotDir, g3.Manifest{
+			ScanID:     task.ScanID,
+			TaskID:     task.TaskID,
+			Plugin:     plugin.Name,
+			Tools:      g3lib.ManifestTools(persistentOutput, plugin),
+			ExitStatus: status,
+			StartedAt:  pluginStartTS,
+			EndedAt:    pluginEndTS,
+			Input:      data,
+			Output:     persistentOutput,
+			Files:      manifestFiles,
+			Work:       g3lib.BuildManifestWork(claimants),
+		})
+		if manifestWriteErr != nil {
+			log.Error("Cannot write task manifest for " + task.TaskID + ": " + manifestWriteErr.Error())
+			status = "error"
+			if err == nil {
+				err = manifestWriteErr
 			}
 		}
 
+		// Send the response back. If an error occurs, mark the task as errored.
+		// This won't be reflected in the manifest, but that makes sense - the
+		// task failed after producing valid results, it's the orchestration that
+		// breaks if the response is not sent back.
+		//
+		// TODO: this needs review after working on hardening the
+		//       pipelines against messages being dropped silently
 		if len(persistentOutput) > 0 {
-			if _, e := g3lib.SendResponse(client, task, persistentOutput); e != nil {
+			if _, e := g3lib.SendResponse(mq_client, task, persistentOutput); e != nil {
 				log.Error("Error sending response to the broker: " + e.Error())
+				status = "error"
 			}
 		} else {
 			if e := g3lib.SendEmptyResponse(mq_client, task.ScanID, task.TaskID); e != nil {
-				log.Error(e.Error())
+				log.Error("Error sending empty response to the broker: " + e.Error())
+				status = "error"
 			}
 		}
-		markTerminal(task.ScanID, task.TaskID, state, "")
+		markTerminal(task.ScanID, task.TaskID, status, "")
 	})
 
-	reporterTopics := g3lib.SubscribeAsReporter(mq_client, reporterSelected, func(client g3lib.MessageQueueClient, task g3lib.G3ReportTask) {
+	reporterTopics := g3lib.SubscribeAsReporter(mq_client, reporterSelected, func(mq_client g3lib.MessageQueueClient, task g3lib.G3ReportTask) {
 
 		// SIGINT drain: matches the tool handler's first guard.
 		if cancelled {
@@ -972,40 +991,6 @@ func main() {
 	log.Info("Waiting for incoming tasks...")
 	wg.Wait()
 	log.Info("Quitting...")
-}
-
-// manifestExitStatus maps the terminal verdict to the manifest's
-// exit_status string, preserving the artifact-claim detail when present so
-// the forensic record names the exact violation.
-func manifestExitStatus(state string, claimErr error) string {
-	if claimErr != nil {
-		return claimErr.Error()
-	}
-	switch state {
-	case "WARNING":
-		return "warning"
-	case "ERROR":
-		return "error"
-	case "CANCELED":
-		return "canceled"
-	default:
-		return "success"
-	}
-}
-
-// warnSummary builds the single human-readable [g3:warn] verdict line for a
-// WARNING/ERROR task. Returns "" when there is nothing to say.
-func warnSummary(runErr error, droppedCount int, claimErr error) string {
-	switch {
-	case claimErr != nil:
-		return "artifact claim violation: " + claimErr.Error()
-	case runErr != nil:
-		return runErr.Error()
-	case droppedCount > 0:
-		return "dropped " + strconv.Itoa(droppedCount) + " malformed object(s)"
-	default:
-		return ""
-	}
 }
 
 // reporterLogWriter routes the reporter container's stdout/stderr to
