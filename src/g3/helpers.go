@@ -42,7 +42,7 @@ func init() {
 
 // Validates pointer whether it points to a struct or to a slice/array.
 // Collections are validated element-by-element via "dive".
-func ValidateValue(pointer any) error {
+func validatePointer(pointer any) error {
 	val := reflect.ValueOf(pointer)
 
 	// Follow pointer(s) down to the underlying value.
@@ -65,7 +65,7 @@ func ValidateValue(pointer any) error {
 
 // Validate struct and marshal to JSON.
 func EncodeJSON(pointer any) ([]byte, error) {
-	err := ValidateValue(pointer)
+	err := validatePointer(pointer)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -78,7 +78,7 @@ func DecodeJSON(data []byte, pointer any) error {
 	if err != nil {
 		return err
 	}
-	return ValidateValue(pointer)
+	return validatePointer(pointer)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

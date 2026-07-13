@@ -33,9 +33,9 @@ type ManifestWork struct {
 type Manifest struct {
 	ScanID     string         `json:"scan_id"               validate:"required,uuid"`
 	TaskID     string         `json:"task_id"               validate:"required,uuid"`
-	Plugin     string         `json:"plugin"                validate:"required"`
-	Tools      []string       `json:"tools"                 validate:"required"`
-	ExitStatus string         `json:"exit_status"           validate:"required"`
+	Plugin     string         `json:"plugin"                validate:"required,g3name"`
+	Tools      []string       `json:"tools"                 validate:"required,dive,g3name"`
+	ExitStatus string         `json:"exit_status"           validate:"required,oneof=canceled warning error done"`
 	StartedAt  int64          `json:"started_at"            validate:"gt=0"`
 	EndedAt    int64          `json:"ended_at"              validate:"gt=0"`
 	Input      Data           `json:"input,omitempty"       validate:"omitempty"`

@@ -870,6 +870,8 @@ func main() {
 				status = "error"
 			}
 		}
+
+		// Set the task's terminal status.
 		markTerminal(task.ScanID, task.TaskID, status, "")
 	})
 

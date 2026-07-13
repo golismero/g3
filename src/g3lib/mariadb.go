@@ -194,7 +194,8 @@ func (c *SQLDBClient) SaveLogLine(scanid, taskid, text string) error {
 
 // Get the log lines for a specific task execution.
 func (c *SQLDBClient) GetLogsForTask(taskid string) (g3.TaskLogsResponse, error) {
-	var response = g3.TaskLogsResponse{TaskID: taskid}
+	var response = g3.TaskLogsResponse{}
+	response.TaskID = taskid
 	query := "SELECT timestamp, text FROM logs WHERE taskid=? ORDER BY timestamp, id"
 	rows, err := c.db.QueryContext(c.ctx, query, taskid)
 	if err != nil {
@@ -214,7 +215,8 @@ func (c *SQLDBClient) GetLogsForTask(taskid string) (g3.TaskLogsResponse, error)
 
 // Get the log lines for an entire scan.
 func (c *SQLDBClient) GetLogsForScan(scanid string) (g3.ScanLogsResponse, error) {
-	var response = g3.ScanLogsResponse{ScanID: scanid}
+	var response = g3.ScanLogsResponse{}
+	response.ScanID = scanid
 	query := "SELECT taskid, timestamp, text FROM logs WHERE scanid=? ORDER BY taskid, timestamp, id"
 	rows, err := c.db.QueryContext(c.ctx, query, scanid)
 	if err != nil {
@@ -236,7 +238,8 @@ func (c *SQLDBClient) GetLogsForScan(scanid string) (g3.ScanLogsResponse, error)
 			}
 		}
 		if !found {
-			var tlog = g3.TaskLogsResponse{TaskID: taskid}
+			var tlog = g3.TaskLogsResponse{}
+			tlog.TaskID = taskid
 			tlog.Logs = append(tlog.Logs, line)
 			response.Logs = append(response.Logs, tlog)
 		}

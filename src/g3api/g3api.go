@@ -960,7 +960,7 @@ func Main() int {
 			case "running":
 				response.ScanStatus = g3.G3_STATUS_RUNNING
 			case "canceled":
-				response.ScanStatus = g3.G3_STATUS_CANCELED				
+				response.ScanStatus = g3.G3_STATUS_CANCELED
 			case "done", "warning":
 				response.ScanStatus = g3.G3_STATUS_FINISHED
 			case "error":
@@ -1154,7 +1154,7 @@ func Main() int {
 				sendApiError(w, http.StatusNotFound, "task not found")
 				return
 			}
-			if !g3.IsStatusTerminal(task.Status) {
+			if !g3.IsTaskStatusTerminal(task.Status) {
 				w.Header().Set("Retry-After", "2")
 				sendApiError(w, http.StatusTooEarly, "task is not yet complete")
 				return
