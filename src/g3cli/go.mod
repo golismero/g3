@@ -2,8 +2,6 @@ module github.com/golismero/g3/src/g3cli
 
 go 1.26.2
 
-replace github.com/golismero/g3/src/g3lib => ../g3lib
-
 replace github.com/golismero/g3/src/g3 => ../g3
 
 require (
