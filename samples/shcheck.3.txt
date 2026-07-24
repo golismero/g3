@@ -1,0 +1,27 @@
+
+======================================================
+ > shcheck.py - santoru ..............................
+------------------------------------------------------
+ Simple tool to check security headers on a webserver 
+======================================================
+
+[*] Analyzing headers of [94mhttps://insecurity.blog[0m
+[*] Effective URL: [94mhttps://insecurity.blog[0m
+[!] Security header missing: [93mX-Frame-Options[0m
+[!] Security header missing: [93mX-Content-Type-Options[0m
+[!] Security header missing: [91mStrict-Transport-Security[0m
+[!] Security header missing: [93mContent-Security-Policy[0m
+[!] Security header missing: [93mReferrer-Policy[0m
+[!] Security header missing: [93mPermissions-Policy[0m
+[!] Security header missing: [93mCross-Origin-Embedder-Policy[0m
+[!] Security header missing: [93mCross-Origin-Resource-Policy[0m
+[!] Security header missing: [93mCross-Origin-Opener-Policy[0m
+
+[!] Cache control header [94mCache-Control[0m is present! (Value: max-age=600)
+[!] Cache control header [94mExpires[0m is present! (Value: Fri, 24 Jul 2026 12:16:15 GMT)
+[!] Cache control header [94mLast-Modified[0m is present! (Value: Thu, 02 Jul 2026 21:31:13 GMT)
+-------------------------------------------------------
+[!] Analyzing headers for [94mhttps://insecurity.blog[0m
+[+] [92m0[0m security header(s) present
+[-] [91m9[0m security header(s) missing
+
