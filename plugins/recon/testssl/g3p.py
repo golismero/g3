@@ -76,6 +76,7 @@ if "url" in input_data:
                     sys.stderr.buffer.flush()
                     logfile.write(line)
                 proc.wait()
+            sys.stderr.write("Exit code from testssl.sh: %d" % proc.returncode)
             if proc.returncode and not worst_rc:
                 worst_rc = proc.returncode
             input_data["_artifacts"] = ["testssl.txt", "testssl.json"]
@@ -184,6 +185,7 @@ else:
                     sys.stderr.buffer.flush()
                     logfile.write(line)
                 proc.wait()
+            sys.stderr.write("Exit code from testssl.sh: %d" % proc.returncode)
             if proc.returncode and not worst_rc:
                 worst_rc = proc.returncode
 
