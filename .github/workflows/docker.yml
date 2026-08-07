@@ -10,6 +10,14 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_call:
   workflow_dispatch:
+    inputs:
+      # Escape hatch for a stale registry build cache. Left off workflow_call
+      # on purpose: CI.yml only calls this on main pushes, where reusing the
+      # cache is exactly what we want.
+      no_cache:
+        description: 'Rebuild all images without using the registry build cache'
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -133,6 +141,13 @@ jobs:
           # on the image keeps the 11 plugin builds free of "unconsumed
           # build-arg" warnings.
           build-args: ${{ matrix.image == 'g3' && format('VERSION={0}', env.IMAGE_TAG) || '' }}
+          # Refreshes a stale cache by overwriting it rather than deleting it:
+          # --no-cache makes BuildKit ignore whatever cache-from imported, but
+          # cache-to still runs, so the cold build republishes :buildcache with
+          # clean content and the cleanup step below reclaims the orphaned old
+          # manifest. `|| false` because the inputs context is empty on tag
+          # pushes, where a bare empty string isn't a valid boolean.
+          no-cache: ${{ inputs.no_cache || false }}
           # Cache is shared across branches (content-addressed). If divergent
           # dependencies cause thrashing, scope per branch by appending
           # -${{ github.ref_name }} to the buildcache tag.
