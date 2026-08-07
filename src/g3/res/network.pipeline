@@ -3,6 +3,9 @@
 # URLs get tested by TestSSL. I wouldn't normally expect users to pass a web URL to a network scan, but... y'know.
 testssl
 
+# Same for shcheck.py.
+shcheck
+
 # Hosts get port scanned, then SSL ports get tested by TestSSL.
 nmap-full | testssl
 

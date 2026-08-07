@@ -2,9 +2,11 @@
 # Probably overkill but what the hell. Many of these pipelines won't even be hit.
 
 # Recon tools.
+shcheck
 untangle
 wafw00f
 testssl
+subfinder | shcheck
 subfinder | untangle
 subfinder | wafw00f
 subfinder | testssl

@@ -3,6 +3,7 @@
 # Hopefully that will change soon.
 
 # Run tests against every URL in scope.
+shcheck
 untangle
 wafw00f
 testssl
@@ -10,6 +11,7 @@ nikto
 
 # Run the same tests against any discovered subdomains too.
 # This implicitly adds them to the pentest scope!
+subfinder | shcheck
 subfinder | untangle
 subfinder | wafw00f
 subfinder | testssl
