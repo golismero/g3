@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Golismero3 importer entrypoint for magenta.
-"""
+"""Golismero3 importer entrypoint for magenta."""
 
-import os
-import sys
 import json
+import os
 import shutil
+import sys
 import tempfile
 
 from libmagenta.engine import MagentaReporter

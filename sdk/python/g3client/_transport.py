@@ -11,7 +11,7 @@ import os
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -31,7 +31,7 @@ class Transport:
         *,
         timeout: float = DEFAULT_TIMEOUT,
         retries: int = DEFAULT_RETRIES,
-        session: Optional[requests.Session] = None,
+        session: requests.Session | None = None,
     ) -> None:
         if not base_url:
             raise ClientError("base_url is required (pass it or set G3_API_BASEURL)")
@@ -52,12 +52,12 @@ class Transport:
         path: str,
         *,
         json: Any = None,
-        params: Optional[dict[str, Any]] = None,
-        files: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
         stream: bool = False,
     ) -> requests.Response:
         url = self._url(path)
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
                 return self._session.request(
@@ -99,8 +99,8 @@ class Transport:
         path: str,
         *,
         json: Any = None,
-        params: Optional[dict[str, Any]] = None,
-        files: Optional[dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
+        files: dict[str, Any] | None = None,
     ) -> Any:
         return self._envelope(
             self._send(method, path, json=json, params=params, files=files)

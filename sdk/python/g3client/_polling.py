@@ -8,7 +8,8 @@ TimeoutError on deadline; domain tiers translate it to TaskTimeout with their ID
 from __future__ import annotations
 
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 DEFAULT_POLL_INTERVAL = 2.0
 DEFAULT_WAIT_TIMEOUT = 1800.0
@@ -20,7 +21,7 @@ def poll_until(
     *,
     interval: float = DEFAULT_POLL_INTERVAL,
     timeout: float = DEFAULT_WAIT_TIMEOUT,
-    on_poll: Optional[Callable[[Any], None]] = None,
+    on_poll: Callable[[Any], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> Any:

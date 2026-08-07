@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 import requests
 
@@ -31,12 +30,12 @@ class ApiClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        token: Optional[str] = None,
+        base_url: str | None = None,
+        token: str | None = None,
         *,
-        artifacts_root: Optional[str] = None,
+        artifacts_root: str | None = None,
         timeout: float = 30.0,
-        session: Optional[requests.Session] = None,
+        session: requests.Session | None = None,
     ) -> None:
         base_url = base_url or os.environ.get("G3_API_BASEURL", "")
         token = token or os.environ.get("G3_API_TOKEN", "")

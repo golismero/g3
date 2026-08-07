@@ -74,7 +74,16 @@ def run():
     # -u forces the child's stdout/stderr unbuffered so its status lines reach us
     # as they are printed instead of sitting in a pipe buffer until exit.
     proc = subprocess.Popen(
-        ["python3", "-u", "/app/graphql-cop.py", "-o", "json", "-t", target_url, *sys.argv[2:]],
+        [
+            "python3",
+            "-u",
+            "/app/graphql-cop.py",
+            "-o",
+            "json",
+            "-t",
+            target_url,
+            *sys.argv[2:],
+        ],
         cwd="/app",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -131,8 +140,7 @@ def run():
     with open(os.path.join(ARTIFACTS_DIR, JSON_ARTIFACT), "w") as f:
         json.dump(data, f)
     with open(os.path.join(ARTIFACTS_DIR, TXT_ARTIFACT), "w") as f:
-        for line in status_lines:
-            f.write(line + "\n")
+        f.writelines(line + "\n" for line in status_lines)
 
     # Parse the JSON data to generate Golismero objects.
     parse(data, target_url, orig_target_url)
@@ -156,14 +164,15 @@ def parse(data, target_url=None, orig_target_url=None):
                 urls.add(u)
                 found = True
         assert found, curl_verify
-    if target_url in urls:
-        urls.remove(target_url)
+    urls.discard(target_url)
     for u in sorted(urls):
         print("Detected GraphQL endpoint: %s" % u, file=sys.stderr, flush=True)
 
     # Calculate the fingerprint.
     if is_runner:
-        fp = sorted("graphqlcop " + u for u in (urls.copy() | {target_url, orig_target_url}))
+        fp = sorted(
+            "graphqlcop " + u for u in (urls.copy() | {target_url, orig_target_url})
+        )
     elif urls:
         fp = sorted("graphqlcop " + u for u in urls)
     else:
@@ -173,7 +182,9 @@ def parse(data, target_url=None, orig_target_url=None):
     output = []
     if is_runner:
         if not urls:
-            output.append({"_type": "nil", "_fp": fp, "_artifacts": [JSON_ARTIFACT, TXT_ARTIFACT]})
+            output.append(
+                {"_type": "nil", "_fp": fp, "_artifacts": [JSON_ARTIFACT, TXT_ARTIFACT]}
+            )
         else:
             output.append({"_type": "nil", "_fp": fp, "_artifacts": [TXT_ARTIFACT]})
     if urls:
@@ -184,10 +195,12 @@ def parse(data, target_url=None, orig_target_url=None):
                 "_artifacts": [JSON_ARTIFACT] if is_runner else None,
                 "url": o.geturl(),
                 "scheme": o.scheme,
-                "host": o.netloc.rpartition('@')[2],
+                "host": o.netloc.rpartition("@")[2],
                 "path": o.path,
                 "hostname": o.hostname,
-                "domain": o.hostname if o.hostname is not None and is_domain_name(o.hostname) else None,
+                "domain": o.hostname
+                if o.hostname is not None and is_domain_name(o.hostname)
+                else None,
                 "port": int(o.port) if o.port else 443 if o.scheme == "https" else 80,
                 "username": o.username,
                 "password": o.password,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from g3client.scanner import Scanner
 from g3client.types import ScanProgress
 

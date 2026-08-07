@@ -16,8 +16,9 @@ helper — no HTTP, no `Transport`, no manual endpoint calls.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import Any, Union
 
 from ._polling import DEFAULT_POLL_INTERVAL, poll_until
 from .api import ApiClient
@@ -25,7 +26,7 @@ from .errors import ScanGone, TaskCancelled, TaskFailed, TaskTimeout
 from .types import ScanProgress, ScanReport
 
 # Report specifier accepted by `scan(report=...)`: "tool", "tool:preset", or a tuple.
-ReportSpec = Union[str, "tuple[str, Optional[str]]"]
+ReportSpec = Union[str, "tuple[str, str | None]"]
 
 
 class Scanner:
@@ -42,10 +43,10 @@ class Scanner:
     @classmethod
     def from_credentials(
         cls,
-        base_url: Optional[str] = None,
-        token: Optional[str] = None,
+        base_url: str | None = None,
+        token: str | None = None,
         **kw: Any,
-    ) -> "Scanner":
+    ) -> Scanner:
         """Build the underlying `ApiClient` from credentials/env, then wrap it."""
         return cls(ApiClient(base_url, token, **kw))
 
@@ -65,12 +66,12 @@ class Scanner:
     def scan(
         self,
         *,
-        targets: Optional[Sequence[str]] = None,
-        pipeline: Optional[Sequence[str]] = None,
+        targets: Sequence[str] | None = None,
+        pipeline: Sequence[str] | None = None,
         mode: str = "parallel",
-        imports: Optional[Sequence[tuple[str, Union[str, Path]]]] = None,
-        report: Optional[ReportSpec] = None,
-        script: Optional[str] = None,
+        imports: Sequence[tuple[str, str | Path]] | None = None,
+        report: ReportSpec | None = None,
+        script: str | None = None,
         timeout: float = 1800,
     ) -> ScanReport:
         """Launch an orchestrated scan and wait for it to finish.
@@ -105,7 +106,7 @@ class Scanner:
 
         seen = {"v": False}  # has the scan ever been observed in the progress table?
 
-        def fetch_scan() -> Optional[ScanProgress]:
+        def fetch_scan() -> ScanProgress | None:
             progress = api.scans.get(scanid)
             if progress is None:
                 # Distinguish "not registered yet" from "deleted": before the
@@ -118,7 +119,7 @@ class Scanner:
             seen["v"] = True
             return progress
 
-        def on_poll(progress: Optional[ScanProgress]) -> None:
+        def on_poll(progress: ScanProgress | None) -> None:
             if progress is None:
                 return
             last_seen["progress"] = progress
@@ -186,7 +187,7 @@ class Scanner:
             raise TaskCancelled(tuple(tids))
 
         path = api.scans.tasks.artifacts(scanid, report_tid)
-        report_bytes: Optional[bytes] = None
+        report_bytes: bytes | None = None
         if path.is_file():
             report_bytes = path.read_bytes()
 
@@ -194,10 +195,10 @@ class Scanner:
 
 
 def _build_script(
-    mode: Optional[str],
-    targets: Optional[Sequence[str]],
+    mode: str | None,
+    targets: Sequence[str] | None,
     imports: Sequence[tuple[str, str]],
-    pipeline: Optional[Sequence[str]],
+    pipeline: Sequence[str] | None,
 ) -> str:
     """Render the g3 script DSL, matching `ParsedScript.String()` in src/g3lib/script.go.
 
@@ -226,7 +227,7 @@ def _build_script(
     return "\n\n".join(blocks) + "\n"
 
 
-def _parse_report(report: ReportSpec) -> tuple[str, Optional[str]]:
+def _parse_report(report: ReportSpec) -> tuple[str, str | None]:
     """Normalize a report spec to `(tool, preset)`.
 
     Accepts `"tool"`, `"tool:preset"`, or a `(tool, preset)` tuple.

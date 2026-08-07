@@ -4,6 +4,7 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
+from .api import ApiClient
 from .errors import (
     ApiError,
     ClientError,
@@ -13,21 +14,19 @@ from .errors import (
     TaskGone,
     TaskTimeout,
 )
-
-from .api import ApiClient
-from .scanner import Scanner
 from .manager import Manager
+from .scanner import Scanner
 
 __all__ = [
-    "__version__",
     "ApiClient",
-    "Scanner",
-    "Manager",
-    "ClientError",
     "ApiError",
-    "TaskTimeout",
+    "ClientError",
+    "Manager",
+    "ScanGone",
+    "Scanner",
     "TaskCancelled",
     "TaskFailed",
-    "ScanGone",
     "TaskGone",
+    "TaskTimeout",
+    "__version__",
 ]

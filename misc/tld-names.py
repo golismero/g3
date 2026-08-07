@@ -3,8 +3,8 @@
 # Script to download the TLD database from publicsuffix.org.
 # We dump the results in a simplified format that misses some of the subtleties but is good enough for us.
 
-import os
 import json
+import os
 import os.path
 import urllib.request
 
@@ -44,12 +44,7 @@ if (
     with open(tld_filename, "r") as fd:
         for line in fd:
             line = line.strip()
-            if (
-                not line
-                or line.startswith("//")
-                or line.startswith("*")
-                or line.startswith("!")
-            ):
+            if not line or line.startswith(("//", "*", "!")):
                 continue
             tld_names.add("." + line)
     sorted_tld_names = sorted(tld_names)

@@ -27,7 +27,9 @@ for root, dirs, files in os.walk("src"):
                         start_collecting = True
                     elif start_collecting and line == ")":
                         start_collecting = False
-                    elif start_collecting and not line.startswith("github.com/golismero/g3/src/"):
+                    elif start_collecting and not line.startswith(
+                        "github.com/golismero/g3/src/"
+                    ):
                         module, version = line.split(" ")[:2]
                         mods.add("%s@%s" % (module, version))
 with open(sys.argv[1], "w") as fd:

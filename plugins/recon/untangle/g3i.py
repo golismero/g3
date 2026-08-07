@@ -1,15 +1,26 @@
 #!/usr/bin/python3
 
+import json
 import re
 import sys
-import json
 
 # Untangle's known server names. Anything not in this set — the sentinels
 # untangle emits ("unknown", "too_long", "exception", "empty", "200") and the
 # tool's stray debug prints ("something wrong", tracebacks, ...) — is dropped.
 KNOWN_SERVERS = {
-    "cloudfront", "cloudflare", "fastly", "akamai", "nginx", "varnish",
-    "haproxy", "apache", "caddy", "envoy", "ats", "squid", "tomcat",
+    "cloudfront",
+    "cloudflare",
+    "fastly",
+    "akamai",
+    "nginx",
+    "varnish",
+    "haproxy",
+    "apache",
+    "caddy",
+    "envoy",
+    "ats",
+    "squid",
+    "tomcat",
 }
 
 # Matches ordered layer lines, e.g. "Layer 1: cloudflare".

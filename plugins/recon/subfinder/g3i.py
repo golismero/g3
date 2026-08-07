@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
-import sys
 import json
 import shlex
+import sys
 
 # Flag that indicates this is the result of a run, not an import.
 if len(sys.argv) == 2 and sys.argv[1] == "r":
@@ -17,7 +17,7 @@ input = [x.strip() for x in input]
 input = [x for x in input if x]
 if not input:
     sys.stderr.write("Empty input file!\n")
-    exit(1)
+    sys.exit(1)
 isJSON = input[0][0] == "{"
 isJSONWithSources = False  # will be decided later
 isTextWithSources = input[0][-1] == "]"
@@ -46,12 +46,12 @@ for line in input:
     results.add(host)
 if not results:
     sys.stderr.write("Internal error!\n")
-    exit(1)
+    sys.exit(1)
 
 # The text format doesn't save the hostname that was queried.
 # We can reconstruct that by searching for a common suffix.
 if not isJSON:
-    all_hosts = sorted(set(tuple(host.split(".")) for host in results))
+    all_hosts = sorted({tuple(host.split(".")) for host in results})
     suffix_len = min(len(host) for host in all_hosts)
     index = -1
     done = False

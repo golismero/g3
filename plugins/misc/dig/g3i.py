@@ -1,22 +1,25 @@
 #!/usr/local/bin/python3
 
-import jc
-import sys
+import ipaddress
 import json
 import shlex
-import ipaddress
-
+import sys
 from pprint import pprint
 
+import jc
+
+
 def arpa_to_ipv6(arpa):
-    arpa = arpa.lower().rstrip('.').removesuffix('.ip6.arpa')
-    nibbles = arpa.split('.')[::-1]   # arpa stores nibbles least-significant-first
-    return str(ipaddress.IPv6Address(int(''.join(nibbles), 16)))
+    arpa = arpa.lower().rstrip(".").removesuffix(".ip6.arpa")
+    nibbles = arpa.split(".")[::-1]  # arpa stores nibbles least-significant-first
+    return str(ipaddress.IPv6Address(int("".join(nibbles), 16)))
+
 
 def arpa_to_ipv4(arpa):
-    arpa = arpa.lower().rstrip('.').removesuffix('.in-addr.arpa')
-    octets = arpa.split('.')[::-1]   # arpa stores octets least-significant-first
-    return str(ipaddress.IPv4Address('.'.join(octets)))
+    arpa = arpa.lower().rstrip(".").removesuffix(".in-addr.arpa")
+    octets = arpa.split(".")[::-1]  # arpa stores octets least-significant-first
+    return str(ipaddress.IPv4Address(".".join(octets)))
+
 
 # This will contain the output array.
 output = []
@@ -74,7 +77,7 @@ for response in input:
                     "_cmd": cmd,
                     "_artifacts": ARTIFACTS,
                     "ipv4": answer["data"][:-1],
-                    "hostnames": sorted(set([answer["name"][:-1], domain])),
+                    "hostnames": sorted({answer["name"][:-1], domain}),
                 }
             )
         elif answer["type"] == "AAAA":
@@ -84,7 +87,7 @@ for response in input:
                     "_cmd": cmd,
                     "_artifacts": ARTIFACTS,
                     "ipv6": answer["data"],
-                    "hostnames": sorted(set([answer["name"][:-1], domain])),
+                    "hostnames": sorted({answer["name"][:-1], domain}),
                 }
             )
         elif answer["type"] == "PTR":

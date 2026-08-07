@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
-import sys
 import json
+import sys
 import urllib.parse
 
 # Flag that indicates this is the result of a run, not an import.
@@ -20,7 +20,7 @@ try:
         sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
         sys.exit(1)
     for item in json_input:
-        if not set(["url", "detected", "firewall", "manufacturer"]).issubset(
+        if not {"url", "detected", "firewall", "manufacturer"}.issubset(
             set(item.keys())
         ):
             sys.stderr.write("ERROR: unknown file format, ignoring input file.\n")
@@ -79,7 +79,7 @@ for item in json_input:
         "firewall": item["firewall"],
         "manufacturer": item["manufacturer"],
     }
-    if "trigger_url" in item and item["trigger_url"]:
+    if item.get("trigger_url"):
         result["trigger_url"] = item["trigger_url"]
     results_per_url[url].append(result)
 

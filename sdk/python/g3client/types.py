@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # A task in one of these states will not change further.
 TASK_TERMINAL_STATES = frozenset({"DONE", "WARNING", "ERROR", "CANCELED"})
@@ -21,12 +21,12 @@ SCAN_TERMINAL_STATES = frozenset({"FINISHED", "ERROR", "CANCELED"})
 class ScanProgress:
     scanid: str
     status: str
-    progress: Optional[int]
+    progress: int | None
     message: str
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_raw(cls, d: dict[str, Any]) -> "ScanProgress":
+    def from_raw(cls, d: dict[str, Any]) -> ScanProgress:
         return cls(
             scanid=d.get("scanid", ""),
             status=d.get("status", "UNKNOWN"),
@@ -46,14 +46,14 @@ class TaskStatus:
     tool: str
     worker: str
     state: str
-    dispatched_at: Optional[int]
-    started_at: Optional[int]
-    completed_at: Optional[int]
+    dispatched_at: int | None
+    started_at: int | None
+    completed_at: int | None
     error_msg: str
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_raw(cls, d: dict[str, Any]) -> "TaskStatus":
+    def from_raw(cls, d: dict[str, Any]) -> TaskStatus:
         return cls(
             task_id=d.get("taskid", ""),
             tool=d.get("tool", ""),
@@ -78,7 +78,7 @@ class ScanTasksStatus:
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_raw(cls, d: dict[str, Any]) -> "ScanTasksStatus":
+    def from_raw(cls, d: dict[str, Any]) -> ScanTasksStatus:
         return cls(
             scan_status=d.get("scan_status", "UNKNOWN"),
             tasks=tuple(TaskStatus.from_raw(t) for t in d.get("tasks", []) or []),
@@ -96,8 +96,8 @@ class ScanReport:
 
     scanid: str
     status: str
-    report_path: Optional[Path]
-    report_bytes: Optional[bytes]
+    report_path: Path | None
+    report_bytes: bytes | None
     task_ids: tuple[str, ...]
 
 
@@ -130,7 +130,7 @@ class PluginInfo:
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_raw(cls, d: dict[str, Any]) -> "PluginInfo":
+    def from_raw(cls, d: dict[str, Any]) -> PluginInfo:
         return cls(
             name=d.get("name", ""),
             category=d.get("category", ""),

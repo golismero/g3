@@ -12,8 +12,9 @@ helper — no HTTP, no `Transport`, no manual endpoint calls.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import Any
 
 from ._polling import DEFAULT_POLL_INTERVAL, poll_until
 from .api import ApiClient
@@ -29,7 +30,7 @@ _STATE_PRIORITY = {"DONE": 0, "WARNING": 1, "ERROR": 2}
 class Manager:
     """High-level helper for managed scans, built only on `ApiClient`."""
 
-    def __init__(self, api: ApiClient, scanid: Optional[str] = None) -> None:
+    def __init__(self, api: ApiClient, scanid: str | None = None) -> None:
         self._api = api
         # Create a fresh managed scan, or re-attach to an existing one.
         self.scan_id: str = scanid if scanid is not None else api.scans.create_managed()
@@ -39,12 +40,12 @@ class Manager:
     @classmethod
     def from_credentials(
         cls,
-        base_url: Optional[str] = None,
-        token: Optional[str] = None,
+        base_url: str | None = None,
+        token: str | None = None,
         *,
-        scanid: Optional[str] = None,
+        scanid: str | None = None,
         **kw: Any,
-    ) -> "Manager":
+    ) -> Manager:
         """Build the underlying `ApiClient` from credentials/env, then wrap it."""
         return cls(ApiClient(base_url, token, **kw), scanid=scanid)
 
@@ -60,13 +61,13 @@ class Manager:
         """Insert raw G3Data objects, returning their data IDs."""
         return self._api.scans.data.insert(self.scan_id, data)
 
-    def import_file(self, tool: str, path: Union[str, Path]) -> list[str]:
+    def import_file(self, tool: str, path: str | Path) -> list[str]:
         """Upload a tool output file and import it, returning produced data IDs."""
         api = self._api
         fileid = api.files.upload(path)
         return api.scans.imports.create(self.scan_id, tool, fileid)
 
-    def launch(self, tool: str, dataid: str, preset: Optional[str] = None) -> list[str]:
+    def launch(self, tool: str, dataid: str, preset: str | None = None) -> list[str]:
         """Dispatch a tool asynchronously; return (and record) its task IDs.
 
         A single dispatch can fan out to several tasks (one per matched
@@ -87,7 +88,7 @@ class Manager:
         self,
         task_ids: Sequence[str],
         *,
-        on_status: Optional[Callable[[ScanTasksStatus], None]] = None,
+        on_status: Callable[[ScanTasksStatus], None] | None = None,
         timeout: float = 1800,
     ) -> dict[str, TaskStatus]:
         """Poll until every id in `task_ids` is present and terminal.
@@ -146,7 +147,7 @@ class Manager:
         by_id = {t.task_id: t for t in final.tasks}
         return {tid: by_id[tid] for tid in wanted if tid in by_id}
 
-    def fetch_artifacts(self, task_id: str, dest: Optional[Path] = None) -> Path:
+    def fetch_artifacts(self, task_id: str, dest: Path | None = None) -> Path:
         """Download a task's artifact bundle; return the local path."""
         return self._api.scans.tasks.artifacts(self.scan_id, task_id, dest=dest)
 
@@ -154,7 +155,7 @@ class Manager:
         """Return the G3Data objects produced by a task."""
         return self._api.scans.data.get(self.scan_id, taskid=task_id)
 
-    def logs(self, task_id: Optional[str] = None) -> list[dict[str, Any]]:
+    def logs(self, task_id: str | None = None) -> list[dict[str, Any]]:
         """Return log entries for the whole scan, or for one task if `task_id` is given.
 
         The server returns scan-level logs as a bare list and task-level logs as a
@@ -172,9 +173,9 @@ class Manager:
         tool: str,
         dataid: str,
         *,
-        preset: Optional[str] = None,
-        on_status: Optional[Callable[[ScanTasksStatus], None]] = None,
-        dest: Optional[Union[str, Path]] = None,
+        preset: str | None = None,
+        on_status: Callable[[ScanTasksStatus], None] | None = None,
+        dest: str | Path | None = None,
         timeout: float = 1800,
     ) -> RunOutcome:
         """Synchronously run one tool: launch, wait, download artifacts, collect data.

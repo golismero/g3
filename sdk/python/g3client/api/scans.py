@@ -7,8 +7,9 @@ fields into the path). No caller changes.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Sequence
+from typing import Any
 
 from .._transport import Transport
 from ..types import ScanProgress, ScanTasksStatus, TaskStatus
@@ -40,7 +41,7 @@ class ScansResource:
         rows = self._t.request("POST", "/scan/progress", json={}) or []
         return [ScanProgress.from_raw(r) for r in rows]
 
-    def get(self, scanid: str) -> Optional[ScanProgress]:
+    def get(self, scanid: str) -> ScanProgress | None:
         # REST-MIGRATION: future GET /scans/{scanid}. Today: filter the progress table.
         for p in self.progress():
             if p.scanid == scanid:
@@ -95,8 +96,8 @@ class DataResource:
         self,
         scanid: str,
         *,
-        dataids: Optional[Sequence[str]] = None,
-        taskid: Optional[str] = None,
+        dataids: Sequence[str] | None = None,
+        taskid: str | None = None,
     ) -> list[dict[str, Any]]:
         # REST-MIGRATION: future GET /scans/{scanid}/data; the dataids form becomes
         # POST /scans/{scanid}/data/filter (the only POST-as-search endpoint).
@@ -119,8 +120,8 @@ class TasksResource:
         *,
         kind: str,
         tool: str,
-        dataid: Optional[str] = None,
-        preset: Optional[str] = None,
+        dataid: str | None = None,
+        preset: str | None = None,
     ) -> list[str]:
         # REST-MIGRATION: future POST /scans/{scanid}/tasks. Returns task IDs, no wait.
         body: dict[str, Any] = {"scanid": scanid, "kind": kind, "tool": tool}
@@ -142,7 +143,7 @@ class TasksResource:
         # REST-MIGRATION: future GET /scans/{scanid}/tasks/list
         return self._t.request("POST", "/scan/tasks", json={"scanid": scanid}) or []
 
-    def get(self, scanid: str, taskid: str) -> Optional[TaskStatus]:
+    def get(self, scanid: str, taskid: str) -> TaskStatus | None:
         # REST-MIGRATION: future GET /scans/{scanid}/tasks/{taskid}. Today: filter status().
         for t in self.status(scanid).tasks:
             if t.task_id == taskid:
@@ -157,7 +158,7 @@ class TasksResource:
             json={"scanid": scanid, "taskids": list(taskids)},
         )
 
-    def artifacts(self, scanid: str, taskid: str, dest: Optional[Path] = None) -> Path:
+    def artifacts(self, scanid: str, taskid: str, dest: Path | None = None) -> Path:
         # REST-MIGRATION: future GET /scans/{scanid}/tasks/{taskid}/artifacts
         out = Path(dest) if dest is not None else self._artifacts_root / scanid / taskid
         return self._t.download(
@@ -188,7 +189,7 @@ class LogsResource:
     def __init__(self, transport: Transport) -> None:
         self._t = transport
 
-    def get(self, scanid: str, taskid: Optional[str] = None) -> Any:
+    def get(self, scanid: str, taskid: str | None = None) -> Any:
         # REST-MIGRATION: future GET /scans/{scanid}/logs
         # Server returns a list (scan-level) or a {scanid, taskid, lines:[...]} object
         # (task-level). Returned as-is; the scanner/manager tiers shape it.
