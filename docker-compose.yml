@@ -21,11 +21,8 @@ networks:
 services:
 
   # MongoDB is used to store the scan data.
-  # There is no specific version required for Golismero, but in
-  # this example we used 4.4.6 since it's the most compatible one.
-  # https://github.com/docker-library/mongo/issues/485
   mongo:
-    image: mongo:4.4.6
+    image: mongo:latest
     restart: unless-stopped
     # ports:
     #   - "127.0.0.1:27017:27017"
