@@ -11,7 +11,7 @@ WORKDIR /app
 RUN apk update \
     && apk add --no-cache git \
     && git clone --depth 1 $URL /app \
-    && pip3 install setuptools \
+    && pip3 install --no-cache-dir setuptools \
     && python3 /app/setup.py install
 
 # Add the Golismero3 wrapper.
