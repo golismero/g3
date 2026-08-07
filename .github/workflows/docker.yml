@@ -118,6 +118,8 @@ jobs:
           tags: |
             type=raw,value=${{ env.IMAGE_TAG }}
 
+      - run: for i in $(find Dockerfile plugins -name Dockerfile -exec grep "FROM" {} \; | sed -n 's/FROM \(\S\+\).*/\1/p' | sort -u); do docker pull "$i"; done
+
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
