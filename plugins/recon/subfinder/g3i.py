@@ -6,8 +6,10 @@ import sys
 
 # Flag that indicates this is the result of a run, not an import.
 if len(sys.argv) == 2 and sys.argv[1] == "r":
+    RUNNING = True
     ARTIFACTS = ["subfinder.txt", "subfinder.json"]
 else:
+    RUNNING = False
     ARTIFACTS = []
 
 # We have four possible output formats: JSON or text, and with or without collecting all sources.
@@ -16,6 +18,8 @@ input = sys.stdin.readlines()
 input = [x.strip() for x in input]
 input = [x for x in input if x]
 if not input:
+    if RUNNING:
+        sys.exit(0)
     sys.stderr.write("Empty input file!\n")
     sys.exit(1)
 isJSON = input[0][0] == "{"
