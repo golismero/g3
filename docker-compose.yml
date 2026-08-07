@@ -306,6 +306,7 @@ services:
       - G3_ARTIFACTS_ROOT=/app/artifacts
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - G3_ENV_IPV6_SUPPORTED
+ 
   # Now we'll do the same for testssl, but using two replicas.
   g3worker-testssl:
     image: ghcr.io/golismero/g3:latest
@@ -343,9 +344,8 @@ services:
       - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
       - G3_ENV_IPV6_SUPPORTED
 
-  # The following workers are all identical and run all plugins *except* the ones above.
-  # Use deploy.replicas to grow or shrink the generic worker pool.
-  g3worker:
+  # Now for Nikto, but using 4 replicas.
+  g3worker-nikto:
     image: ghcr.io/golismero/g3:latest
     entrypoint: /bin/g3worker
     restart: unless-stopped
@@ -371,9 +371,47 @@ services:
       - SQL_DRIVER=mysql
       - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
       - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
+      - G3_INSTANCE_PREFIX=g3worker-nikto-
+      - G3_INSTANCE_TRANSIENT=false
+      - G3_WORKER_PLUGINS=nikto
+      - G3_HOLD_CANCEL
+      - G3_LOG_LEVEL
+      - G3_DOCKER_NETWORK
+      - G3_ARTIFACTS_ROOT=/app/artifacts
+      - G3_ARTIFACTS_HOST_ROOT=${PWD}/volumes/artifacts
+      - G3_ENV_IPV6_SUPPORTED
+
+  # The following workers are all identical and run all plugins *except* the ones above.
+  # Use deploy.replicas to grow or shrink the generic worker pool.
+  g3worker:
+    image: ghcr.io/golismero/g3:latest
+    entrypoint: /bin/g3worker
+    restart: unless-stopped
+    deploy:
+      replicas: 8
+    depends_on:
+      mariadb:
+        condition: service_started
+      mongo:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+    networks:
+      - g3net
+    volumes:
+      - ./config:/app/config
+      - ./resources:/app/resources
+      - ./volumes/artifacts:/app/artifacts
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - G3HOME=/app
+      - MONGO_URL=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017/
+      - SQL_DRIVER=mysql
+      - SQL_DSN=${SQL_USERNAME}:${SQL_PASSWORD}@tcp(mariadb:3306)/${SQL_DATABASE}
+      - MQTT_URL=mqtt://${MQTT_USERNAME}:${MQTT_PASSWORD}@mosquitto:1883/
       - G3_INSTANCE_PREFIX=g3worker-
       - G3_INSTANCE_TRANSIENT=false
-      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full,testssl,hydra
+      - G3_WORKER_PLUGINS=!nmap,nmap-fast,nmap-full,testssl,hydra,nikto
       - G3_HOLD_CANCEL
       - G3_LOG_LEVEL
       - G3_DOCKER_NETWORK
