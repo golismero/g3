@@ -96,8 +96,6 @@ jobs:
           - image: nmap
             context: plugins/recon/nmap
             prep: iana-descriptions
-          - image: shcheck
-            context: plugins/recon/shcheck
           - image: subfinder
             context: plugins/recon/subfinder
           - image: testssl
