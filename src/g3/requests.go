@@ -1,54 +1,55 @@
 package g3
 
+type ScanPathArgument struct {
+	ScanID string `path:"scanid" doc:"Scan ID" validate:"required,uuid"`
+}
+
+type TaskPathArgument struct {
+	TaskID string `path:"taskid" doc:"Task ID" validate:"required,uuid"`
+}
+
 // POST /scans/start
-type ScanRequest struct {
-	Script    string `json:"script"             validate:"required"`
+type ScriptBodyArgument struct {
+	Script string `json:"script" doc:"Golismero script" validate:"required"`
 }
 
 // POST /scans/{scanid}/data
-// POST /scans/{scanid}/data/list
-type DataRequest struct {
-	Data      []Data `json:"data"               validate:"required,min=1,dive,required"`
-}
-
-// POST /scans/{scanid}/import
-type ImportRequest struct {
-	Tool      string `json:"tool"               validate:"required,g3name"`
-	FileID    string `json:"fileid"             validate:"required,uuid"`
+type DataBodyArgument struct {
+	Data []Data `json:"data" doc:"New data" validate:"required,min=1,dive,required"`
 }
 
 // POST /scans/{scanid}/targets
-type TargetsRequest struct {
-	Targets []string `json:"targets"           validate:"required,min=1,dive,required"`
+type TargetsBodyArgument struct {
+	Targets []string `json:"targets" doc:"Targets (IPs & ranges, hostnames, URLs, etc.)" validate:"required,min=1,dive,required"`
+}
+
+type ToolBodyArgument struct {
+	Tool string `json:"tool" doc:"Tool name" validate:"required,g3name"`
+}
+
+// POST /scans/{scanid}/import
+type ImportBodyArgument struct {
+	ToolBodyArgument
+	FileID string `json:"fileid" doc:"Input file ID (provided by /files/upload)" validate:"required,uuid"`
 }
 
 // POST /scans/{scanid}/dispatch
-type DispatchRequest struct {
-	Tool      string `json:"tool"               validate:"required,g3name"`
-	DataID    string `json:"dataid"             validate:"required,uuid"`
-}
-
 // POST /scans/{scanid}/run
-type RunRequest struct {
-	Tool      string `json:"tool"               validate:"required,g3name"`
-	DataID    string `json:"dataid"             validate:"required,uuid"`
+type RunArgument struct {
+	ToolBodyArgument
+	DataID string `json:"dataid" doc:"Input data ID (provided by /scans/{scanid}/targets or /scans/{scanid}/data)" validate:"required,uuid"`
 }
 
 // POST /scans/{scanid}/report
-type ReportRequest struct {
-	Tool      string `json:"tool"               validate:"omitempty,g3name"`
-	Preset    string `json:"preset,omitempty"`
+type ReportBodyArgument struct {
+	ToolBodyArgument
+	Preset string `json:"preset,omitempty" doc:"Optional report preset"`
 }
 
 // POST /scans/{scanid}/data/filter
 // POST /scans/{scanid}/data/filter/list
-type FilterRequest struct {
-	TaskIDs []string `json:"task_ids,omitempty" validate:"omitempty,dive,uuid"`
-	DataIDs []string `json:"data_ids,omitempty" validate:"omitempty,dive,uuid"`
-}
-
-// POST /scans/{scanid}/data/match
-// POST /scans/{scanid}/data/match/list
-type MatchRequest struct {
-	Fingerprints []string `json:"fp"            validate:"required"`
+type FilterBodyArgument struct {
+	TaskIDs []string `json:"task_ids,omitempty" doc:"Filter by task ID(s)" validate:"omitempty,dive,uuid"`
+	DataIDs []string `json:"data_ids,omitempty" doc:"Filter by data ID(s)" validate:"omitempty,dive,mongodb"`
+	Fingerprints []string `json:"fp,omitempty" doc:"Filter by finterprint(s)" validate:"omitempty,dive,required"`
 }

@@ -49,7 +49,7 @@ func schemaForStruct(t reflect.Type) map[string]any {
 	return s
 }
 
-// collect walks a struct's fields, flattening embedded structs the way Go/JSON
+// Walks a struct's fields, flattening embedded structs the way Go/JSON
 // promotion does (so ProgressUpdate absorbs StatusUpdate's seq/status).
 func collect(t reflect.Type, props map[string]any, required *[]string) {
 	for i := 0; i < t.NumField(); i++ {
@@ -156,9 +156,9 @@ func applyAtom(a string, s map[string]any, required *bool, t reflect.Type) {
 	case "required":
 		*required = true
 	case "omitempty", "omitzero":
-		// optional — no schema constraint
-	case "uuid", "uuid4":
-		s["format"] = "uuid" // note: uuid4's v4-specificity is lost; pattern if it matters
+		*required = false
+	case "uuid":
+		s["format"] = "uuid"
 	case "url":
 		s["format"] = "uri"
 	case "ipv4":
