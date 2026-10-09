@@ -17,7 +17,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/apsdehal/go-logger v0.0.0-20190515212710-b0d6ccfee0e6 // indirect
-	github.com/docker/cli v29.8.1+incompatible // indirect
+	github.com/docker/cli v29.9.0+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.9 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.5.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
@@ -32,7 +32,7 @@ require (
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/leodido/go-urn v1.5.0 // indirect
-	github.com/montanaflynn/stats v0.12.7 // indirect
+	github.com/montanaflynn/stats v0.13.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
@@ -43,9 +43,9 @@ require (
 	go.mongodb.org/mongo-driver v1.17.10 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect

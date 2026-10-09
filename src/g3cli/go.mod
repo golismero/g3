@@ -24,11 +24,11 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/leodido/go-urn v1.5.0 // indirect
-	github.com/mattn/go-runewidth v0.0.30 // indirect
+	github.com/mattn/go-runewidth v0.0.31 // indirect
 	github.com/posener/complete v1.2.3 // indirect
 	github.com/riywo/loginshell v0.0.0-20200815045211-7d26008be1ab // indirect
-	github.com/stretchr/testify v1.12.1 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 )
